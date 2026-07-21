@@ -39,6 +39,11 @@ jobs:
       - name: Setup Rust
         uses: dtolnay/rust-toolchain@stable
 
+      - name: Cache Rust build
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: "./src-tauri -> target"
+
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
@@ -143,18 +148,13 @@ jobs:
             [System.Text.UTF8Encoding]::new($false)
           )
 
-      - name: Upload workflow artifact
-        uses: actions/upload-artifact@v7
-        with:
-          name: YuanHeng-Switch-${{ steps.assets.outputs.label }}-Windows
-          path: release-assets/*
-          if-no-files-found: error
-
       - name: Publish GitHub release
-        if: startsWith(github.ref, 'refs/tags/')
         uses: softprops/action-gh-release@v3
         with:
-          name: YuanHeng Switch ${{ github.ref_name }}
+          tag_name: ${{ steps.assets.outputs.label }}
+          target_commitish: ${{ github.sha }}
+          name: YuanHeng Switch ${{ steps.assets.outputs.label }}
+          draft: ${{ github.event_name == 'workflow_dispatch' }}
           prerelease: true
           generate_release_notes: true
           files: release-assets/*
