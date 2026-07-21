@@ -1,11 +1,18 @@
 # Changelog
 
-All notable changes to CC Switch will be documented in this file.
+All notable changes to YuanHeng Switch will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
+
+### Changed
+
+- Established the independent YuanHeng Switch product identity and repository ownership.
+- Isolated runtime data under `~/.yuanheng-switch` with its own database, logs, sync namespace, and deep-link scheme.
+- Replaced upstream update URLs and signing keys with YuanHeng-owned release infrastructure.
+- Added a Windows x64 workflow that publishes MSI and portable EXE artifacts.
 
 ### Added
 

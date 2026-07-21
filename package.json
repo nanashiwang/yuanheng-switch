@@ -1,7 +1,7 @@
 {
-  "name": "cc-switch",
-  "version": "3.17.0",
-  "description": "All-in-One Assistant for Claude Code, Codex & Gemini CLI",
+  "name": "yuanheng-switch",
+  "version": "0.1.0",
+  "description": "YuanHeng AI coding assistant configuration manager",
   "type": "module",
   "scripts": {
     "dev": "pnpm tauri dev",
@@ -16,8 +16,12 @@
     "test:unit:watch": "vitest watch"
   },
   "keywords": [],
-  "author": "Jason Young",
+  "author": "nanashiwang",
   "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/nanashiwang/yuanheng-switch.git"
+  },
   "devDependencies": {
     "@tauri-apps/cli": "^2.8.0",
     "@testing-library/jest-dom": "^6.6.3",

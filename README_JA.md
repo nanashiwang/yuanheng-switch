@@ -1,26 +1,23 @@
 <div align="center">
 
-# CC Switch
+# YuanHeng Switch
 
 ### Claude Code、Claude Desktop、Codex、Gemini CLI、Grok Build、OpenCode、OpenClaw、Hermes Agent のオールインワン管理ツール
 
-[![Version](https://img.shields.io/github/v/release/farion1231/cc-switch?color=blue&label=version)](https://github.com/farion1231/cc-switch/releases)
-[![Platform](https://img.shields.io/badge/platform-Windows%20%7C%20macOS%20%7C%20Linux-lightgrey.svg)](https://github.com/farion1231/cc-switch/releases)
+[![Version](https://img.shields.io/github/v/release/nanashiwang/yuanheng-switch?color=blue&label=version)](https://github.com/nanashiwang/yuanheng-switch/releases)
+[![Platform](https://img.shields.io/badge/platform-Windows%20%7C%20macOS%20%7C%20Linux-lightgrey.svg)](https://github.com/nanashiwang/yuanheng-switch/releases)
 [![Built with Tauri](https://img.shields.io/badge/built%20with-Tauri%202-orange.svg)](https://tauri.app/)
-[![Downloads](https://img.shields.io/github/downloads/farion1231/cc-switch/total)](https://github.com/farion1231/cc-switch/releases/latest)
+[![Downloads](https://img.shields.io/github/downloads/nanashiwang/yuanheng-switch/total)](https://github.com/nanashiwang/yuanheng-switch/releases/latest)
 
-<a href="https://trendshift.io/repositories/15372" target="_blank"><img src="https://trendshift.io/api/badge/repositories/15372" alt="farion1231%2Fcc-switch | Trendshift" style="width: 250px; height: 55px;" width="250" height="55"/></a>
-<a href="https://www.star-history.com/#farion1231/cc-switch&Date"><picture><source media="(prefers-color-scheme: dark)" srcset="https://api.star-history.com/badge?repo=farion1231/cc-switch&theme=dark" /><img alt="Star History Rank" src="https://api.star-history.com/badge?repo=farion1231/cc-switch" width="196" height="55" /></picture></a>
-
-### 🌐 唯一の公式サイト：**[ccswitch.io](https://ccswitch.io)**
+`nanashiwang` が保守する独立した派生版です。MIT License に基づき [farion1231/cc-switch](https://github.com/farion1231/cc-switch) を利用しています。
 
 [English](README.md) | [中文](README_ZH.md) | 日本語 | [Deutsch](README_DE.md) | [Changelog](CHANGELOG.md)
 
 </div>
 
-## ❤️スポンサー
+## アップストリームのパートナー情報
 
-> [ここに掲載しませんか？](mailto:farion1231@gmail.com)
+> 以下は上流由来の情報であり、YuanHeng Switch との提携を示すものではありません。
 
 <details open>
 <summary>クリックで折りたたむ</summary>
@@ -579,10 +576,6 @@ PR を送る前に以下をご確認ください：
 - 単体テスト: `pnpm test:unit`
 
 新機能の場合は、PR を送る前に Issue でディスカッションしてください。プロジェクトに合わない機能の PR はクローズされる場合があります。
-
-## Star History
-
-[![Star History Chart](https://api.star-history.com/svg?repos=farion1231/cc-switch&type=Date)](https://www.star-history.com/#farion1231/cc-switch&Date)
 
 ## ライセンス
 

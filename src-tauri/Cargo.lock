@@ -757,8 +757,8 @@ dependencies = [
 ]
 
 [[package]]
-name = "cc-switch"
-version = "3.17.0"
+name = "yuanheng-switch"
+version = "0.1.0"
 dependencies = [
  "anyhow",
  "arboard",
