@@ -58,11 +58,10 @@ interface ProviderListProps {
   onRemoveFromConfig?: (provider: Provider) => void;
   onDisableOmo?: () => void;
   onDisableOmoSlim?: () => void;
-  onDuplicate: (provider: Provider) => void;
+  onDuplicate?: (provider: Provider) => void;
   onConfigureUsage?: (provider: Provider) => void;
   onOpenWebsite: (url: string) => void;
   onOpenTerminal?: (provider: Provider) => void;
-  onCreate?: () => void;
   isLoading?: boolean;
   isProxyRunning?: boolean; // 代理服务运行状态
   isProxyTakeover?: boolean; // 代理接管模式（Live配置已被接管）
@@ -84,7 +83,6 @@ export function ProviderList({
   onConfigureUsage,
   onOpenWebsite,
   onOpenTerminal,
-  onCreate,
   isLoading = false,
   isProxyRunning = false,
   isProxyTakeover = false,
@@ -256,8 +254,7 @@ export function ProviderList({
 
       const key = event.key.toLowerCase();
       if ((event.metaKey || event.ctrlKey) && key === "f") {
-        // 正在输入框/可编辑区域中时不抢占 Ctrl+F（例如添加供应商表单里
-        // ProviderPresetSelector 的搜索框），避免与其同名快捷键冲突。
+        // 正在输入框/可编辑区域中时不抢占 Ctrl+F。
         if (isTextEditableTarget(document.activeElement)) return;
         event.preventDefault();
         setIsSearchOpen(true);
@@ -368,7 +365,6 @@ export function ProviderList({
     return (
       <ProviderEmptyState
         appId={appId}
-        onCreate={onCreate}
         onImport={() => importMutation.mutate()}
       />
     );
@@ -555,7 +551,7 @@ interface SortableProviderCardProps {
   onRemoveFromConfig?: (provider: Provider) => void;
   onDisableOmo?: () => void;
   onDisableOmoSlim?: () => void;
-  onDuplicate: (provider: Provider) => void;
+  onDuplicate?: (provider: Provider) => void;
   onConfigureUsage?: (provider: Provider) => void;
   onOpenWebsite: (url: string) => void;
   onOpenTerminal?: (provider: Provider) => void;

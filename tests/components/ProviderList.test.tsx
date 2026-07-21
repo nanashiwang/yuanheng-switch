@@ -163,8 +163,7 @@ describe("ProviderList Component", () => {
     expect(placeholders).toHaveLength(3);
   });
 
-  it("should show empty state and trigger create callback when no providers exist", () => {
-    const handleCreate = vi.fn();
+  it("should direct an empty state to the YuanHeng project console", () => {
     useDragSortMock.mockReturnValueOnce({
       sortedProviders: [],
       sensors: [],
@@ -181,16 +180,16 @@ describe("ProviderList Component", () => {
         onDelete={vi.fn()}
         onDuplicate={vi.fn()}
         onOpenWebsite={vi.fn()}
-        onCreate={handleCreate}
       />,
     );
 
-    const addButton = screen.getByRole("button", {
-      name: "provider.addProvider",
+    const consoleLink = screen.getByRole("link", {
+      name: /yuanhengPlatform.openConsole/,
     });
-    fireEvent.click(addButton);
-
-    expect(handleCreate).toHaveBeenCalledTimes(1);
+    expect(consoleLink).toHaveAttribute(
+      "href",
+      "https://cn.meta-api.vip/console/token",
+    );
   });
 
   it("should render in order returned by useDragSort and pass through action callbacks", () => {
@@ -235,12 +234,12 @@ describe("ProviderList Component", () => {
     // Drag attributes from useSortable
     expect(
       providerCardRenderSpy.mock.calls[0][0].dragHandleProps?.attributes[
-      "data-dnd-id"
+        "data-dnd-id"
       ],
     ).toBe("b");
     expect(
       providerCardRenderSpy.mock.calls[1][0].dragHandleProps?.attributes[
-      "data-dnd-id"
+        "data-dnd-id"
       ],
     ).toBe("a");
 

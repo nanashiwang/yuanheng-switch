@@ -42,7 +42,7 @@ export interface GrokBuildProviderPreset {
 
 // 官方条目与后端 seed（providers_seed.rs 的 "Grok Official"）对应：
 // 空 config = 不写自定义模型表，Grok CLI 回落到自带的 xAI OAuth 登录。
-// 预设 id 复用固定 provider id，AddProviderDialog 据此走 ensure seed 流程。
+// 预设 id 复用固定 provider id，平台下发配置时据此走 ensure seed 流程。
 export const grokBuildOfficialPreset: GrokBuildProviderPreset = {
   name: "Grok Official",
   websiteUrl: "https://x.ai/grok",

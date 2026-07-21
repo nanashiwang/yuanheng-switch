@@ -1,7 +1,7 @@
 {
   "app": {
-    "title": "YuanHeng Switch",
-    "description": "Claude Code / Codex / Gemini CLI 全方位輔助工具"
+    "title": "元衡桌面端",
+    "description": "將元衡 API 專案接入本機 AI 程式設計工具"
   },
   "common": {
     "add": "新增",
@@ -43,10 +43,21 @@
     "notSet": "未設定"
   },
   "firstRunNotice": {
-    "title": "歡迎使用 YuanHeng Switch",
-    "bodyDefault": "YuanHeng Switch 可以協助您在 Claude Code / Codex / Gemini CLI 的多個供應商之間一鍵切換。如果您之前已經設定過這些工具，YuanHeng Switch 會自動將現有設定儲存為名為 default 的供應商，確保您的設定不會遺失。",
-    "bodyOfficial": "清單中還預設了「官方 (Official)」供應商，隨時點擊即可切換回官方預設設定。切換前 YuanHeng Switch 會自動將目前設定備份回 default，可以放心來回切換。這就是 YuanHeng Switch 的運作方式。",
+    "title": "歡迎使用元衡桌面端",
+    "bodyDefault": "這是元衡 API 的桌面接入端，用來將專案中的模型設定套用到 Claude Code、Codex 等本機工具。供應商、金鑰、額度與可用模型統一在元衡控制台管理。",
+    "bodyOfficial": "如果本機已經設定過這些工具，應用程式會保留並匯入現有設定，方便平滑接入，不會覆蓋或遺失原本的設定。",
     "confirm": "我了解了"
+  },
+  "yuanhengPlatform": {
+    "eyebrow": "元衡 API · 專案聯動",
+    "connected": "已連線",
+    "connectedTitle": "{{appName}} 已接入元衡 API",
+    "connectedDescription": "目前專案設定已套用到本機；金鑰、模型權限與額度繼續在元衡控制台統一管理。",
+    "readyTitle": "將 {{appName}} 接入您的元衡專案",
+    "readyDescription": "本機不再手動新增供應商。請在元衡控制台統一管理專案權杖與模型接入，桌面端只負責套用與執行。",
+    "activeConnection": "目前專案連線：{{name}}",
+    "localConnection": "目前仍在使用本機設定：{{name}}",
+    "openConsole": "開啟專案控制台"
   },
   "apiKeyInput": {
     "placeholder": "請輸入 API Key",

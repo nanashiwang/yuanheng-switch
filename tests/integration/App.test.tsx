@@ -2,13 +2,7 @@ import { Suspense, type ComponentType } from "react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { render, screen, waitFor, fireEvent } from "@testing-library/react";
 import { describe, it, expect, beforeEach, vi } from "vitest";
-import { providersApi } from "@/lib/api/providers";
-import {
-  resetProviderState,
-  setCurrentProviderId,
-  setLiveProviderIds,
-  setProviders,
-} from "../msw/state";
+import { resetProviderState } from "../msw/state";
 import { emitTauriEvent } from "../msw/tauriMocks";
 
 const toastSuccessMock = vi.fn();
@@ -27,10 +21,8 @@ vi.mock("@/components/providers/ProviderList", () => ({
     currentProviderId,
     onSwitch,
     onEdit,
-    onDuplicate,
     onConfigureUsage,
     onOpenWebsite,
-    onCreate,
   }: any) => (
     <div>
       <div data-testid="provider-list">{JSON.stringify(providers)}</div>
@@ -39,39 +31,14 @@ vi.mock("@/components/providers/ProviderList", () => ({
         switch
       </button>
       <button onClick={() => onEdit(providers[currentProviderId])}>edit</button>
-      <button onClick={() => onDuplicate(providers[currentProviderId])}>
-        duplicate
-      </button>
       <button onClick={() => onConfigureUsage(providers[currentProviderId])}>
         usage
       </button>
       <button onClick={() => onOpenWebsite("https://example.com")}>
         open-website
       </button>
-      <button onClick={() => onCreate?.()}>create</button>
     </div>
   ),
-}));
-
-vi.mock("@/components/providers/AddProviderDialog", () => ({
-  AddProviderDialog: ({ open, onOpenChange, onSubmit, appId }: any) =>
-    open ? (
-      <div data-testid="add-provider-dialog">
-        <button
-          onClick={() =>
-            onSubmit({
-              name: `New ${appId} Provider`,
-              settingsConfig: {},
-              category: "custom",
-              sortIndex: 99,
-            })
-          }
-        >
-          confirm-add
-        </button>
-        <button onClick={() => onOpenChange(false)}>close-add</button>
-      </div>
-    ) : null,
 }));
 
 vi.mock("@/components/providers/EditProviderDialog", () => ({
@@ -185,15 +152,6 @@ describe("App integration with MSW", () => {
     fireEvent.click(screen.getByText("save-script"));
     fireEvent.click(screen.getByText("close-usage"));
 
-    fireEvent.click(screen.getByText("create"));
-    expect(screen.getByTestId("add-provider-dialog")).toBeInTheDocument();
-    fireEvent.click(screen.getByText("confirm-add"));
-    await waitFor(() =>
-      expect(screen.getByTestId("provider-list").textContent).toMatch(
-        /New codex Provider/,
-      ),
-    );
-
     fireEvent.click(screen.getByText("edit"));
     expect(screen.getByTestId("edit-provider-dialog")).toBeInTheDocument();
     fireEvent.click(screen.getByText("confirm-edit"));
@@ -204,10 +162,6 @@ describe("App integration with MSW", () => {
     );
 
     fireEvent.click(screen.getByText("switch"));
-    fireEvent.click(screen.getByText("duplicate"));
-    await waitFor(() =>
-      expect(screen.getByTestId("provider-list").textContent).toMatch(/copy/),
-    );
 
     fireEvent.click(screen.getByText("open-website"));
 
@@ -260,96 +214,5 @@ describe("App integration with MSW", () => {
     await waitFor(() => {
       expect(toastErrorMock).toHaveBeenCalled();
     });
-  });
-
-  it("duplicates openclaw providers with a generated key that avoids live-only ids", async () => {
-    setProviders("openclaw", {
-      deepseek: {
-        id: "deepseek",
-        name: "DeepSeek",
-        settingsConfig: {
-          baseUrl: "https://api.deepseek.com",
-          apiKey: "test-key",
-          api: "openai-completions",
-          models: [],
-        },
-        category: "custom",
-        sortIndex: 0,
-        createdAt: Date.now(),
-      },
-    });
-    setCurrentProviderId("openclaw", "deepseek");
-    setLiveProviderIds("openclaw", ["deepseek-copy"]);
-
-    const { default: App } = await import("@/App");
-    renderApp(App);
-
-    fireEvent.click(screen.getByText("switch-openclaw"));
-
-    await waitFor(() =>
-      expect(screen.getByTestId("provider-list").textContent).toContain(
-        "deepseek",
-      ),
-    );
-
-    fireEvent.click(screen.getByText("duplicate"));
-
-    await waitFor(() => {
-      const providerList = screen.getByTestId("provider-list").textContent;
-      expect(providerList).toContain("deepseek-copy-2");
-      expect(providerList).toContain("DeepSeek copy");
-    });
-
-    expect(toastErrorMock).not.toHaveBeenCalledWith(
-      expect.stringContaining("Provider key is required for openclaw"),
-    );
-  });
-
-  it("shows toast when duplicate cannot load live provider ids", async () => {
-    setProviders("openclaw", {
-      deepseek: {
-        id: "deepseek",
-        name: "DeepSeek",
-        settingsConfig: {
-          baseUrl: "https://api.deepseek.com",
-          apiKey: "test-key",
-          api: "openai-completions",
-          models: [],
-        },
-        category: "custom",
-        sortIndex: 0,
-        createdAt: Date.now(),
-      },
-    });
-    setCurrentProviderId("openclaw", "deepseek");
-
-    const liveIdsSpy = vi
-      .spyOn(providersApi, "getOpenClawLiveProviderIds")
-      .mockRejectedValueOnce(new Error("broken config"));
-
-    const { default: App } = await import("@/App");
-    renderApp(App);
-
-    fireEvent.click(screen.getByText("switch-openclaw"));
-
-    await waitFor(() =>
-      expect(screen.getByTestId("provider-list").textContent).toContain(
-        "deepseek",
-      ),
-    );
-
-    fireEvent.click(screen.getByText("duplicate"));
-
-    await waitFor(() => {
-      expect(toastErrorMock).toHaveBeenCalledWith(
-        expect.stringContaining("读取配置中的供应商标识失败"),
-      );
-    });
-
-    expect(screen.getByTestId("provider-list").textContent).not.toContain(
-      "deepseek-copy",
-    );
-
-    liveIdsSpy.mockRestore();
   });
 });

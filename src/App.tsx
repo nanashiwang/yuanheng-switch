@@ -49,7 +49,6 @@ import { useLastValidValue } from "@/hooks/useLastValidValue";
 import { useScanUnmanagedSkills } from "@/hooks/useSkills";
 import { extractErrorMessage } from "@/utils/errorUtils";
 import { isTextEditableTarget } from "@/utils/domUtils";
-import { deepClone } from "@/utils/deepClone";
 import { cn } from "@/lib/utils";
 import {
   isWindows,
@@ -60,7 +59,7 @@ import {
 import { AppSwitcher } from "@/components/AppSwitcher";
 import { ProfileSwitcher } from "@/components/profiles/ProfileSwitcher";
 import { ProviderList } from "@/components/providers/ProviderList";
-import { AddProviderDialog } from "@/components/providers/AddProviderDialog";
+import { YuanhengProjectBanner } from "@/components/YuanhengProjectBanner";
 import { EditProviderDialog } from "@/components/providers/EditProviderDialog";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { SettingsPage } from "@/components/settings/SettingsPage";
@@ -178,7 +177,6 @@ function App() {
   const [skillsDiscoverySource, setSkillsDiscoverySource] =
     useState<SkillsPageSource>("repos");
   const [settingsDefaultTab, setSettingsDefaultTab] = useState("general");
-  const [isAddOpen, setIsAddOpen] = useState(false);
   const [isWindowMaximized, setIsWindowMaximized] = useState(false);
 
   useEffect(() => {
@@ -260,9 +258,6 @@ function App() {
   // 这里 enabled 默认 false，仅用于「导入」按钮的绿点提示，不主动发起扫描。
   const { data: unmanagedSkills } = useScanUnmanagedSkills();
   const hasUnmanagedSkills = (unmanagedSkills?.length ?? 0) > 0;
-  const addActionButtonClass =
-    "bg-orange-500 hover:bg-orange-600 dark:bg-orange-500 dark:hover:bg-orange-600 text-white shadow-lg shadow-orange-500/30 dark:shadow-orange-500/40 rounded-full w-8 h-8";
-
   const {
     isRunning: isProxyRunning,
     takeoverStatus,
@@ -302,7 +297,6 @@ function App() {
     sharedFeatureApp === "hermes";
 
   const {
-    addProvider,
     updateProvider,
     switchProvider,
     deleteProvider,
@@ -690,117 +684,6 @@ function App() {
     setConfirmAction(null);
   };
 
-  const generateUniqueProviderCopyKey = (
-    originalKey: string,
-    existingKeys: string[],
-  ): string => {
-    const baseKey = `${originalKey}-copy`;
-
-    if (!existingKeys.includes(baseKey)) {
-      return baseKey;
-    }
-
-    let counter = 2;
-    while (existingKeys.includes(`${baseKey}-${counter}`)) {
-      counter++;
-    }
-    return `${baseKey}-${counter}`;
-  };
-
-  const handleDuplicateProvider = async (provider: Provider) => {
-    const newSortIndex =
-      provider.sortIndex !== undefined ? provider.sortIndex + 1 : undefined;
-
-    const duplicatedProvider: Omit<Provider, "id" | "createdAt"> & {
-      providerKey?: string;
-      addToLive?: boolean;
-    } = {
-      name: `${provider.name} copy`,
-      settingsConfig: deepClone(provider.settingsConfig),
-      websiteUrl: provider.websiteUrl,
-      category: provider.category,
-      sortIndex: newSortIndex, // 复制原 sortIndex + 1
-      meta: provider.meta ? deepClone(provider.meta) : undefined,
-      icon: provider.icon,
-      iconColor: provider.iconColor,
-    };
-
-    if (
-      activeApp === "opencode" ||
-      activeApp === "openclaw" ||
-      activeApp === "hermes"
-    ) {
-      let liveProviderIds: string[] = [];
-      try {
-        liveProviderIds =
-          activeApp === "opencode"
-            ? await queryClient.ensureQueryData({
-                queryKey: ["opencodeLiveProviderIds"],
-                queryFn: () => providersApi.getOpenCodeLiveProviderIds(),
-              })
-            : activeApp === "openclaw"
-              ? await queryClient.ensureQueryData({
-                  queryKey: openclawKeys.liveProviderIds,
-                  queryFn: () => providersApi.getOpenClawLiveProviderIds(),
-                })
-              : await queryClient.ensureQueryData({
-                  queryKey: hermesKeys.liveProviderIds,
-                  queryFn: () => providersApi.getHermesLiveProviderIds(),
-                });
-      } catch (error) {
-        console.error(
-          "[App] Failed to load live provider IDs for duplication",
-          error,
-        );
-        const errorMessage = extractErrorMessage(error);
-        toast.error(
-          t("provider.duplicateLiveIdsLoadFailed", {
-            defaultValue: "读取配置中的供应商标识失败，请先修复配置后再试",
-          }) + (errorMessage ? `: ${errorMessage}` : ""),
-        );
-        return;
-      }
-      const existingKeys = Array.from(
-        new Set([...Object.keys(providers), ...liveProviderIds]),
-      );
-      duplicatedProvider.providerKey = generateUniqueProviderCopyKey(
-        provider.id,
-        existingKeys,
-      );
-      duplicatedProvider.addToLive = false;
-    }
-
-    if (provider.sortIndex !== undefined) {
-      const updates = Object.values(providers)
-        .filter(
-          (p) =>
-            p.sortIndex !== undefined &&
-            p.sortIndex >= newSortIndex! &&
-            p.id !== provider.id,
-        )
-        .map((p) => ({
-          id: p.id,
-          sortIndex: p.sortIndex! + 1,
-        }));
-
-      if (updates.length > 0) {
-        try {
-          await providersApi.updateSortOrder(updates, activeApp);
-        } catch (error) {
-          console.error("[App] Failed to update sort order", error);
-          toast.error(
-            t("provider.sortUpdateFailed", {
-              defaultValue: "排序更新失败",
-            }),
-          );
-          return; // 如果排序更新失败，不继续添加
-        }
-      }
-    }
-
-    await addProvider(duplicatedProvider);
-  };
-
   const handleOpenTerminal = async (provider: Provider) => {
     try {
       const selectedDir = await settingsApi.pickDirectory();
@@ -971,6 +854,12 @@ function App() {
           return (
             <div className="px-6 flex flex-col flex-1 min-h-0 overflow-hidden">
               <div className="flex-1 overflow-y-auto overflow-x-hidden pb-12 px-1">
+                {Object.keys(providers).length > 0 && (
+                  <YuanhengProjectBanner
+                    activeApp={activeApp}
+                    currentProvider={providers[currentProviderId]}
+                  />
+                )}
                 <AnimatePresence mode="wait">
                   <motion.div
                     key={activeApp}
@@ -1013,13 +902,11 @@ function App() {
                           ? handleDisableOmoSlim
                           : undefined
                       }
-                      onDuplicate={handleDuplicateProvider}
                       onConfigureUsage={setUsageProvider}
                       onOpenWebsite={handleOpenWebsite}
                       onOpenTerminal={
                         activeApp === "claude" ? handleOpenTerminal : undefined
                       }
-                      onCreate={() => setIsAddOpen(true)}
                       onSetAsDefault={
                         activeApp === "openclaw"
                           ? setAsDefaultModel
@@ -1195,7 +1082,7 @@ function App() {
               <div className="flex items-center gap-2">
                 <div className="relative inline-flex items-center">
                   <a
-                    href="https://github.com/nanashiwang/yuanheng-switch"
+                    href="https://cn.meta-api.vip"
                     target="_blank"
                     rel="noreferrer"
                     className={cn(
@@ -1205,7 +1092,7 @@ function App() {
                         : "text-blue-500 hover:text-blue-600 dark:text-blue-400 dark:hover:text-blue-300",
                     )}
                   >
-                    YuanHeng Switch
+                    {t("app.title")}
                   </a>
                 </div>
                 <Button
@@ -1562,14 +1449,6 @@ function App() {
                         </motion.div>
                       </AnimatePresence>
                     </div>
-
-                    <Button
-                      onClick={() => setIsAddOpen(true)}
-                      size="icon"
-                      className={`ml-2 ${addActionButtonClass}`}
-                    >
-                      <Plus className="w-5 h-5" />
-                    </Button>
                   </>
                 )}
               </div>
@@ -1584,13 +1463,6 @@ function App() {
         )}
         {renderContent()}
       </main>
-
-      <AddProviderDialog
-        open={isAddOpen}
-        onOpenChange={setIsAddOpen}
-        appId={activeApp}
-        onSubmit={addProvider}
-      />
 
       <EditProviderDialog
         open={Boolean(editingProvider)}

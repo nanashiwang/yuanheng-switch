@@ -4,7 +4,7 @@
     "windows": [
       {
         "label": "main",
-        "title": "YuanHeng Switch",
+        "title": "YuanHeng Desktop",
         "titleBarStyle": "Visible",
         "visible": false,
         "minWidth": 900,

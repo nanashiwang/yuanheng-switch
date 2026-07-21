@@ -1,7 +1,7 @@
 {
   "name": "yuanheng-switch",
   "version": "0.1.0",
-  "description": "YuanHeng AI coding assistant configuration manager",
+  "description": "YuanHeng API desktop companion for local AI coding tools",
   "type": "module",
   "scripts": {
     "dev": "pnpm tauri dev",

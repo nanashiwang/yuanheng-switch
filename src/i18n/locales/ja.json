@@ -1,7 +1,7 @@
 {
   "app": {
-    "title": "YuanHeng Switch",
-    "description": "Claude Code・Codex・Gemini CLI のためのオールインワンアシスタント"
+    "title": "YuanHeng Desktop",
+    "description": "YuanHeng API プロジェクトをローカル AI コーディングツールに接続"
   },
   "common": {
     "add": "追加",
@@ -43,10 +43,21 @@
     "notSet": "未設定"
   },
   "firstRunNotice": {
-    "title": "YuanHeng Switch へようこそ",
-    "bodyDefault": "YuanHeng Switch は Claude Code / Codex / Gemini CLI の複数プロバイダーをワンクリックで切り替えられるツールです。すでにこれらのツールを設定済みの場合、YuanHeng Switch は現在の設定を「default」という名前のプロバイダーとして自動的に保存するので、既存の設定が失われることはありません。",
-    "bodyOfficial": "リストには「Official（公式）」プリセットも用意されており、公式バージョンに戻したくなったらクリックするだけで切り替えられます。切り替える前に現在の設定は自動で default にバックアップされるので、自由に行き来できます。これが YuanHeng Switch の仕組みです 😊",
+    "title": "YuanHeng Desktop へようこそ",
+    "bodyDefault": "YuanHeng API のデスクトップ連携アプリです。プロジェクトのモデル設定を Claude Code や Codex などのローカルツールへ適用し、プロバイダー、キー、クォータ、利用可能モデルは YuanHeng コンソールで一元管理します。",
+    "bodyOfficial": "このコンピューターですでに設定済みのツールは、既存設定を保持したまま取り込むため、以前の設定を失わずに接続できます。",
     "confirm": "了解しました"
+  },
+  "yuanhengPlatform": {
+    "eyebrow": "YUANHENG API · プロジェクト連携",
+    "connected": "接続済み",
+    "connectedTitle": "{{appName}} は YuanHeng API に接続済みです",
+    "connectedDescription": "プロジェクト設定はローカルに適用済みです。キー、モデル権限、クォータは YuanHeng コンソールで引き続き一元管理します。",
+    "readyTitle": "{{appName}} を YuanHeng プロジェクトに接続",
+    "readyDescription": "この端末ではプロバイダーを手動追加しません。プロジェクトトークンとモデル接続は YuanHeng コンソールで管理し、デスクトップアプリはローカル適用と実行を担当します。",
+    "activeConnection": "現在のプロジェクト接続：{{name}}",
+    "localConnection": "現在のローカル設定：{{name}}",
+    "openConsole": "プロジェクトコンソールを開く"
   },
   "apiKeyInput": {
     "placeholder": "API Key を入力",

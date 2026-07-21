@@ -1,7 +1,7 @@
 {
   "app": {
-    "title": "YuanHeng Switch",
-    "description": "All-in-One Assistant for Claude Code, Codex & Gemini CLI"
+    "title": "YuanHeng Desktop",
+    "description": "Connect YuanHeng API projects to local AI coding tools"
   },
   "common": {
     "add": "Add",
@@ -43,10 +43,21 @@
     "notSet": "Not Set"
   },
   "firstRunNotice": {
-    "title": "Welcome to YuanHeng Switch",
-    "bodyDefault": "YuanHeng Switch lets you switch between multiple Claude Code / Codex / Gemini CLI providers with a single click. If you already had these tools configured, YuanHeng Switch has saved your existing setup as a provider named “default” so none of your previous configuration is lost.",
-    "bodyOfficial": "An “Official” preset is also included in the list — click it any time you want to switch back to the official default. YuanHeng Switch automatically backs up your current config to “default” before switching, so you can move back and forth freely. That's how YuanHeng Switch works 😊",
+    "title": "Welcome to YuanHeng Desktop",
+    "bodyDefault": "This is the desktop companion for YuanHeng API. It applies your project's model configuration to local tools such as Claude Code and Codex, while providers, keys, quotas and model access stay managed in the YuanHeng console.",
+    "bodyOfficial": "If these tools are already configured on this computer, the app preserves and imports the existing setup so you can connect without losing your previous settings.",
     "confirm": "Got it"
+  },
+  "yuanhengPlatform": {
+    "eyebrow": "YUANHENG API · PROJECT LINK",
+    "connected": "Connected",
+    "connectedTitle": "{{appName}} is connected to YuanHeng API",
+    "connectedDescription": "The project configuration is applied locally; keys, model access and quotas remain managed in the YuanHeng console.",
+    "readyTitle": "Connect {{appName}} to your YuanHeng project",
+    "readyDescription": "Providers are no longer added manually on this device. Manage project tokens and model access in the YuanHeng console; the desktop app handles local application and runtime.",
+    "activeConnection": "Current project connection: {{name}}",
+    "localConnection": "Still using local configuration: {{name}}",
+    "openConsole": "Open project console"
   },
   "apiKeyInput": {
     "placeholder": "Enter API Key",
