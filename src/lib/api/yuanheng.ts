@@ -19,6 +19,11 @@ export interface YuanhengConnectionStatus {
   lastSyncedAt: number | null;
 }
 
+export interface YuanhengAuthResult {
+  requiresTwoFactor: boolean;
+  connection: YuanhengConnectionStatus | null;
+}
+
 export interface YuanhengToolStatus {
   app: AppId;
   supported: boolean;
@@ -50,11 +55,16 @@ export const yuanhengApi = {
     return invoke("get_yuanheng_connection");
   },
 
-  connect(
-    accessToken: string,
-    userId: string,
-  ): Promise<YuanhengConnectionStatus> {
-    return invoke("connect_yuanheng", { accessToken, userId });
+  login(username: string, password: string): Promise<YuanhengAuthResult> {
+    return invoke("login_yuanheng", { username, password });
+  },
+
+  register(username: string, password: string): Promise<YuanhengAuthResult> {
+    return invoke("register_yuanheng", { username, password });
+  },
+
+  verifyTwoFactor(code: string): Promise<YuanhengAuthResult> {
+    return invoke("verify_yuanheng_two_factor", { code });
   },
 
   refresh(): Promise<YuanhengConnectionStatus> {

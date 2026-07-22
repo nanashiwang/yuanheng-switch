@@ -1,6 +1,7 @@
 use std::collections::{BTreeSet, HashMap};
 use std::time::Duration;
 
+use reqwest::header::{HeaderMap, COOKIE, SET_COOKIE};
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Map, Value};
 use tauri::State;
@@ -15,6 +16,10 @@ const OPENAI_BASE_URL: &str = "https://cn.meta-api.vip/v1";
 const MANAGED_PROVIDER_ID: &str = "yuanheng-managed";
 const TOKEN_KEY: &str = "yuanheng_access_token";
 const USER_ID_KEY: &str = "yuanheng_user_id";
+const SESSION_COOKIE_KEY: &str = "yuanheng_session_cookie";
+const PENDING_SESSION_COOKIE_KEY: &str = "yuanheng_pending_session_cookie";
+const API_TOKEN_KEY: &str = "yuanheng_api_token";
+const API_TOKEN_ID_KEY: &str = "yuanheng_api_token_id";
 const CACHE_KEY: &str = "yuanheng_connection_cache";
 const PREVIOUS_PROVIDER_KEY_PREFIX: &str = "yuanheng_previous_provider_";
 const PREVIOUS_HERMES_MODEL_KEY: &str = "yuanheng_previous_hermes_model";
@@ -40,6 +45,13 @@ pub struct YuanhengConnectionStatus {
     pub models: Vec<String>,
     pub announcement: Option<String>,
     pub last_synced_at: Option<i64>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct YuanhengAuthResult {
+    pub requires_two_factor: bool,
+    pub connection: Option<YuanhengConnectionStatus>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -154,27 +166,30 @@ fn collect_model_names(value: &Value, output: &mut BTreeSet<String>) {
     }
 }
 
-async fn fetch_json(
-    client: &reqwest::Client,
-    url: &str,
-    token: Option<&str>,
+fn yuanheng_client() -> Result<reqwest::Client, String> {
+    reqwest::Client::builder()
+        .timeout(Duration::from_secs(15))
+        .build()
+        .map_err(|e| format!("创建元衡客户端失败: {e}"))
+}
+
+fn with_session(
+    mut request: reqwest::RequestBuilder,
+    session_cookie: Option<&str>,
     user_id: Option<&str>,
-) -> Result<Value, String> {
-    let mut request = client
-        .get(url)
-        .header("Accept", "application/json")
-        .header("User-Agent", "yuanheng-desktop/0.1");
-    if let Some(token) = token {
-        request = request.bearer_auth(token);
+) -> reqwest::RequestBuilder {
+    if let Some(cookie) = session_cookie {
+        request = request.header(COOKIE, cookie);
     }
     if let Some(user_id) = user_id {
         request = request.header("New-Api-User", user_id);
     }
-    let response = request
-        .send()
-        .await
-        .map_err(|e| format!("连接元衡失败: {e}"))?;
+    request
+}
+
+async fn parse_json_response(response: reqwest::Response) -> Result<(Value, HeaderMap), String> {
     let status = response.status();
+    let headers = response.headers().clone();
     let body = response
         .text()
         .await
@@ -186,27 +201,220 @@ async fn fetch_json(
             response_message(&value).unwrap_or_else(|| format!("元衡请求失败 (HTTP {status})"))
         );
     }
-    Ok(value)
+    Ok((value, headers))
 }
 
-async fn sync_connection(token: &str, user_id: &str) -> Result<YuanhengConnectionStatus, String> {
-    let client = reqwest::Client::builder()
-        .timeout(Duration::from_secs(15))
-        .build()
-        .map_err(|e| format!("创建元衡客户端失败: {e}"))?;
+async fn fetch_json(
+    client: &reqwest::Client,
+    url: &str,
+    session_cookie: Option<&str>,
+    user_id: Option<&str>,
+) -> Result<Value, String> {
+    let request = client
+        .get(url)
+        .header("Accept", "application/json")
+        .header("User-Agent", "yuanheng-desktop/0.1");
+    let response = with_session(request, session_cookie, user_id)
+        .send()
+        .await
+        .map_err(|e| format!("连接元衡失败: {e}"))?;
+    parse_json_response(response).await.map(|(value, _)| value)
+}
+
+async fn post_json(
+    client: &reqwest::Client,
+    url: &str,
+    body: &Value,
+    session_cookie: Option<&str>,
+    user_id: Option<&str>,
+) -> Result<(Value, HeaderMap), String> {
+    let request = client
+        .post(url)
+        .header("Accept", "application/json")
+        .header("User-Agent", "yuanheng-desktop/0.1")
+        .json(body);
+    let response = with_session(request, session_cookie, user_id)
+        .send()
+        .await
+        .map_err(|e| format!("连接元衡失败: {e}"))?;
+    parse_json_response(response).await
+}
+
+fn ensure_api_success(value: &Value, fallback: &str) -> Result<(), String> {
+    if value.get("success").and_then(Value::as_bool) == Some(true) {
+        Ok(())
+    } else {
+        Err(response_message(value).unwrap_or_else(|| fallback.to_string()))
+    }
+}
+
+fn extract_cookie(headers: &HeaderMap, cookie_name: &str) -> Option<String> {
+    headers
+        .get_all(SET_COOKIE)
+        .iter()
+        .filter_map(|header| header.to_str().ok())
+        .filter_map(|header| header.split(';').next())
+        .filter_map(|pair| {
+            let (name, value) = pair.trim().split_once('=')?;
+            (name == cookie_name && !value.is_empty()).then(|| format!("{name}={value}"))
+        })
+        .last()
+}
+
+fn parse_auth_response(value: &Value) -> Result<(bool, Option<String>), String> {
+    ensure_api_success(value, "元衡登录失败")?;
+    let data = value
+        .get("data")
+        .and_then(Value::as_object)
+        .ok_or_else(|| "元衡登录响应缺少 data".to_string())?;
+    let requires_two_factor = data
+        .get("require_2fa")
+        .or_else(|| data.get("require2fa"))
+        .and_then(Value::as_bool)
+        .unwrap_or(false);
+    if requires_two_factor {
+        return Ok((true, None));
+    }
+    let user_id = data
+        .get("id")
+        .and_then(|id| {
+            id.as_i64()
+                .filter(|id| *id > 0)
+                .map(|id| id.to_string())
+                .or_else(|| id.as_str().filter(|id| !id.is_empty()).map(str::to_string))
+        })
+        .ok_or_else(|| "元衡登录响应缺少用户 ID".to_string())?;
+    Ok((false, Some(user_id)))
+}
+
+fn validate_credentials(username: &str, password: &str) -> Result<(), String> {
+    if username.is_empty() || username.chars().count() > 20 || username.contains(['\n', '\r']) {
+        return Err("用户名不能为空且不能超过 20 个字符".to_string());
+    }
+    if !(8..=20).contains(&password.chars().count()) || password.contains(['\n', '\r']) {
+        return Err("密码长度必须为 8 到 20 个字符".to_string());
+    }
+    Ok(())
+}
+
+fn device_token_name(device_name: Option<&str>) -> String {
+    const PREFIX: &str = "元衡桌面端 - ";
+    const MAX_BYTES: usize = 50;
+    let device_name = device_name
+        .map(str::trim)
+        .filter(|name| !name.is_empty())
+        .unwrap_or("当前设备");
+    let mut name = PREFIX.to_string();
+    for character in device_name.chars() {
+        if name.len() + character.len_utf8() > MAX_BYTES {
+            break;
+        }
+        name.push(character);
+    }
+    name
+}
+
+fn find_device_token_id(value: &Value, expected_name: &str, now: i64) -> Option<i64> {
+    value
+        .pointer("/data/items")
+        .and_then(Value::as_array)?
+        .iter()
+        .filter(|item| item.get("name").and_then(Value::as_str) == Some(expected_name))
+        .filter(|item| item.get("status").and_then(Value::as_i64).unwrap_or(1) == 1)
+        .filter(|item| {
+            item.get("expired_time")
+                .and_then(Value::as_i64)
+                .is_none_or(|expired| expired <= 0 || expired > now)
+        })
+        .filter(|item| {
+            item.get("unlimited_quota")
+                .and_then(Value::as_bool)
+                .unwrap_or(false)
+        })
+        .filter_map(|item| item.get("id").and_then(Value::as_i64))
+        .max()
+}
+
+fn normalize_api_token(raw: &str) -> Result<String, String> {
+    let token = raw.trim();
+    if token.is_empty() || token.len() > 4096 || token.contains(['\n', '\r']) {
+        return Err("元衡返回了无效的工具凭据".to_string());
+    }
+    if token.starts_with("sk-") {
+        Ok(token.to_string())
+    } else {
+        Ok(format!("sk-{token}"))
+    }
+}
+
+async fn ensure_device_api_token(
+    client: &reqwest::Client,
+    session_cookie: &str,
+    user_id: &str,
+) -> Result<(String, i64), String> {
+    let detected_name = crate::services::sync_protocol::detect_system_device_name();
+    let token_name = device_token_name(detected_name.as_deref());
+    let list_url = format!("{BASE_URL}/api/token/?p=1&size=100");
+    let mut list = fetch_json(client, &list_url, Some(session_cookie), Some(user_id)).await?;
+    ensure_api_success(&list, "读取元衡工具凭据失败")?;
+    let now = chrono::Utc::now().timestamp();
+    let token_id = if let Some(id) = find_device_token_id(&list, &token_name, now) {
+        id
+    } else {
+        let (created, _) = post_json(
+            client,
+            &format!("{BASE_URL}/api/token/"),
+            &json!({
+                "name": token_name.as_str(),
+                "expired_time": -1,
+                "remain_quota": 0,
+                "unlimited_quota": true,
+                "model_limits_enabled": false
+            }),
+            Some(session_cookie),
+            Some(user_id),
+        )
+        .await?;
+        ensure_api_success(&created, "创建本机工具凭据失败")?;
+        list = fetch_json(client, &list_url, Some(session_cookie), Some(user_id)).await?;
+        ensure_api_success(&list, "读取新建工具凭据失败")?;
+        find_device_token_id(&list, &token_name, now)
+            .ok_or_else(|| "本机工具凭据已创建，但未能读取凭据编号".to_string())?
+    };
+
+    let key_value = fetch_json(
+        client,
+        &format!("{BASE_URL}/api/token/{token_id}/key"),
+        Some(session_cookie),
+        Some(user_id),
+    )
+    .await?;
+    ensure_api_success(&key_value, "读取本机工具凭据失败")?;
+    let key = key_value
+        .pointer("/data/key")
+        .and_then(Value::as_str)
+        .ok_or_else(|| "元衡工具凭据响应缺少 key".to_string())?;
+    Ok((normalize_api_token(key)?, token_id))
+}
+
+async fn sync_connection(
+    client: &reqwest::Client,
+    session_cookie: &str,
+    user_id: &str,
+) -> Result<YuanhengConnectionStatus, String> {
     let account_value = fetch_json(
-        &client,
+        client,
         &format!("{BASE_URL}/api/user/self"),
-        Some(token),
+        Some(session_cookie),
         Some(user_id),
     )
     .await?;
     let account = parse_account(&account_value)?;
 
     let pricing = fetch_json(
-        &client,
+        client,
         &format!("{BASE_URL}/api/pricing"),
-        Some(token),
+        Some(session_cookie),
         Some(user_id),
     )
     .await
@@ -216,7 +424,7 @@ async fn sync_connection(token: &str, user_id: &str) -> Result<YuanhengConnectio
         collect_model_names(pricing, &mut model_names);
     }
 
-    let notice = fetch_json(&client, &format!("{BASE_URL}/api/notice"), None, None)
+    let notice = fetch_json(client, &format!("{BASE_URL}/api/notice"), None, None)
         .await
         .ok()
         .and_then(|value| {
@@ -238,9 +446,114 @@ async fn sync_connection(token: &str, user_id: &str) -> Result<YuanhengConnectio
     })
 }
 
+fn persist_connection(
+    state: &AppState,
+    session_cookie: &str,
+    user_id: &str,
+    api_token: &str,
+    api_token_id: i64,
+    status: &YuanhengConnectionStatus,
+) -> Result<(), String> {
+    for (key, value) in [
+        (SESSION_COOKIE_KEY, session_cookie),
+        (USER_ID_KEY, user_id),
+        (API_TOKEN_KEY, api_token),
+    ] {
+        state
+            .db
+            .set_setting(key, value)
+            .map_err(|e| e.to_string())?;
+    }
+    state
+        .db
+        .set_setting(API_TOKEN_ID_KEY, &api_token_id.to_string())
+        .map_err(|e| e.to_string())?;
+    state
+        .db
+        .set_setting(
+            CACHE_KEY,
+            &serde_json::to_string(status).map_err(|e| e.to_string())?,
+        )
+        .map_err(|e| e.to_string())?;
+    for key in [TOKEN_KEY, PENDING_SESSION_COOKIE_KEY] {
+        state.db.set_setting(key, "").map_err(|e| e.to_string())?;
+    }
+    Ok(())
+}
+
+async fn finish_authenticated_session(
+    state: &AppState,
+    client: &reqwest::Client,
+    session_cookie: &str,
+    user_id: &str,
+) -> Result<YuanhengConnectionStatus, String> {
+    let status = sync_connection(client, session_cookie, user_id).await?;
+    let (api_token, api_token_id) =
+        ensure_device_api_token(client, session_cookie, user_id).await?;
+    persist_connection(
+        state,
+        session_cookie,
+        user_id,
+        &api_token,
+        api_token_id,
+        &status,
+    )?;
+    Ok(status)
+}
+
+async fn login_with_credentials(
+    state: &AppState,
+    username: &str,
+    password: &str,
+) -> Result<YuanhengAuthResult, String> {
+    validate_credentials(username, password)?;
+    let client = yuanheng_client()?;
+    let (value, headers) = post_json(
+        &client,
+        &format!("{BASE_URL}/api/user/login"),
+        &json!({ "username": username, "password": password }),
+        None,
+        None,
+    )
+    .await?;
+    let (requires_two_factor, user_id) = parse_auth_response(&value)?;
+    let session_cookie = extract_cookie(&headers, "session")
+        .ok_or_else(|| "元衡登录成功，但未返回有效会话".to_string())?;
+    if requires_two_factor {
+        state
+            .db
+            .set_setting(PENDING_SESSION_COOKIE_KEY, &session_cookie)
+            .map_err(|e| e.to_string())?;
+        return Ok(YuanhengAuthResult {
+            requires_two_factor: true,
+            connection: None,
+        });
+    }
+    let user_id = user_id.ok_or_else(|| "元衡登录响应缺少用户 ID".to_string())?;
+    let status = finish_authenticated_session(state, &client, &session_cookie, &user_id).await?;
+    Ok(YuanhengAuthResult {
+        requires_two_factor: false,
+        connection: Some(status),
+    })
+}
+
 fn read_cached_status(state: &AppState) -> Result<YuanhengConnectionStatus, String> {
-    let token = state.db.get_setting(TOKEN_KEY).map_err(|e| e.to_string())?;
-    if token.as_deref().unwrap_or_default().is_empty() {
+    let session = state
+        .db
+        .get_setting(SESSION_COOKIE_KEY)
+        .map_err(|e| e.to_string())?;
+    let token = state
+        .db
+        .get_setting(API_TOKEN_KEY)
+        .map_err(|e| e.to_string())?;
+    let user_id = state
+        .db
+        .get_setting(USER_ID_KEY)
+        .map_err(|e| e.to_string())?;
+    if [session.as_deref(), token.as_deref(), user_id.as_deref()]
+        .into_iter()
+        .any(|value| value.unwrap_or_default().is_empty())
+    {
         return Ok(YuanhengConnectionStatus::default());
     }
     let cached = state.db.get_setting(CACHE_KEY).map_err(|e| e.to_string())?;
@@ -667,7 +980,15 @@ fn disconnect_yuanheng_inner(state: &AppState) -> Result<YuanhengDisconnectResul
             }
         }
     }
-    for key in [TOKEN_KEY, USER_ID_KEY, CACHE_KEY] {
+    for key in [
+        TOKEN_KEY,
+        USER_ID_KEY,
+        SESSION_COOKIE_KEY,
+        PENDING_SESSION_COOKIE_KEY,
+        API_TOKEN_KEY,
+        API_TOKEN_ID_KEY,
+        CACHE_KEY,
+    ] {
         state.db.set_setting(key, "").map_err(|e| e.to_string())?;
     }
     Ok(result)
@@ -724,7 +1045,10 @@ pub fn get_yuanheng_tool_statuses(
     state: State<'_, AppState>,
 ) -> Result<Vec<YuanhengToolStatus>, String> {
     let connection = read_cached_status(&state)?;
-    let token = state.db.get_setting(TOKEN_KEY).map_err(|e| e.to_string())?;
+    let token = state
+        .db
+        .get_setting(API_TOKEN_KEY)
+        .map_err(|e| e.to_string())?;
     Ok(AppType::all()
         .map(|app| tool_status(&state, app, &connection.models, token.as_deref()))
         .collect())
@@ -742,7 +1066,7 @@ pub fn configure_yuanheng_tools(
     }
     let token = state
         .db
-        .get_setting(TOKEN_KEY)
+        .get_setting(API_TOKEN_KEY)
         .map_err(|e| e.to_string())?
         .filter(|value| !value.is_empty())
         .ok_or_else(|| "请先连接元衡账号".to_string())?;
@@ -787,51 +1111,82 @@ pub fn configure_yuanheng_tools(
     Ok(results)
 }
 
+#[tauri::command]
+pub async fn login_yuanheng(
+    state: State<'_, AppState>,
+    username: String,
+    password: String,
+) -> Result<YuanhengAuthResult, String> {
+    login_with_credentials(&state, username.trim(), &password).await
+}
+
+#[tauri::command]
+pub async fn register_yuanheng(
+    state: State<'_, AppState>,
+    username: String,
+    password: String,
+) -> Result<YuanhengAuthResult, String> {
+    let username = username.trim();
+    validate_credentials(username, &password)?;
+    let client = yuanheng_client()?;
+    let (value, _) = post_json(
+        &client,
+        &format!("{BASE_URL}/api/user/register"),
+        &json!({ "username": username, "password": password.as_str() }),
+        None,
+        None,
+    )
+    .await?;
+    ensure_api_success(&value, "元衡注册失败")?;
+    login_with_credentials(&state, username, &password).await
+}
+
 #[allow(non_snake_case)]
 #[tauri::command]
-pub async fn connect_yuanheng(
+pub async fn verify_yuanheng_two_factor(
     state: State<'_, AppState>,
-    accessToken: String,
-    userId: String,
-) -> Result<YuanhengConnectionStatus, String> {
-    let token = accessToken.trim();
-    let user_id = userId.trim();
-    if token.is_empty() || token.len() > 4096 || token.contains(['\n', '\r']) {
-        return Err("访问令牌格式无效".to_string());
+    code: String,
+) -> Result<YuanhengAuthResult, String> {
+    let code = code.trim();
+    if code.is_empty() || code.len() > 64 || code.contains(['\n', '\r']) {
+        return Err("请输入有效的两步验证码或备用码".to_string());
     }
-    if user_id.is_empty()
-        || user_id.len() > 32
-        || !user_id.chars().all(|value| value.is_ascii_digit())
-    {
-        return Err("用户 ID 必须是数字".to_string());
+    let pending_cookie = state
+        .db
+        .get_setting(PENDING_SESSION_COOKIE_KEY)
+        .map_err(|e| e.to_string())?
+        .filter(|value| !value.is_empty())
+        .ok_or_else(|| "两步验证会话已过期，请重新登录".to_string())?;
+    let client = yuanheng_client()?;
+    let (value, headers) = post_json(
+        &client,
+        &format!("{BASE_URL}/api/user/login/2fa"),
+        &json!({ "code": code }),
+        Some(&pending_cookie),
+        None,
+    )
+    .await?;
+    let (requires_two_factor, user_id) = parse_auth_response(&value)?;
+    if requires_two_factor {
+        return Err("元衡仍要求两步验证，请重新输入验证码".to_string());
     }
-
-    let status = sync_connection(token, user_id).await?;
-    state
-        .db
-        .set_setting(TOKEN_KEY, token)
-        .map_err(|e| e.to_string())?;
-    state
-        .db
-        .set_setting(USER_ID_KEY, user_id)
-        .map_err(|e| e.to_string())?;
-    state
-        .db
-        .set_setting(
-            CACHE_KEY,
-            &serde_json::to_string(&status).map_err(|e| e.to_string())?,
-        )
-        .map_err(|e| e.to_string())?;
-    Ok(status)
+    let session_cookie = extract_cookie(&headers, "session")
+        .ok_or_else(|| "两步验证成功，但未返回有效会话".to_string())?;
+    let user_id = user_id.ok_or_else(|| "元衡登录响应缺少用户 ID".to_string())?;
+    let status = finish_authenticated_session(&state, &client, &session_cookie, &user_id).await?;
+    Ok(YuanhengAuthResult {
+        requires_two_factor: false,
+        connection: Some(status),
+    })
 }
 
 #[tauri::command]
 pub async fn refresh_yuanheng_connection(
     state: State<'_, AppState>,
 ) -> Result<YuanhengConnectionStatus, String> {
-    let token = state
+    let session_cookie = state
         .db
-        .get_setting(TOKEN_KEY)
+        .get_setting(SESSION_COOKIE_KEY)
         .map_err(|e| e.to_string())?
         .filter(|value| !value.is_empty())
         .ok_or_else(|| "元衡尚未连接".to_string())?;
@@ -841,15 +1196,8 @@ pub async fn refresh_yuanheng_connection(
         .map_err(|e| e.to_string())?
         .filter(|value| !value.is_empty())
         .ok_or_else(|| "元衡用户 ID 缺失".to_string())?;
-    let status = sync_connection(&token, &user_id).await?;
-    state
-        .db
-        .set_setting(
-            CACHE_KEY,
-            &serde_json::to_string(&status).map_err(|e| e.to_string())?,
-        )
-        .map_err(|e| e.to_string())?;
-    Ok(status)
+    let client = yuanheng_client()?;
+    finish_authenticated_session(&state, &client, &session_cookie, &user_id).await
 }
 
 #[tauri::command]
@@ -896,6 +1244,85 @@ mod tests {
         let home = TestHome::new();
         let db = Arc::new(Database::memory().expect("in-memory database"));
         (home, AppState::new(db))
+    }
+
+    #[test]
+    fn extracts_latest_session_cookie() {
+        let mut headers = HeaderMap::new();
+        headers.append(
+            SET_COOKIE,
+            "session=pending; Path=/; HttpOnly".parse().unwrap(),
+        );
+        headers.append(
+            SET_COOKIE,
+            "session=authenticated; Path=/; HttpOnly".parse().unwrap(),
+        );
+        assert_eq!(
+            extract_cookie(&headers, "session").as_deref(),
+            Some("session=authenticated")
+        );
+    }
+
+    #[test]
+    fn parses_two_factor_login_response() {
+        let parsed = parse_auth_response(&json!({
+            "success": true,
+            "data": { "require_2fa": true }
+        }))
+        .unwrap();
+        assert_eq!(parsed, (true, None));
+
+        let parsed = parse_auth_response(&json!({
+            "success": true,
+            "data": { "id": 1024, "username": "nanashi" }
+        }))
+        .unwrap();
+        assert_eq!(parsed, (false, Some("1024".to_string())));
+    }
+
+    #[test]
+    fn builds_safe_device_token_name_and_normalizes_key() {
+        let name = device_token_name(Some("测试设备名称非常非常长-MacBook-Pro"));
+        assert!(name.starts_with("元衡桌面端 - "));
+        assert!(name.len() <= 50);
+        assert_eq!(normalize_api_token("raw-key").unwrap(), "sk-raw-key");
+        assert_eq!(normalize_api_token("sk-ready").unwrap(), "sk-ready");
+    }
+
+    #[test]
+    fn finds_latest_usable_device_token() {
+        let value = json!({
+            "success": true,
+            "data": {
+                "items": [
+                    { "id": 1, "name": "device", "status": 1, "expired_time": -1, "unlimited_quota": true },
+                    { "id": 2, "name": "device", "status": 2, "expired_time": -1, "unlimited_quota": true },
+                    { "id": 3, "name": "device", "status": 1, "expired_time": -1, "unlimited_quota": true },
+                    { "id": 4, "name": "other", "status": 1, "expired_time": -1, "unlimited_quota": true }
+                ]
+            }
+        });
+        assert_eq!(find_device_token_id(&value, "device", 100), Some(3));
+    }
+
+    #[test]
+    #[serial]
+    fn legacy_access_token_does_not_count_as_logged_in() {
+        let (_home, state) = isolated_state();
+        state.db.set_setting(TOKEN_KEY, "legacy-token").unwrap();
+        state
+            .db
+            .set_setting(
+                CACHE_KEY,
+                &serde_json::to_string(&YuanhengConnectionStatus {
+                    connected: true,
+                    ..Default::default()
+                })
+                .unwrap(),
+            )
+            .unwrap();
+
+        assert!(!read_cached_status(&state).unwrap().connected);
     }
 
     #[test]

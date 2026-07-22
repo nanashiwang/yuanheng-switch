@@ -1524,7 +1524,9 @@ pub fn run() {
             commands::get_yuanheng_connection,
             commands::get_yuanheng_tool_statuses,
             commands::configure_yuanheng_tools,
-            commands::connect_yuanheng,
+            commands::login_yuanheng,
+            commands::register_yuanheng,
+            commands::verify_yuanheng_two_factor,
             commands::refresh_yuanheng_connection,
             commands::disconnect_yuanheng,
             // Universal Provider management

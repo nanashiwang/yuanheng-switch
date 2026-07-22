@@ -15,19 +15,53 @@ export function useYuanhengConnection() {
   });
 }
 
-export function useConnectYuanheng() {
+export function useLoginYuanheng() {
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn: ({
-      accessToken,
-      userId,
+      username,
+      password,
     }: {
-      accessToken: string;
-      userId: string;
-    }) => yuanhengApi.connect(accessToken, userId),
-    onSuccess: (status) => {
-      queryClient.setQueryData(yuanhengKeys.connection, status);
-      queryClient.invalidateQueries({ queryKey: yuanhengKeys.tools });
+      username: string;
+      password: string;
+    }) => yuanhengApi.login(username, password),
+    onSuccess: (result) => {
+      if (result.connection) {
+        queryClient.setQueryData(yuanhengKeys.connection, result.connection);
+        queryClient.invalidateQueries({ queryKey: yuanhengKeys.tools });
+      }
+    },
+  });
+}
+
+export function useRegisterYuanheng() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({
+      username,
+      password,
+    }: {
+      username: string;
+      password: string;
+    }) => yuanhengApi.register(username, password),
+    onSuccess: (result) => {
+      if (result.connection) {
+        queryClient.setQueryData(yuanhengKeys.connection, result.connection);
+        queryClient.invalidateQueries({ queryKey: yuanhengKeys.tools });
+      }
+    },
+  });
+}
+
+export function useVerifyYuanhengTwoFactor() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (code: string) => yuanhengApi.verifyTwoFactor(code),
+    onSuccess: (result) => {
+      if (result.connection) {
+        queryClient.setQueryData(yuanhengKeys.connection, result.connection);
+        queryClient.invalidateQueries({ queryKey: yuanhengKeys.tools });
+      }
     },
   });
 }

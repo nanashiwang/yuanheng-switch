@@ -27,6 +27,7 @@ import {
   getYuanhengConnection,
   getYuanhengToolStatuses,
   recordToolLaunch,
+  setYuanhengConnection,
 } from "./state";
 
 const TAURI_ENDPOINT = "http://tauri.local";
@@ -43,20 +44,62 @@ const withJson = async <T>(request: Request): Promise<T> => {
 
 const success = <T>(payload: T) => HttpResponse.json(payload as any);
 
+const authenticateYuanheng = (username: string) => {
+  setYuanhengConnection({
+    connected: true,
+    userId: "1024",
+    account: {
+      username,
+      displayName: username,
+      group: "default",
+      remainingUsd: 10,
+      usedUsd: 1,
+    },
+    models: ["claude-sonnet-4-6", "gemini-3-pro", "gpt-5.6"],
+    lastSyncedAt: Math.floor(Date.now() / 1000),
+  });
+  return {
+    requiresTwoFactor: false,
+    connection: getYuanhengConnection(),
+  };
+};
+
 export const handlers = [
   http.post(`${TAURI_ENDPOINT}/get_migration_result`, () => success(false)),
   http.post(`${TAURI_ENDPOINT}/get_yuanheng_connection`, () =>
     success(getYuanhengConnection()),
   ),
-  http.post(`${TAURI_ENDPOINT}/disconnect_yuanheng`, () =>
-    success({
+  http.post(`${TAURI_ENDPOINT}/login_yuanheng`, async ({ request }) => {
+    const { username = "mock-user" } = await withJson<{ username?: string }>(
+      request,
+    );
+    if (username === "twofactor") {
+      return success({ requiresTwoFactor: true, connection: null });
+    }
+    return success(authenticateYuanheng(username));
+  }),
+  http.post(`${TAURI_ENDPOINT}/register_yuanheng`, async ({ request }) => {
+    const { username = "mock-user" } = await withJson<{ username?: string }>(
+      request,
+    );
+    return success(authenticateYuanheng(username));
+  }),
+  http.post(`${TAURI_ENDPOINT}/verify_yuanheng_two_factor`, () =>
+    success(authenticateYuanheng("twofactor")),
+  ),
+  http.post(`${TAURI_ENDPOINT}/refresh_yuanheng_connection`, () =>
+    success(getYuanhengConnection()),
+  ),
+  http.post(`${TAURI_ENDPOINT}/disconnect_yuanheng`, () => {
+    setYuanhengConnection({ connected: false });
+    return success({
       disconnected: true,
       restoredTools: [],
       removedTools: [],
       retainedTools: [],
       warnings: [],
-    }),
-  ),
+    });
+  }),
   http.post(`${TAURI_ENDPOINT}/get_yuanheng_tool_statuses`, () =>
     success(getYuanhengToolStatuses()),
   ),

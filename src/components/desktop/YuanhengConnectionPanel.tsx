@@ -2,24 +2,26 @@ import { useState } from "react";
 import {
   CheckCircle2,
   Cloud,
-  ExternalLink,
-  KeyRound,
   Loader2,
+  LogIn,
   LogOut,
   RefreshCw,
   ShieldCheck,
+  UserPlus,
   WalletCards,
 } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { settingsApi } from "@/lib/api";
+import type { YuanhengAuthResult } from "@/lib/api/yuanheng";
 import { APP_ICON_MAP } from "@/config/appConfig";
 import {
-  useConnectYuanheng,
   useDisconnectYuanheng,
+  useLoginYuanheng,
   useRefreshYuanheng,
+  useRegisterYuanheng,
+  useVerifyYuanhengTwoFactor,
   useYuanhengConnection,
 } from "@/lib/query/yuanheng";
 import { extractErrorMessage } from "@/utils/errorUtils";
@@ -42,21 +44,80 @@ export function YuanhengConnectionPanel({
   onConnected,
 }: YuanhengConnectionPanelProps) {
   const { data: status, isLoading } = useYuanhengConnection();
-  const connect = useConnectYuanheng();
+  const login = useLoginYuanheng();
+  const register = useRegisterYuanheng();
+  const verifyTwoFactor = useVerifyYuanhengTwoFactor();
   const refresh = useRefreshYuanheng();
   const disconnect = useDisconnectYuanheng();
-  const [accessToken, setAccessToken] = useState("");
-  const [userId, setUserId] = useState("");
+  const [authMode, setAuthMode] = useState<"login" | "register">("login");
+  const [username, setUsername] = useState("");
+  const [password, setPassword] = useState("");
+  const [confirmPassword, setConfirmPassword] = useState("");
+  const [requiresTwoFactor, setRequiresTwoFactor] = useState(false);
+  const [twoFactorCode, setTwoFactorCode] = useState("");
 
-  const handleConnect = async () => {
-    try {
-      await connect.mutateAsync({ accessToken, userId });
-      setAccessToken("");
-      toast.success("元衡账号已连接");
-      onConnected?.();
-    } catch (error) {
-      toast.error(extractErrorMessage(error) || "连接失败，请检查设备凭据");
+  const finishAuthentication = (result: YuanhengAuthResult) => {
+    setPassword("");
+    setConfirmPassword("");
+    if (result.requiresTwoFactor) {
+      setRequiresTwoFactor(true);
+      toast.success("账号密码验证通过，请完成两步验证");
+      return;
     }
+    setUsername("");
+    setTwoFactorCode("");
+    setRequiresTwoFactor(false);
+    toast.success(authMode === "register" ? "注册并登录成功" : "登录成功");
+    onConnected?.();
+  };
+
+  const handleAuthenticate = async () => {
+    const normalizedUsername = username.trim();
+    if (!normalizedUsername || normalizedUsername.length > 20) {
+      toast.error("用户名不能为空且不能超过 20 个字符");
+      return;
+    }
+    if (password.length < 8 || password.length > 20) {
+      toast.error("密码长度必须为 8 到 20 个字符");
+      return;
+    }
+    if (authMode === "register" && password !== confirmPassword) {
+      toast.error("两次输入的密码不一致");
+      return;
+    }
+    try {
+      const result = await (
+        authMode === "register" ? register : login
+      ).mutateAsync({
+        username: normalizedUsername,
+        password,
+      });
+      finishAuthentication(result);
+    } catch (error) {
+      toast.error(
+        extractErrorMessage(error) ||
+          (authMode === "register" ? "注册失败" : "登录失败"),
+      );
+    }
+  };
+
+  const handleTwoFactor = async () => {
+    if (!twoFactorCode.trim()) {
+      toast.error("请输入两步验证码或备用码");
+      return;
+    }
+    try {
+      const result = await verifyTwoFactor.mutateAsync(twoFactorCode.trim());
+      finishAuthentication(result);
+    } catch (error) {
+      toast.error(extractErrorMessage(error) || "两步验证失败");
+    }
+  };
+
+  const switchAuthMode = (mode: "login" | "register") => {
+    setAuthMode(mode);
+    setPassword("");
+    setConfirmPassword("");
   };
 
   const handleRefresh = async () => {
@@ -98,6 +159,7 @@ export function YuanhengConnectionPanel({
   }
 
   if (!status?.connected) {
+    const authPending = login.isPending || register.isPending;
     return (
       <section className="relative overflow-hidden rounded-2xl border border-primary/20 bg-gradient-to-br from-primary/[0.07] via-card to-[#d69554]/[0.08] p-5">
         <div className="pointer-events-none absolute -right-12 -top-16 h-40 w-40 rounded-full bg-primary/10 blur-3xl" />
@@ -115,70 +177,166 @@ export function YuanhengConnectionPanel({
               元衡 API
             </p>
             <h2 className="font-display mt-1 text-xl font-semibold">
-              连接你的元衡账号
+              {requiresTwoFactor ? "完成两步验证" : "登录你的元衡账号"}
             </h2>
             <p className="mt-2 max-w-lg text-[13px] leading-5 text-muted-foreground">
-              桌面端保存设备凭据并同步账号模型权限，不需要逐个维护工具的 API
-              地址或 Key。访问令牌可在元衡控制台创建。
+              {requiresTwoFactor
+                ? "输入认证器验证码或备用码，验证成功后即可继续。"
+                : "直接使用账号密码登录或注册。密码不会保存在本机，登录后客户端会自动创建或复用本机专用工具凭据。"}
             </p>
-            <Button
-              variant="link"
-              className="mt-2 h-auto px-0 text-[12px]"
-              onClick={() =>
-                void settingsApi.openExternal(
-                  "https://cn.meta-api.vip/console/token",
-                )
-              }
-            >
-              打开令牌控制台 <ExternalLink className="h-3.5 w-3.5" />
-            </Button>
+            {!requiresTwoFactor && (
+              <p className="mt-3 inline-flex items-center gap-1.5 rounded-full bg-emerald-500/10 px-2.5 py-1 text-[10px] font-medium text-emerald-700 dark:text-emerald-300">
+                <ShieldCheck className="h-3 w-3" /> 账号密码仅用于本次认证
+              </p>
+            )}
           </div>
           <div className="relative rounded-xl border bg-background/80 p-4 shadow-sm">
-            <div className="space-y-3">
-              <div className="space-y-1.5">
-                <Label htmlFor="yuanheng-user-id" className="text-[12px]">
-                  用户 ID
-                </Label>
-                <Input
-                  id="yuanheng-user-id"
-                  inputMode="numeric"
-                  value={userId}
-                  onChange={(event) => setUserId(event.target.value)}
-                  placeholder="例如 1024"
-                  className="h-9"
-                />
-              </div>
-              <div className="space-y-1.5">
-                <Label htmlFor="yuanheng-access-token" className="text-[12px]">
-                  访问令牌
-                </Label>
-                <Input
-                  id="yuanheng-access-token"
-                  type="password"
-                  value={accessToken}
-                  onChange={(event) => setAccessToken(event.target.value)}
-                  placeholder="粘贴元衡访问令牌"
-                  className="h-9"
-                  onKeyDown={(event) => {
-                    if (event.key === "Enter") void handleConnect();
-                  }}
-                />
-              </div>
-              <Button
-                className="w-full"
-                disabled={
-                  !accessToken.trim() || !userId.trim() || connect.isPending
-                }
-                onClick={() => void handleConnect()}
+            {requiresTwoFactor ? (
+              <form
+                className="space-y-3"
+                onSubmit={(event) => {
+                  event.preventDefault();
+                  void handleTwoFactor();
+                }}
               >
-                {connect.isPending ? (
-                  <Loader2 className="h-4 w-4 animate-spin" />
-                ) : (
-                  <KeyRound className="h-4 w-4" />
+                <div className="space-y-1.5">
+                  <Label htmlFor="yuanheng-two-factor" className="text-[12px]">
+                    两步验证码
+                  </Label>
+                  <Input
+                    id="yuanheng-two-factor"
+                    autoFocus
+                    autoComplete="one-time-code"
+                    value={twoFactorCode}
+                    onChange={(event) => setTwoFactorCode(event.target.value)}
+                    placeholder="6 位验证码或备用码"
+                    className="h-9"
+                  />
+                </div>
+                <Button
+                  type="submit"
+                  className="w-full"
+                  disabled={!twoFactorCode.trim() || verifyTwoFactor.isPending}
+                >
+                  {verifyTwoFactor.isPending ? (
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                  ) : (
+                    <ShieldCheck className="h-4 w-4" />
+                  )}
+                  验证并登录
+                </Button>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  className="w-full text-[12px]"
+                  disabled={verifyTwoFactor.isPending}
+                  onClick={() => {
+                    setRequiresTwoFactor(false);
+                    setTwoFactorCode("");
+                  }}
+                >
+                  返回账号登录
+                </Button>
+              </form>
+            ) : (
+              <form
+                className="space-y-3"
+                onSubmit={(event) => {
+                  event.preventDefault();
+                  void handleAuthenticate();
+                }}
+              >
+                <div className="grid grid-cols-2 gap-1 rounded-lg bg-muted/65 p-1">
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant={authMode === "login" ? "secondary" : "ghost"}
+                    className="h-8 text-[12px]"
+                    aria-pressed={authMode === "login"}
+                    onClick={() => switchAuthMode("login")}
+                  >
+                    登录
+                  </Button>
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant={authMode === "register" ? "secondary" : "ghost"}
+                    className="h-8 text-[12px]"
+                    aria-pressed={authMode === "register"}
+                    onClick={() => switchAuthMode("register")}
+                  >
+                    注册
+                  </Button>
+                </div>
+                <div className="space-y-1.5">
+                  <Label htmlFor="yuanheng-username" className="text-[12px]">
+                    用户名
+                  </Label>
+                  <Input
+                    id="yuanheng-username"
+                    autoComplete="username"
+                    value={username}
+                    onChange={(event) => setUsername(event.target.value)}
+                    placeholder="输入元衡用户名"
+                    maxLength={20}
+                    className="h-9"
+                  />
+                </div>
+                <div className="space-y-1.5">
+                  <Label htmlFor="yuanheng-password" className="text-[12px]">
+                    密码
+                  </Label>
+                  <Input
+                    id="yuanheng-password"
+                    type="password"
+                    autoComplete={
+                      authMode === "register"
+                        ? "new-password"
+                        : "current-password"
+                    }
+                    value={password}
+                    onChange={(event) => setPassword(event.target.value)}
+                    placeholder="8 到 20 个字符"
+                    className="h-9"
+                  />
+                </div>
+                {authMode === "register" && (
+                  <div className="space-y-1.5">
+                    <Label
+                      htmlFor="yuanheng-confirm-password"
+                      className="text-[12px]"
+                    >
+                      确认密码
+                    </Label>
+                    <Input
+                      id="yuanheng-confirm-password"
+                      type="password"
+                      autoComplete="new-password"
+                      value={confirmPassword}
+                      onChange={(event) =>
+                        setConfirmPassword(event.target.value)
+                      }
+                      placeholder="再次输入密码"
+                      className="h-9"
+                    />
+                  </div>
                 )}
-                验证并连接
-              </Button>
-            </div>
+                <Button
+                  type="submit"
+                  className="w-full"
+                  disabled={!username.trim() || !password || authPending}
+                >
+                  {authPending ? (
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                  ) : authMode === "register" ? (
+                    <UserPlus className="h-4 w-4" />
+                  ) : (
+                    <LogIn className="h-4 w-4" />
+                  )}
+                  {authMode === "register" ? "注册并登录" : "登录"}
+                </Button>
+              </form>
+            )}
           </div>
         </div>
       </section>
@@ -205,7 +363,7 @@ export function YuanhengConnectionPanel({
             </span>
           </div>
           <p className="mt-0.5 text-[11px] text-muted-foreground">
-            元衡已连接 · 用户 ID {status.userId}
+            元衡账号已登录 · 本机工具凭据已就绪
           </p>
         </div>
         <Button
@@ -227,7 +385,7 @@ export function YuanhengConnectionPanel({
             disabled={disconnect.isPending}
           >
             <LogOut className="h-3.5 w-3.5" />
-            断开
+            退出登录
           </Button>
         )}
       </div>
