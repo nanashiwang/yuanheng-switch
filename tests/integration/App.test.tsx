@@ -1,21 +1,14 @@
 import { Suspense, type ComponentType } from "react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import {
-  render,
-  screen,
-  waitFor,
-  fireEvent,
-  within,
-} from "@testing-library/react";
+import { render, screen, waitFor, fireEvent } from "@testing-library/react";
 import { describe, it, expect, beforeEach, vi } from "vitest";
 import {
-  getProfileApplyCalls,
-  getProjectLaunchCalls,
+  getConfiguredToolCalls,
+  getLaunchedToolCalls,
   resetProviderState,
-  setProfileFixtures,
   setSettings,
+  setYuanhengConnection,
 } from "../msw/state";
-import type { Profile } from "@/lib/api/profiles";
 import { emitTauriEvent } from "../msw/tauriMocks";
 
 const toastSuccessMock = vi.fn();
@@ -144,7 +137,7 @@ describe("App integration with MSW", () => {
     toastErrorMock.mockReset();
   });
 
-  it("renders the project-first desktop workspace without provider management", async () => {
+  it("renders the tool-first desktop workspace without projects or provider management", async () => {
     const { default: App } = await import("@/App");
     renderApp(App);
 
@@ -160,10 +153,14 @@ describe("App integration with MSW", () => {
     );
 
     expect(
-      await screen.findByRole("heading", { name: "从一个项目开始" }),
+      await screen.findByRole("heading", {
+        name: "让需要的 AI 工具立即可用",
+      }),
     ).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "项目" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "AI 工具" })).toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: "项目" }),
+    ).not.toBeInTheDocument();
     expect(screen.queryByTestId("provider-list")).not.toBeInTheDocument();
     expect(screen.queryByText("添加供应商")).not.toBeInTheDocument();
 
@@ -227,71 +224,42 @@ describe("App integration with MSW", () => {
     });
   });
 
-  it("applies the selected project context before launching another tool", async () => {
-    const emptyPerApp = {
-      claude: null,
-      "claude-desktop": null,
-      codex: null,
-      gemini: null,
-      grokbuild: null,
-      opencode: null,
-      openclaw: null,
-      hermes: null,
-    };
-    const profile: Profile = {
-      id: "project-1",
-      name: "元衡桌面端",
-      payload: {
-        project: {
-          directory: "/mock/yuanheng",
-          defaultTool: "claude",
-        },
-        providers: { ...emptyPerApp },
-        mcp: { ...emptyPerApp },
-        skills: { ...emptyPerApp },
-        prompts: { ...emptyPerApp },
-      },
-    };
+  it("configures a selected tool through Yuanheng before launching it", async () => {
     setSettings({ firstRunNoticeConfirmed: true });
-    setProfileFixtures([profile], { claude: profile.id });
+    setYuanhengConnection({
+      connected: true,
+      userId: "1024",
+      models: ["claude-sonnet-4-6", "gemini-3-pro", "gpt-5.6"],
+    });
 
     const { default: App } = await import("@/App");
     renderApp(App);
 
     expect(
-      await screen.findByRole("heading", { name: "继续 元衡桌面端" }),
+      await screen.findByRole("heading", {
+        name: "让需要的 AI 工具立即可用",
+      }),
     ).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "AI 工具" }));
     await screen.findByRole("heading", { name: "AI 工具" });
 
-    const codexCard = screen
-      .getByRole("heading", { name: "Codex" })
-      .closest("article");
-    expect(codexCard).not.toBeNull();
-    fireEvent.click(codexCard!);
-
+    fireEvent.click(screen.getByRole("button", { name: "配置 Codex" }));
+    await waitFor(() => expect(getConfiguredToolCalls()).toEqual([["codex"]]));
     await waitFor(() =>
-      expect(getProfileApplyCalls()).toEqual([
-        { id: profile.id, scope: "codex" },
-      ]),
+      expect(screen.getByRole("button", { name: "启动 Codex" })).toBeEnabled(),
     );
 
-    fireEvent.click(
-      within(codexCard!).getByRole("button", { name: "在项目中启动" }),
-    );
-    await waitFor(() =>
-      expect(getProjectLaunchCalls()).toEqual([
-        { profileId: profile.id, tool: "codex" },
-      ]),
-    );
-    expect(getProfileApplyCalls()).toHaveLength(1);
+    fireEvent.click(screen.getByRole("button", { name: "启动 Codex" }));
+    await waitFor(() => expect(getLaunchedToolCalls()).toEqual(["codex"]));
   });
 
   it("rejects legacy provider deep links without opening an import dialog", async () => {
     setSettings({ firstRunNoticeConfirmed: true });
     const { default: App } = await import("@/App");
     renderApp(App);
-    await screen.findByRole("heading", { name: "从一个项目开始" });
+    await screen.findByRole("heading", {
+      name: "让需要的 AI 工具立即可用",
+    });
 
     emitTauriEvent("deeplink-import", {
       version: "v1",

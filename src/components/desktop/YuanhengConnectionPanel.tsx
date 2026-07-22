@@ -15,6 +15,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { settingsApi } from "@/lib/api";
+import { APP_ICON_MAP } from "@/config/appConfig";
 import {
   useConnectYuanheng,
   useDisconnectYuanheng,
@@ -69,8 +70,20 @@ export function YuanhengConnectionPanel({
 
   const handleDisconnect = async () => {
     try {
-      await disconnect.mutateAsync();
-      toast.success("已断开元衡账号");
+      const result = await disconnect.mutateAsync();
+      if (result.retainedTools.length > 0) {
+        const tools = result.retainedTools
+          .map((app) => APP_ICON_MAP[app]?.label ?? app)
+          .join("、");
+        toast.warning(`账号已断开；${tools} 缺少原配置，元衡配置仍保留`);
+      } else if (
+        result.restoredTools.length > 0 ||
+        result.removedTools.length > 0
+      ) {
+        toast.success("已断开元衡账号，并恢复工具原配置");
+      } else {
+        toast.success("已断开元衡账号");
+      }
     } catch (error) {
       toast.error(extractErrorMessage(error) || "断开失败");
     }
@@ -105,8 +118,8 @@ export function YuanhengConnectionPanel({
               连接你的元衡账号
             </h2>
             <p className="mt-2 max-w-lg text-[13px] leading-5 text-muted-foreground">
-              桌面端只保存设备凭据并同步项目权限，不需要逐个维护 API 地址或
-              Key。访问令牌可在元衡控制台创建。
+              桌面端保存设备凭据并同步账号模型权限，不需要逐个维护工具的 API
+              地址或 Key。访问令牌可在元衡控制台创建。
             </p>
             <Button
               variant="link"

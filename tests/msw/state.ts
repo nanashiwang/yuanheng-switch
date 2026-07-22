@@ -1,10 +1,9 @@
 import type { AppId } from "@/lib/api/types";
 import type {
-  CurrentProfileIds,
-  Profile,
-  ProfileScope,
-  ProfilesResponse,
-} from "@/lib/api/profiles";
+  YuanhengConnectionStatus,
+  YuanhengToolConfigureResult,
+  YuanhengToolStatus,
+} from "@/lib/api/yuanheng";
 import type {
   McpServer,
   Provider,
@@ -205,23 +204,40 @@ let mcpConfigs: McpConfigState = {
   hermes: {},
 };
 
-const emptyCurrentProfileIds = (): CurrentProfileIds => ({
-  claude: null,
-  claudeDesktop: null,
-  codex: null,
-  gemini: null,
-  grokbuild: null,
-  opencode: null,
-  openclaw: null,
-  hermes: null,
+const disconnectedYuanheng = (): YuanhengConnectionStatus => ({
+  connected: false,
+  baseUrl: "https://cn.meta-api.vip",
+  userId: null,
+  account: null,
+  models: [],
+  announcement: null,
+  lastSyncedAt: null,
 });
 
-let profilesState: ProfilesResponse = {
-  profiles: [],
-  currentIds: emptyCurrentProfileIds(),
-};
-let profileApplyCalls: Array<{ id: string; scope: ProfileScope }> = [];
-let projectLaunchCalls: Array<{ profileId: string; tool?: AppId }> = [];
+const emptyToolStatuses = (): YuanhengToolStatus[] =>
+  [
+    "claude",
+    "claude-desktop",
+    "codex",
+    "gemini",
+    "grokbuild",
+    "opencode",
+    "openclaw",
+    "hermes",
+  ].map((app) => ({
+    app: app as AppId,
+    supported: false,
+    configured: false,
+    needsUpdate: false,
+    model: null,
+    recommendedModel: null,
+    message: "账号中暂时没有可用模型",
+  }));
+
+let yuanhengConnectionState = disconnectedYuanheng();
+let yuanhengToolStatuses = emptyToolStatuses();
+let configuredToolCalls: AppId[][] = [];
+let launchedToolCalls: AppId[] = [];
 
 const cloneProviders = (value: ProvidersByApp) =>
   deepClone(value) as ProvidersByApp;
@@ -291,51 +307,73 @@ export const resetProviderState = () => {
     openclaw: {},
     hermes: {},
   };
-  profilesState = {
-    profiles: [],
-    currentIds: emptyCurrentProfileIds(),
-  };
-  profileApplyCalls = [];
-  projectLaunchCalls = [];
+  yuanhengConnectionState = disconnectedYuanheng();
+  yuanhengToolStatuses = emptyToolStatuses();
+  configuredToolCalls = [];
+  launchedToolCalls = [];
 };
 
-const currentProfileKey: Record<ProfileScope, keyof CurrentProfileIds> = {
-  claude: "claude",
-  "claude-desktop": "claudeDesktop",
-  codex: "codex",
-  gemini: "gemini",
-  grokbuild: "grokbuild",
-  opencode: "opencode",
-  openclaw: "openclaw",
-  hermes: "hermes",
-};
+export const getYuanhengConnection = () =>
+  deepClone(yuanhengConnectionState) as YuanhengConnectionStatus;
 
-export const getProfilesResponse = () =>
-  deepClone(profilesState) as ProfilesResponse;
-
-export const setProfileFixtures = (
-  profiles: Profile[],
-  currentIds: Partial<CurrentProfileIds> = {},
+export const setYuanhengConnection = (
+  status: Partial<YuanhengConnectionStatus>,
 ) => {
-  profilesState = {
-    profiles: deepClone(profiles) as Profile[],
-    currentIds: { ...emptyCurrentProfileIds(), ...currentIds },
-  };
-  profileApplyCalls = [];
-  projectLaunchCalls = [];
+  yuanhengConnectionState = { ...disconnectedYuanheng(), ...status };
+  const models = yuanhengConnectionState.models;
+  yuanhengToolStatuses = emptyToolStatuses().map((item) => {
+    const preferred =
+      item.app === "claude" || item.app === "claude-desktop"
+        ? models.find((model) => model.includes("claude"))
+        : item.app === "gemini"
+          ? models.find((model) => model.includes("gemini"))
+          : (models.find((model) => model.includes("gpt")) ?? models[0]);
+    return {
+      ...item,
+      supported: Boolean(preferred),
+      recommendedModel: preferred ?? null,
+      message: preferred ? null : item.message,
+    };
+  });
 };
 
-export const applyProfileFixture = (id: string, scope: ProfileScope) => {
-  profileApplyCalls.push({ id, scope });
-  profilesState.currentIds[currentProfileKey[scope]] = id;
+export const getYuanhengToolStatuses = () =>
+  deepClone(yuanhengToolStatuses) as YuanhengToolStatus[];
+
+export const configureYuanhengTools = (
+  apps: AppId[],
+  models: Partial<Record<AppId, string>> = {},
+): YuanhengToolConfigureResult[] => {
+  configuredToolCalls.push([...apps]);
+  return apps.map((app) => {
+    const status = yuanhengToolStatuses.find((item) => item.app === app);
+    if (!status?.supported) {
+      return {
+        app,
+        configured: false,
+        model: null,
+        warnings: [],
+        error: "当前账号没有兼容模型",
+      };
+    }
+    const model = models[app] ?? status.recommendedModel;
+    status.configured = true;
+    status.needsUpdate = false;
+    status.model = model;
+    status.message = "元衡配置已写入";
+    return {
+      app,
+      configured: true,
+      model,
+      warnings: [],
+      error: null,
+    };
+  });
 };
 
-export const recordProjectLaunch = (profileId: string, tool?: AppId) => {
-  projectLaunchCalls.push({ profileId, tool });
-};
-
-export const getProfileApplyCalls = () => [...profileApplyCalls];
-export const getProjectLaunchCalls = () => [...projectLaunchCalls];
+export const recordToolLaunch = (app: AppId) => launchedToolCalls.push(app);
+export const getConfiguredToolCalls = () => [...configuredToolCalls];
+export const getLaunchedToolCalls = () => [...launchedToolCalls];
 
 export const getProviders = (appType: AppId) =>
   cloneProviders(providers)[appType] ?? {};

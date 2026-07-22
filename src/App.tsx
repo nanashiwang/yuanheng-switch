@@ -18,15 +18,9 @@ import {
 } from "lucide-react";
 import { toast } from "sonner";
 
-import type { AppId, ProviderSwitchEvent } from "@/lib/api";
-import { profilesApi, providersApi, settingsApi } from "@/lib/api";
+import type { AppId } from "@/lib/api";
+import { settingsApi, yuanhengApi } from "@/lib/api";
 import { useSettingsQuery } from "@/lib/query";
-import { useProfilesQuery } from "@/lib/query/profiles";
-import {
-  APP_PROFILE_SCOPE,
-  getCurrentProfileId,
-} from "@/components/profiles/scope";
-import type { ProfileScope } from "@/lib/api/profiles";
 import { checkAllEnvConflicts } from "@/lib/api/env";
 import type { EnvConflict } from "@/types/env";
 import type { VisibleApps } from "@/types";
@@ -65,9 +59,7 @@ import AgentsDefaultsPanel from "@/components/openclaw/AgentsDefaultsPanel";
 import HermesMemoryPanel from "@/components/hermes/HermesMemoryPanel";
 
 import { DesktopSidebar } from "@/components/desktop/DesktopSidebar";
-import { ProjectSelector } from "@/components/desktop/ProjectSelector";
 import { WorkspaceDashboard } from "@/components/desktop/WorkspaceDashboard";
-import { ProjectsPage } from "@/components/desktop/ProjectsPage";
 import { ToolsPage } from "@/components/desktop/ToolsPage";
 import { CapabilityCenter } from "@/components/desktop/CapabilityCenter";
 import { UsageCenter } from "@/components/desktop/UsageCenter";
@@ -81,7 +73,6 @@ import { ProviderIcon } from "@/components/ProviderIcon";
 const DEFAULT_DRAG_BAR_HEIGHT = isWindows() || isLinux() ? 0 : 28;
 const VIEW_KEY = "yuanheng-desktop-last-view";
 const APP_KEY = "yuanheng-switch-last-app";
-const PROJECT_KEY = "yuanheng-desktop-current-project";
 const IS_TAURI_RUNTIME =
   typeof window !== "undefined" && "__TAURI_INTERNALS__" in window;
 
@@ -89,11 +80,6 @@ interface SyncStatusUpdatedPayload {
   source?: string;
   status?: string;
   error?: string;
-}
-
-interface ProfileAppliedEvent {
-  profileId: string | null;
-  scope: ProfileScope;
 }
 
 const ALL_APPS: AppId[] = [
@@ -109,7 +95,6 @@ const ALL_APPS: AppId[] = [
 
 const TOP_LEVEL_VIEWS: DesktopView[] = [
   "home",
-  "projects",
   "tools",
   "capabilities",
   "usage",
@@ -174,10 +159,6 @@ function App() {
   const queryClient = useQueryClient();
   const [view, setView] = useState<DesktopView>(getInitialView);
   const [activeApp, setActiveAppState] = useState<AppId>(getInitialApp);
-  const [selectedProjectId, setSelectedProjectId] = useState<string | null>(
-    () => localStorage.getItem(PROJECT_KEY),
-  );
-  const [projectCreateSignal, setProjectCreateSignal] = useState(0);
   const [settingsDefaultTab, setSettingsDefaultTab] = useState("general");
   const [skillsDiscoverySource, setSkillsDiscoverySource] =
     useState<SkillsPageSource>("repos");
@@ -191,24 +172,13 @@ function App() {
   const unifiedSkillsPanelRef = useRef<any>(null);
 
   const { data: settingsData } = useSettingsQuery();
-  const { data: profilesData } = useProfilesQuery();
   const { data: yuanhengConnection } = useYuanhengConnection();
-  const activeProjectByScope = useRef<
-    Partial<Record<ProfileScope, string | null>>
-  >({});
-  const projectScopeTasks = useRef<
-    Partial<Record<ProfileScope, Promise<void>>>
-  >({});
   const { data: unmanagedSkills } = useScanUnmanagedSkills();
   const hasUnmanagedSkills = (unmanagedSkills?.length ?? 0) > 0;
   const { isRunning: isProxyRunning } = useProxyStatus();
 
   useUsageCacheBridge();
 
-  const profiles = profilesData?.profiles ?? [];
-  const selectedProject = profiles.find(
-    (profile) => profile.id === selectedProjectId,
-  );
   const visibleApps: VisibleApps = settingsData?.visibleApps ?? {
     claude: true,
     "claude-desktop": true,
@@ -234,131 +204,20 @@ function App() {
   };
 
   useEffect(() => {
-    if (!profilesData) return;
-    if (
-      selectedProjectId &&
-      profiles.some((profile) => profile.id === selectedProjectId)
-    )
-      return;
-    const fallbackId =
-      profilesData.currentIds.claude ??
-      profilesData.currentIds.codex ??
-      profilesData.currentIds.claudeDesktop ??
-      profilesData.currentIds.gemini ??
-      profilesData.currentIds.grokbuild ??
-      profilesData.currentIds.opencode ??
-      profilesData.currentIds.openclaw ??
-      profilesData.currentIds.hermes ??
-      profiles[0]?.id ??
-      null;
-    setSelectedProjectId(fallbackId);
-    if (fallbackId) localStorage.setItem(PROJECT_KEY, fallbackId);
-    else localStorage.removeItem(PROJECT_KEY);
-  }, [profiles, profilesData, selectedProjectId]);
-
-  useEffect(() => {
-    if (!profilesData) return;
-    for (const app of ALL_APPS) {
-      const scope = APP_PROFILE_SCOPE[app];
-      if (scope) {
-        activeProjectByScope.current[scope] = getCurrentProfileId(
-          profilesData.currentIds,
-          app,
-        );
-      }
-    }
-  }, [profilesData]);
-
-  useEffect(() => {
     if (visibleApps[activeApp] !== false) return;
     const fallback =
       ALL_APPS.find((app) => visibleApps[app] !== false) ?? "claude";
     persistActiveApp(fallback);
   }, [activeApp, visibleApps]);
 
-  const ensureProjectScope = async (id: string, app: AppId) => {
-    const scope = APP_PROFILE_SCOPE[app];
-    if (!scope) return;
-    const previousTask = projectScopeTasks.current[scope] ?? Promise.resolve();
-    const task = previousTask
-      .catch(() => undefined)
-      .then(async () => {
-        const hasKnownCurrent = Object.prototype.hasOwnProperty.call(
-          activeProjectByScope.current,
-          scope,
-        );
-        const knownCurrent = hasKnownCurrent
-          ? activeProjectByScope.current[scope]
-          : getCurrentProfileId(profilesData?.currentIds, app);
-        if (knownCurrent === id) return;
-
-        const warnings = await profilesApi.apply(id, scope);
-        activeProjectByScope.current[scope] = id;
-        await queryClient.invalidateQueries({ queryKey: ["profiles"] });
-        if (warnings.length > 0) {
-          toast.warning("项目已切换，但部分配置未完全应用", {
-            description: warnings.join("\n"),
-            duration: 10000,
-          });
-        }
-      });
-    projectScopeTasks.current[scope] = task;
+  const handleLaunchTool = async (tool: AppId) => {
+    persistActiveApp(tool);
     try {
-      await task;
-    } finally {
-      if (projectScopeTasks.current[scope] === task) {
-        delete projectScopeTasks.current[scope];
-      }
-    }
-  };
-
-  const handleSetActiveProjectApp = (app: AppId) => {
-    persistActiveApp(app);
-    if (!selectedProjectId) return;
-    void ensureProjectScope(selectedProjectId, app).catch((error) => {
-      toast.error(extractErrorMessage(error) || "项目上下文切换失败");
-    });
-  };
-
-  const handleSelectProject = (id: string, preferredApp?: AppId) => {
-    setSelectedProjectId(id);
-    localStorage.setItem(PROJECT_KEY, id);
-    const project = profiles.find((item) => item.id === id);
-    const tool = preferredApp ?? project?.payload.project.defaultTool;
-    const app = tool ?? activeApp;
-    if (tool) persistActiveApp(tool);
-    void ensureProjectScope(id, app).catch((error) => {
-      toast.error(extractErrorMessage(error) || "项目切换失败");
-    });
-  };
-
-  const handleLaunchProject = async (tool?: AppId, profileId?: string) => {
-    const id = profileId ?? selectedProjectId;
-    if (!id) {
-      navigate("projects");
-      setProjectCreateSignal((value) => value + 1);
-      return;
-    }
-    const project = profiles.find((item) => item.id === id);
-    const launchTool =
-      tool ?? project?.payload.project.defaultTool ?? activeApp;
-    persistActiveApp(launchTool);
-    try {
-      if (id !== selectedProjectId) {
-        setSelectedProjectId(id);
-        localStorage.setItem(PROJECT_KEY, id);
-      }
-      await ensureProjectScope(id, launchTool);
-      await profilesApi.launch(id, launchTool);
-      toast.success(`${APP_ICON_MAP[launchTool].label} 已在项目目录启动`);
+      await yuanhengApi.launchTool(tool);
+      toast.success(`${APP_ICON_MAP[tool].label} 已启动`);
     } catch (error) {
-      toast.error(extractErrorMessage(error) || "项目启动失败");
+      toast.error(extractErrorMessage(error) || "工具启动失败");
     }
-  };
-
-  const handleCreateProject = () => {
-    navigate("projects");
-    setProjectCreateSignal((value) => value + 1);
   };
 
   const saveSettingsPatch = async (updates: Record<string, unknown>) => {
@@ -378,42 +237,6 @@ function App() {
       console.error("Failed to save onboarding state", error);
     });
   };
-
-  useEffect(() => {
-    let unsubscribe: (() => void) | undefined;
-    let active = true;
-    void providersApi
-      .onSwitched(async (event: ProviderSwitchEvent) => {
-        await queryClient.invalidateQueries({
-          queryKey: ["providers", event.appType],
-        });
-        await queryClient.invalidateQueries({
-          queryKey: ["desktop", "tool-connections"],
-        });
-      })
-      .then((off) => {
-        if (active) unsubscribe = off;
-        else off();
-      })
-      .catch((error) =>
-        console.error("Failed to subscribe provider switch", error),
-      );
-    return () => {
-      active = false;
-      unsubscribe?.();
-    };
-  }, [queryClient]);
-
-  useTauriEvent<ProfileAppliedEvent>("profile-applied", async (event) => {
-    activeProjectByScope.current[event.scope] = event.profileId;
-    setSelectedProjectId(event.profileId);
-    if (event.profileId) localStorage.setItem(PROJECT_KEY, event.profileId);
-    else localStorage.removeItem(PROJECT_KEY);
-    await queryClient.invalidateQueries({ queryKey: ["profiles"] });
-    await queryClient.invalidateQueries({ queryKey: ["mcp", "all"] });
-    await queryClient.invalidateQueries({ queryKey: ["skills"] });
-    await queryClient.invalidateQueries({ queryKey: ["proxyStatus"] });
-  });
 
   useTauriEvent<SyncStatusUpdatedPayload | null | undefined>(
     "webdav-sync-status-updated",
@@ -539,43 +362,20 @@ function App() {
       case "home":
         return (
           <WorkspaceDashboard
-            project={selectedProject}
-            activeApp={activeApp}
             onNavigate={navigate}
-            onLaunch={(tool) => void handleLaunchProject(tool)}
-          />
-        );
-      case "projects":
-        return (
-          <ProjectsPage
-            profiles={profiles}
-            selectedId={selectedProjectId}
-            createSignal={projectCreateSignal}
-            onSelect={handleSelectProject}
-            onLaunch={(profileId, tool) =>
-              void handleLaunchProject(tool, profileId)
-            }
+            onLaunch={(tool) => void handleLaunchTool(tool)}
           />
         );
       case "tools":
         return (
           <ToolsPage
-            project={selectedProject}
             activeApp={activeApp}
             visibleApps={visibleApps}
-            onSetActiveApp={handleSetActiveProjectApp}
-            onLaunch={(tool) => void handleLaunchProject(tool)}
-            onNavigate={navigate}
+            onSetActiveApp={persistActiveApp}
           />
         );
       case "capabilities":
-        return (
-          <CapabilityCenter
-            project={selectedProject}
-            activeApp={activeApp}
-            onOpen={navigate}
-          />
-        );
+        return <CapabilityCenter activeApp={activeApp} onOpen={navigate} />;
       case "usage":
         return (
           <UsageCenter
@@ -604,7 +404,7 @@ function App() {
         return (
           <DetailFrame
             title="Skills"
-            description="安装、启用并同步项目需要的专业能力。"
+            description="安装、启用并同步 AI 工具需要的专业能力。"
             onBack={() => navigate("capabilities")}
             actions={
               <>
@@ -654,7 +454,7 @@ function App() {
         return (
           <DetailFrame
             title="发现 Skills"
-            description="从可信仓库查找并安装项目能力。"
+            description="从可信仓库查找并安装工具能力。"
             onBack={() => navigate("skills")}
             actions={getSkillsPageHeaderActions(skillsDiscoverySource).map(
               ({ key, labelKey, Icon, execute }) => (
@@ -710,7 +510,7 @@ function App() {
         return (
           <DetailFrame
             title="Prompts"
-            description={`管理 ${APP_ICON_MAP[activeApp].label} 的项目提示词。`}
+            description={`管理 ${APP_ICON_MAP[activeApp].label} 的全局提示词。`}
             onBack={() => navigate("capabilities")}
             actions={
               <Button
@@ -832,15 +632,15 @@ function App() {
             style={{ ...DRAG_REGION_STYLE } as React.CSSProperties}
           >
             <div
-              className="min-w-0 flex-1"
+              className="min-w-0 flex-1 px-1"
               style={{ WebkitAppRegion: "no-drag" } as React.CSSProperties}
             >
-              <ProjectSelector
-                profiles={profiles}
-                selectedId={selectedProjectId}
-                onSelect={handleSelectProject}
-                onCreate={handleCreateProject}
-              />
+              <p className="truncate text-[12px] font-semibold">
+                AI 工具配置中心
+              </p>
+              <p className="truncate text-[10px] text-muted-foreground">
+                连接元衡，配置需要使用的本机工具
+              </p>
             </div>
             <div
               className="flex items-center gap-1.5"
@@ -903,14 +703,7 @@ function App() {
         </section>
       </div>
 
-      <OnboardingWizard
-        open={onboardingOpen}
-        profiles={profiles}
-        onFinish={finishOnboarding}
-        onProjectCreated={(id, defaultTool) => {
-          handleSelectProject(id, defaultTool);
-        }}
-      />
+      <OnboardingWizard open={onboardingOpen} onFinish={finishOnboarding} />
       <DeepLinkImportDialog />
     </div>
   );

@@ -1382,13 +1382,6 @@ pub fn run() {
             commands::enable_prompt,
             commands::import_prompt_from_file,
             commands::get_current_prompt_file_content,
-            // Profile management (项目配置方案)
-            commands::list_profiles,
-            commands::create_profile,
-            commands::update_profile,
-            commands::delete_profile,
-            commands::clear_current_profile,
-            commands::apply_profile,
             // model list fetch (OpenAI-compatible /v1/models)
             commands::fetch_models_for_config,
             // ours: endpoint speed test + custom endpoint management
@@ -1525,11 +1518,12 @@ pub fn run() {
             commands::get_tool_versions,
             commands::run_tool_lifecycle_action,
             commands::probe_tool_installations,
-            commands::update_profile_workspace,
             // Provider terminal
             commands::open_provider_terminal,
-            commands::launch_project_tool,
+            commands::launch_tool,
             commands::get_yuanheng_connection,
+            commands::get_yuanheng_tool_statuses,
+            commands::configure_yuanheng_tools,
             commands::connect_yuanheng,
             commands::refresh_yuanheng_connection,
             commands::disconnect_yuanheng,

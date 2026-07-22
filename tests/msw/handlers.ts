@@ -1,6 +1,5 @@
 import { http, HttpResponse } from "msw";
 import type { AppId } from "@/lib/api/types";
-import type { ProfileScope } from "@/lib/api/profiles";
 import type { McpServer, Provider, Settings } from "@/types";
 import {
   addProvider,
@@ -24,9 +23,10 @@ import {
   setMcpServerEnabled,
   upsertMcpServer,
   deleteMcpServer,
-  applyProfileFixture,
-  getProfilesResponse,
-  recordProjectLaunch,
+  configureYuanhengTools,
+  getYuanhengConnection,
+  getYuanhengToolStatuses,
+  recordToolLaunch,
 } from "./state";
 
 const TAURI_ENDPOINT = "http://tauri.local";
@@ -46,38 +46,38 @@ const success = <T>(payload: T) => HttpResponse.json(payload as any);
 export const handlers = [
   http.post(`${TAURI_ENDPOINT}/get_migration_result`, () => success(false)),
   http.post(`${TAURI_ENDPOINT}/get_yuanheng_connection`, () =>
+    success(getYuanhengConnection()),
+  ),
+  http.post(`${TAURI_ENDPOINT}/disconnect_yuanheng`, () =>
     success({
-      connected: false,
-      baseUrl: "https://cn.meta-api.vip",
-      userId: null,
-      account: null,
-      models: [],
-      announcement: null,
-      lastSyncedAt: null,
+      disconnected: true,
+      restoredTools: [],
+      removedTools: [],
+      retainedTools: [],
+      warnings: [],
     }),
   ),
+  http.post(`${TAURI_ENDPOINT}/get_yuanheng_tool_statuses`, () =>
+    success(getYuanhengToolStatuses()),
+  ),
+  http.post(
+    `${TAURI_ENDPOINT}/configure_yuanheng_tools`,
+    async ({ request }) => {
+      const { apps = [], models = {} } = await withJson<{
+        apps?: AppId[];
+        models?: Partial<Record<AppId, string>>;
+      }>(request);
+      return success(configureYuanhengTools(apps, models));
+    },
+  ),
+  http.post(`${TAURI_ENDPOINT}/launch_tool`, async ({ request }) => {
+    const { tool } = await withJson<{ tool: AppId }>(request);
+    recordToolLaunch(tool);
+    return success(true);
+  }),
   http.post(`${TAURI_ENDPOINT}/get_installed_skills`, () => success([])),
   http.post(`${TAURI_ENDPOINT}/get_mcp_servers`, () => success({})),
   http.post(`${TAURI_ENDPOINT}/get_prompts`, () => success({})),
-  http.post(`${TAURI_ENDPOINT}/list_profiles`, () =>
-    success(getProfilesResponse()),
-  ),
-  http.post(`${TAURI_ENDPOINT}/apply_profile`, async ({ request }) => {
-    const { id, scope } = await withJson<{
-      id: string;
-      scope: ProfileScope;
-    }>(request);
-    applyProfileFixture(id, scope);
-    return success([]);
-  }),
-  http.post(`${TAURI_ENDPOINT}/launch_project_tool`, async ({ request }) => {
-    const { profileId, tool } = await withJson<{
-      profileId: string;
-      tool?: AppId;
-    }>(request);
-    recordProjectLaunch(profileId, tool);
-    return success(true);
-  }),
   http.post(`${TAURI_ENDPOINT}/get_tool_versions`, async ({ request }) => {
     const { tools = [] } = await withJson<{ tools?: string[] }>(request);
     return success(

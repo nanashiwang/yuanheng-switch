@@ -1,4 +1,5 @@
 import { invoke } from "@tauri-apps/api/core";
+import type { AppId } from "./types";
 
 export interface YuanhengAccount {
   username: string;
@@ -18,6 +19,32 @@ export interface YuanhengConnectionStatus {
   lastSyncedAt: number | null;
 }
 
+export interface YuanhengToolStatus {
+  app: AppId;
+  supported: boolean;
+  configured: boolean;
+  needsUpdate: boolean;
+  model: string | null;
+  recommendedModel: string | null;
+  message: string | null;
+}
+
+export interface YuanhengToolConfigureResult {
+  app: AppId;
+  configured: boolean;
+  model: string | null;
+  warnings: string[];
+  error: string | null;
+}
+
+export interface YuanhengDisconnectResult {
+  disconnected: boolean;
+  restoredTools: AppId[];
+  removedTools: AppId[];
+  retainedTools: AppId[];
+  warnings: string[];
+}
+
 export const yuanhengApi = {
   getConnection(): Promise<YuanhengConnectionStatus> {
     return invoke("get_yuanheng_connection");
@@ -34,7 +61,22 @@ export const yuanhengApi = {
     return invoke("refresh_yuanheng_connection");
   },
 
-  disconnect(): Promise<boolean> {
+  disconnect(): Promise<YuanhengDisconnectResult> {
     return invoke("disconnect_yuanheng");
+  },
+
+  getToolStatuses(): Promise<YuanhengToolStatus[]> {
+    return invoke("get_yuanheng_tool_statuses");
+  },
+
+  configureTools(
+    apps: AppId[],
+    models?: Partial<Record<AppId, string>>,
+  ): Promise<YuanhengToolConfigureResult[]> {
+    return invoke("configure_yuanheng_tools", { apps, models });
+  },
+
+  launchTool(app: AppId): Promise<boolean> {
+    return invoke("launch_tool", { tool: app });
   },
 };

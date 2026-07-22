@@ -2718,7 +2718,7 @@ pub async fn open_provider_terminal(
     Ok(true)
 }
 
-fn project_tool_command(tool: &str) -> Option<&'static str> {
+fn tool_command(tool: &str) -> Option<&'static str> {
     match tool {
         "claude" => Some("claude"),
         "codex" => Some("codex"),
@@ -2731,47 +2731,13 @@ fn project_tool_command(tool: &str) -> Option<&'static str> {
     }
 }
 
-/// 使用项目保存的目录和默认工具启动交互式终端。
-#[allow(non_snake_case)]
+/// 在新终端中启动已经配置好的 AI CLI。
 #[tauri::command]
-pub async fn launch_project_tool(
-    state: State<'_, crate::store::AppState>,
-    profileId: String,
-    tool: Option<String>,
-) -> Result<bool, String> {
-    let profile = state
-        .db
-        .get_profile(&profileId)
-        .map_err(|e| e.to_string())?
-        .ok_or_else(|| format!("项目不存在: {profileId}"))?;
-    let payload: crate::services::profile::ProfilePayload =
-        serde_json::from_str(&profile.payload).map_err(|e| format!("项目配置损坏: {e}"))?;
-    let directory = payload
-        .project
-        .directory
-        .ok_or_else(|| "请先为项目选择目录".to_string())?;
-    let directory =
-        resolve_launch_cwd(Some(directory))?.ok_or_else(|| "请先为项目选择目录".to_string())?;
-    let tool = tool
-        .or(payload.project.default_tool)
-        .ok_or_else(|| "请先选择默认 AI 工具".to_string())?;
-    let command = project_tool_command(&tool).ok_or_else(|| format!("不支持的项目工具: {tool}"))?;
-
-    #[cfg(not(target_os = "windows"))]
-    let command_line = format!(
-        "cd -- {} && {}",
-        shell_single_quote(&directory.to_string_lossy()),
-        command
-    );
-
-    #[cfg(target_os = "windows")]
-    let command_line = format!("{}{}", build_windows_cwd_command(Some(&directory)), command);
-
-    tokio::task::spawn_blocking(move || {
-        launch_terminal_running(&command_line, &format!("project_{tool}"))
-    })
-    .await
-    .map_err(|e| format!("project launch task join error: {e}"))??;
+pub async fn launch_tool(tool: String) -> Result<bool, String> {
+    let command = tool_command(&tool).ok_or_else(|| format!("不支持的 AI 工具: {tool}"))?;
+    tokio::task::spawn_blocking(move || launch_terminal_running(command, &format!("tool_{tool}")))
+        .await
+        .map_err(|e| format!("AI 工具启动任务执行失败: {e}"))??;
     Ok(true)
 }
 
@@ -5527,15 +5493,15 @@ mod tests {
     }
 
     #[test]
-    fn project_tool_command_covers_every_project_cli() {
-        assert_eq!(project_tool_command("claude"), Some("claude"));
-        assert_eq!(project_tool_command("codex"), Some("codex"));
-        assert_eq!(project_tool_command("gemini"), Some("gemini"));
-        assert_eq!(project_tool_command("grokbuild"), Some("grok"));
-        assert_eq!(project_tool_command("opencode"), Some("opencode"));
-        assert_eq!(project_tool_command("openclaw"), Some("openclaw"));
-        assert_eq!(project_tool_command("hermes"), Some("hermes"));
-        assert_eq!(project_tool_command("claude-desktop"), None);
+    fn tool_command_covers_every_supported_cli() {
+        assert_eq!(tool_command("claude"), Some("claude"));
+        assert_eq!(tool_command("codex"), Some("codex"));
+        assert_eq!(tool_command("gemini"), Some("gemini"));
+        assert_eq!(tool_command("grokbuild"), Some("grok"));
+        assert_eq!(tool_command("opencode"), Some("opencode"));
+        assert_eq!(tool_command("openclaw"), Some("openclaw"));
+        assert_eq!(tool_command("hermes"), Some("hermes"));
+        assert_eq!(tool_command("claude-desktop"), None);
     }
 
     #[cfg(target_os = "macos")]

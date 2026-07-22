@@ -4,13 +4,11 @@ import {
   Bot,
   Boxes,
   BookOpenText,
-  CheckCircle2,
   Compass,
   PackageCheck,
   Sparkles,
   Wrench,
 } from "lucide-react";
-import type { Profile } from "@/lib/api/profiles";
 import type { AppId } from "@/lib/api";
 import { promptsApi } from "@/lib/api";
 import { useInstalledSkills } from "@/hooks/useSkills";
@@ -21,42 +19,22 @@ import { PageHeader } from "./PageHeader";
 import type { DesktopView } from "./types";
 
 interface CapabilityCenterProps {
-  project?: Profile;
   activeApp: AppId;
   onOpen: (view: DesktopView) => void;
 }
 
-const snapshotValue = <T,>(
-  profile: Profile | undefined,
-  field: "skills" | "mcp" | "prompts",
-  app: AppId,
-): T | null => {
-  return profile?.payload[field][app] as T | null;
-};
-
-export function CapabilityCenter({
-  project,
-  activeApp,
-  onOpen,
-}: CapabilityCenterProps) {
+export function CapabilityCenter({ activeApp, onOpen }: CapabilityCenterProps) {
   const { data: skills = [] } = useInstalledSkills();
   const { data: mcpServers = {} } = useAllMcpServers();
   const { data: prompts = {} } = useQuery({
     queryKey: ["prompts", activeApp],
     queryFn: () => promptsApi.getPrompts(activeApp),
   });
-  const projectSkillIds =
-    snapshotValue<string[]>(project, "skills", activeApp) ?? [];
-  const projectMcpIds =
-    snapshotValue<string[]>(project, "mcp", activeApp) ?? [];
-  const projectPromptId = snapshotValue<string>(project, "prompts", activeApp);
-
   const cards = [
     {
       title: "Skills",
       description: "给 AI 工具安装可复用的专业能力",
       value: skills.length,
-      projectValue: projectSkillIds.length,
       icon: Wrench,
       color: "bg-[#d69554]/10 text-[#bd7736]",
       view: "skills" as const,
@@ -65,7 +43,6 @@ export function CapabilityCenter({
       title: "MCP",
       description: "连接文件、数据库和外部服务",
       value: Object.keys(mcpServers).length,
-      projectValue: projectMcpIds.length,
       icon: Boxes,
       color: "bg-emerald-500/10 text-emerald-600",
       view: "mcp" as const,
@@ -74,7 +51,6 @@ export function CapabilityCenter({
       title: "Prompts",
       description: "按工具维护系统提示词和指令",
       value: Object.keys(prompts).length,
-      projectValue: projectPromptId ? 1 : 0,
       icon: BookOpenText,
       color: "bg-sky-500/10 text-sky-600",
       view: "prompts" as const,
@@ -83,7 +59,6 @@ export function CapabilityCenter({
       title: "Agents",
       description: "自治代理编排能力仍在建设中",
       value: 0,
-      projectValue: 0,
       icon: Bot,
       color: "bg-slate-500/10 text-slate-500",
       view: "agents" as const,
@@ -95,7 +70,7 @@ export function CapabilityCenter({
       <PageHeader
         eyebrow="Capability Center"
         title="能力中心"
-        description={`统一管理 ${APP_ICON_MAP[activeApp].label} 的 Skills、MCP、提示词与 Agent 能力，并随项目快照切换。`}
+        description={`统一管理 ${APP_ICON_MAP[activeApp].label} 的 Skills、MCP、提示词与 Agent 能力。`}
         actions={
           <Button
             variant="outline"
@@ -116,19 +91,16 @@ export function CapabilityCenter({
             </span>
             <div className="min-w-0 flex-1">
               <h2 className="font-display text-base font-semibold">
-                {project?.name ?? "未选择项目"}
+                全局能力配置
               </h2>
               <p className="mt-1 text-[11px] text-muted-foreground">
-                {project
-                  ? `当前快照绑定 ${projectSkillIds.length} 个 Skills、${projectMcpIds.length} 个 MCP`
-                  : "选择项目后，启用状态会自动进入项目快照"}
+                当前管理 {APP_ICON_MAP[activeApp].label}
+                ，启用状态直接同步到对应工具。
               </p>
             </div>
-            {project && (
-              <span className="inline-flex items-center gap-1.5 rounded-full bg-emerald-500/10 px-3 py-1 text-[10px] font-semibold text-emerald-700 dark:text-emerald-300">
-                <CheckCircle2 className="h-3.5 w-3.5" /> 快照已启用
-              </span>
-            )}
+            <span className="rounded-full bg-primary/10 px-3 py-1 text-[10px] font-semibold text-primary">
+              {APP_ICON_MAP[activeApp].label}
+            </span>
           </div>
         </section>
 
@@ -159,23 +131,13 @@ export function CapabilityCenter({
                   </p>
                 </div>
               </div>
-              <div className="mt-5 grid grid-cols-2 gap-2">
-                <div className="rounded-lg bg-muted/55 px-3 py-2">
-                  <p className="text-[9px] uppercase tracking-wider text-muted-foreground">
-                    已安装
-                  </p>
-                  <p className="mt-0.5 font-display text-lg font-semibold">
-                    {card.value}
-                  </p>
-                </div>
-                <div className="rounded-lg bg-muted/55 px-3 py-2">
-                  <p className="text-[9px] uppercase tracking-wider text-muted-foreground">
-                    当前项目
-                  </p>
-                  <p className="mt-0.5 font-display text-lg font-semibold">
-                    {card.projectValue}
-                  </p>
-                </div>
+              <div className="mt-5 rounded-lg bg-muted/55 px-3 py-2">
+                <p className="text-[9px] uppercase tracking-wider text-muted-foreground">
+                  已配置
+                </p>
+                <p className="mt-0.5 font-display text-lg font-semibold">
+                  {card.value}
+                </p>
               </div>
             </button>
           ))}
@@ -188,7 +150,7 @@ export function CapabilityCenter({
         >
           <PackageCheck className="h-4 w-4 text-primary" />
           <span className="flex-1 text-[11px] text-muted-foreground">
-            从技能仓库发现并安装新能力；安装后可按项目启用。
+            从技能仓库发现并安装新能力；安装后可按工具启用。
           </span>
           <ArrowRight className="h-3.5 w-3.5 text-muted-foreground" />
         </button>

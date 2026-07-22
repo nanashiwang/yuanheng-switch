@@ -1,6 +1,5 @@
 export type DesktopView =
   | "home"
-  | "projects"
   | "tools"
   | "capabilities"
   | "skills"

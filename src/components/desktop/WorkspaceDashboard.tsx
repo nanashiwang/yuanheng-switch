@@ -1,74 +1,62 @@
 import {
   ArrowRight,
   Blocks,
-  Bot,
+  CheckCircle2,
   Cloud,
-  FolderKanban,
   Gauge,
   Network,
   Play,
   ServerCog,
+  Settings2,
   Sparkles,
 } from "lucide-react";
-import type { Profile } from "@/lib/api/profiles";
 import type { AppId } from "@/lib/api";
 import { Button } from "@/components/ui/button";
 import { ProviderIcon } from "@/components/ProviderIcon";
 import { APP_ICON_MAP } from "@/config/appConfig";
-import {
-  APP_PROFILE_SCOPE,
-  hasScopeSnapshot,
-} from "@/components/profiles/scope";
 import { useInstalledSkills } from "@/hooks/useSkills";
 import { useAllMcpServers } from "@/hooks/useMcp";
-import { useYuanhengConnection } from "@/lib/query/yuanheng";
+import {
+  useYuanhengConnection,
+  useYuanhengToolStatuses,
+} from "@/lib/query/yuanheng";
 import type { DesktopView } from "./types";
 
 interface WorkspaceDashboardProps {
-  project?: Profile;
-  activeApp: AppId;
   onNavigate: (view: DesktopView) => void;
-  onLaunch: (tool?: AppId) => void;
+  onLaunch: (tool: AppId) => void;
 }
 
 const QUICK_TOOLS: AppId[] = ["claude", "codex", "gemini", "opencode"];
 
 export function WorkspaceDashboard({
-  project,
-  activeApp,
   onNavigate,
   onLaunch,
 }: WorkspaceDashboardProps) {
   const { data: connection } = useYuanhengConnection();
+  const { data: toolStatuses = [] } = useYuanhengToolStatuses();
   const { data: skills = [] } = useInstalledSkills();
   const { data: mcpServers = {} } = useAllMcpServers();
-  const defaultTool = project?.payload.project.defaultTool ?? activeApp;
-  const defaultScope = APP_PROFILE_SCOPE[defaultTool];
-  const hasProjectSnapshot = Boolean(
-    project && defaultScope && hasScopeSnapshot(project, defaultScope),
-  );
+  const configuredTools = toolStatuses.filter((item) => item.configured);
+  const configuredIds = new Set(configuredTools.map((item) => item.app));
 
   return (
     <div className="mx-auto flex h-full w-full max-w-[1120px] flex-col gap-5 overflow-y-auto px-7 pb-8 pt-6">
       <div className="animate-rise-in flex items-end justify-between gap-5">
         <div>
           <p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-primary">
-            元衡工作台
+            元衡工具中心
           </p>
-          <h1 className="font-display mt-1 text-[28px] font-semibold tracking-[-0.035em]">
-            {project ? `继续 ${project.name}` : "从一个项目开始"}
+          <h1 className="mt-1 font-display text-[28px] font-semibold tracking-[-0.035em]">
+            让需要的 AI 工具立即可用
           </h1>
           <p className="mt-1 text-[13px] text-muted-foreground">
-            项目、工具和能力配置保持在同一个上下文中。
+            连接一次元衡账号，统一完成本机工具的 API 和模型配置。
           </p>
         </div>
-        <Button
-          variant="outline"
-          size="sm"
-          onClick={() => onNavigate("projects")}
-        >
-          <FolderKanban className="h-4 w-4" />
-          管理项目
+        <Button variant="outline" size="sm" onClick={() => onNavigate("tools")}>
+          <Settings2 className="h-4 w-4" />
+          配置工具
         </Button>
       </div>
 
@@ -78,53 +66,44 @@ export function WorkspaceDashboard({
         <div className="relative grid gap-6 md:grid-cols-[1fr_auto] md:items-end">
           <div className="min-w-0">
             <div className="flex items-center gap-2 text-[11px] font-semibold uppercase tracking-[0.18em] text-emerald-200/70">
-              <Gauge className="h-3.5 w-3.5" /> 当前项目
+              <Gauge className="h-3.5 w-3.5" /> 配置状态
             </div>
-            {project ? (
-              <>
-                <h2 className="font-display mt-3 truncate text-2xl font-semibold">
-                  {project.name}
-                </h2>
-                <p className="mt-1 truncate font-mono text-[11px] text-emerald-100/55">
-                  {project.payload.project.directory ?? "尚未绑定本地目录"}
-                </p>
-                <div className="mt-5 flex flex-wrap gap-2">
-                  <span className="inline-flex items-center gap-1.5 rounded-full bg-white/10 px-3 py-1 text-[11px] text-emerald-50">
-                    <Bot className="h-3.5 w-3.5" />
-                    {APP_ICON_MAP[defaultTool].label}
-                  </span>
-                  <span className="inline-flex items-center gap-1.5 rounded-full bg-white/10 px-3 py-1 text-[11px] text-emerald-50">
-                    <Sparkles className="h-3.5 w-3.5" />
-                    {hasProjectSnapshot
-                      ? "配置快照已绑定"
-                      : "首次切换时建立快照"}
-                  </span>
-                </div>
-              </>
-            ) : (
-              <>
-                <h2 className="font-display mt-3 text-2xl font-semibold">
-                  建立第一个项目上下文
-                </h2>
-                <p className="mt-2 max-w-xl text-[13px] leading-5 text-emerald-50/65">
-                  选择目录、默认 AI 工具和能力快照，之后可以从工作台直接启动。
-                </p>
-              </>
-            )}
+            <h2 className="mt-3 font-display text-2xl font-semibold">
+              {connection?.connected
+                ? configuredTools.length > 0
+                  ? `${configuredTools.length} 个工具已经就绪`
+                  : "元衡已连接，等待配置工具"
+                : "先连接你的元衡账号"}
+            </h2>
+            <p className="mt-2 max-w-xl text-[13px] leading-5 text-emerald-50/65">
+              {connection?.connected
+                ? "选择本机需要使用的工具，元衡会自动推荐模型并写入对应配置。"
+                : "连接后将同步账号额度和模型目录，无需手动填写每个工具的 API 地址。"}
+            </p>
+            <div className="mt-5 flex flex-wrap gap-2">
+              <span className="inline-flex items-center gap-1.5 rounded-full bg-white/10 px-3 py-1 text-[11px] text-emerald-50">
+                <Cloud className="h-3.5 w-3.5" />
+                {connection?.connected ? "元衡服务在线" : "尚未连接"}
+              </span>
+              <span className="inline-flex items-center gap-1.5 rounded-full bg-white/10 px-3 py-1 text-[11px] text-emerald-50">
+                <Sparkles className="h-3.5 w-3.5" />
+                {connection?.models.length ?? 0} 个可用模型
+              </span>
+            </div>
           </div>
           <Button
             size="lg"
             className="bg-[#e9b67c] text-[#163a36] shadow-none hover:bg-[#f0c693]"
             onClick={() =>
-              project ? onLaunch(defaultTool) : onNavigate("projects")
+              onNavigate(connection?.connected ? "tools" : "network")
             }
           >
-            {project ? (
-              <Play className="h-4 w-4 fill-current" />
+            {connection?.connected ? (
+              <Settings2 className="h-4 w-4" />
             ) : (
-              <FolderKanban className="h-4 w-4" />
+              <Cloud className="h-4 w-4" />
             )}
-            {project ? "在项目中启动" : "创建项目"}
+            {connection?.connected ? "选择并配置工具" : "连接元衡"}
           </Button>
         </div>
       </section>
@@ -133,9 +112,9 @@ export function WorkspaceDashboard({
         <section className="rounded-2xl border bg-card p-5 shadow-sm">
           <div className="flex items-center justify-between">
             <div>
-              <h2 className="font-display text-base font-semibold">快速启动</h2>
+              <h2 className="font-display text-base font-semibold">常用工具</h2>
               <p className="mt-0.5 text-[11px] text-muted-foreground">
-                在当前项目目录打开常用工具
+                配置完成后可直接启动
               </p>
             </div>
             <Button
@@ -147,43 +126,50 @@ export function WorkspaceDashboard({
             </Button>
           </div>
           <div className="mt-4 grid grid-cols-2 gap-2.5">
-            {QUICK_TOOLS.map((tool) => (
-              <button
-                key={tool}
-                type="button"
-                onClick={() => {
-                  if (project) onLaunch(tool);
-                  else onNavigate("projects");
-                }}
-                className="group flex items-center gap-3 rounded-xl border bg-background/55 p-3 text-left transition-all hover:-translate-y-0.5 hover:border-primary/30 hover:shadow-sm"
-              >
-                <span className="flex h-9 w-9 items-center justify-center rounded-lg bg-muted">
-                  <ProviderIcon
-                    icon={tool === "codex" ? "openai" : tool}
-                    name={APP_ICON_MAP[tool].label}
-                    size={20}
-                  />
-                </span>
-                <span className="min-w-0 flex-1">
-                  <span className="block truncate text-[12px] font-semibold">
-                    {APP_ICON_MAP[tool].label}
+            {QUICK_TOOLS.map((tool) => {
+              const ready = configuredIds.has(tool);
+              return (
+                <button
+                  key={tool}
+                  type="button"
+                  onClick={() => (ready ? onLaunch(tool) : onNavigate("tools"))}
+                  className="group flex items-center gap-3 rounded-xl border bg-background/55 p-3 text-left transition-all hover:-translate-y-0.5 hover:border-primary/30 hover:shadow-sm"
+                >
+                  <span className="flex h-9 w-9 items-center justify-center rounded-lg bg-muted">
+                    <ProviderIcon
+                      icon={tool === "codex" ? "openai" : tool}
+                      name={APP_ICON_MAP[tool].label}
+                      size={20}
+                    />
                   </span>
-                  <span className="block text-[10px] text-muted-foreground">
-                    打开并运行
+                  <span className="min-w-0 flex-1">
+                    <span className="block truncate text-[12px] font-semibold">
+                      {APP_ICON_MAP[tool].label}
+                    </span>
+                    <span className="flex items-center gap-1 text-[10px] text-muted-foreground">
+                      {ready && (
+                        <CheckCircle2 className="h-3 w-3 text-emerald-500" />
+                      )}
+                      {ready ? "已配置" : "点击配置"}
+                    </span>
                   </span>
-                </span>
-                <Play className="h-3.5 w-3.5 text-muted-foreground transition-colors group-hover:text-primary" />
-              </button>
-            ))}
+                  {ready ? (
+                    <Play className="h-3.5 w-3.5 text-muted-foreground transition-colors group-hover:text-primary" />
+                  ) : (
+                    <Settings2 className="h-3.5 w-3.5 text-muted-foreground transition-colors group-hover:text-primary" />
+                  )}
+                </button>
+              );
+            })}
           </div>
         </section>
 
         <section className="rounded-2xl border bg-card p-5 shadow-sm">
           <div className="flex items-center justify-between">
             <div>
-              <h2 className="font-display text-base font-semibold">元衡连接</h2>
+              <h2 className="font-display text-base font-semibold">元衡账号</h2>
               <p className="mt-0.5 text-[11px] text-muted-foreground">
-                账号、余额与模型权限
+                余额与模型权限
               </p>
             </div>
             <span
@@ -203,11 +189,9 @@ export function WorkspaceDashboard({
                 当前可用余额
               </p>
               <div className="mt-4 flex items-center justify-between rounded-lg bg-muted/60 px-3 py-2 text-[11px]">
-                <span className="flex items-center gap-1.5 text-muted-foreground">
-                  <Cloud className="h-3.5 w-3.5" /> 模型目录
-                </span>
+                <span className="text-muted-foreground">已配置工具</span>
                 <span className="font-semibold">
-                  {connection.models.length} 个可用
+                  {configuredTools.length} 个
                 </span>
               </div>
             </div>
@@ -223,7 +207,7 @@ export function WorkspaceDashboard({
             className="mt-4 w-full"
             onClick={() => onNavigate("network")}
           >
-            {connection?.connected ? "查看连接详情" : "立即连接"}
+            {connection?.connected ? "查看账号详情" : "立即连接"}
           </Button>
         </section>
       </div>
@@ -238,13 +222,13 @@ export function WorkspaceDashboard({
           },
           {
             title: "连接与路由",
-            value: "本地接管 · 故障转移",
+            value: "账号、网络与故障诊断",
             icon: Network,
             view: "network" as const,
           },
           {
-            title: "工具状态",
-            value: "安装、版本与配置",
+            title: "工具配置",
+            value: `${configuredTools.length} 个已就绪`,
             icon: ServerCog,
             view: "tools" as const,
           },

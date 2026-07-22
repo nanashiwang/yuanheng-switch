@@ -4,7 +4,6 @@ import {
   Bot,
   Boxes,
   ChevronRight,
-  FolderKanban,
   Gauge,
   Network,
   Settings,
@@ -25,7 +24,6 @@ interface DesktopSidebarProps {
 
 const dailyItems = [
   { id: "home" as const, label: "工作台", icon: Gauge },
-  { id: "projects" as const, label: "项目", icon: FolderKanban },
   { id: "tools" as const, label: "AI 工具", icon: Bot },
   { id: "capabilities" as const, label: "能力中心", icon: Blocks },
   { id: "usage" as const, label: "会话与用量", icon: Activity },
@@ -82,7 +80,7 @@ export function DesktopSidebar({
             元衡桌面端
           </p>
           <p className="mt-0.5 text-[10px] tracking-[0.16em] text-slate-500">
-            PROJECT COMPANION
+            AI TOOL SETUP
           </p>
         </div>
       </div>
