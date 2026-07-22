@@ -1,5 +1,6 @@
 import { http, HttpResponse } from "msw";
 import type { AppId } from "@/lib/api/types";
+import type { ProfileScope } from "@/lib/api/profiles";
 import type { McpServer, Provider, Settings } from "@/types";
 import {
   addProvider,
@@ -23,6 +24,9 @@ import {
   setMcpServerEnabled,
   upsertMcpServer,
   deleteMcpServer,
+  applyProfileFixture,
+  getProfilesResponse,
+  recordProjectLaunch,
 } from "./state";
 
 const TAURI_ENDPOINT = "http://tauri.local";
@@ -41,6 +45,53 @@ const success = <T>(payload: T) => HttpResponse.json(payload as any);
 
 export const handlers = [
   http.post(`${TAURI_ENDPOINT}/get_migration_result`, () => success(false)),
+  http.post(`${TAURI_ENDPOINT}/get_yuanheng_connection`, () =>
+    success({
+      connected: false,
+      baseUrl: "https://cn.meta-api.vip",
+      userId: null,
+      account: null,
+      models: [],
+      announcement: null,
+      lastSyncedAt: null,
+    }),
+  ),
+  http.post(`${TAURI_ENDPOINT}/get_installed_skills`, () => success([])),
+  http.post(`${TAURI_ENDPOINT}/get_mcp_servers`, () => success({})),
+  http.post(`${TAURI_ENDPOINT}/get_prompts`, () => success({})),
+  http.post(`${TAURI_ENDPOINT}/list_profiles`, () =>
+    success(getProfilesResponse()),
+  ),
+  http.post(`${TAURI_ENDPOINT}/apply_profile`, async ({ request }) => {
+    const { id, scope } = await withJson<{
+      id: string;
+      scope: ProfileScope;
+    }>(request);
+    applyProfileFixture(id, scope);
+    return success([]);
+  }),
+  http.post(`${TAURI_ENDPOINT}/launch_project_tool`, async ({ request }) => {
+    const { profileId, tool } = await withJson<{
+      profileId: string;
+      tool?: AppId;
+    }>(request);
+    recordProjectLaunch(profileId, tool);
+    return success(true);
+  }),
+  http.post(`${TAURI_ENDPOINT}/get_tool_versions`, async ({ request }) => {
+    const { tools = [] } = await withJson<{ tools?: string[] }>(request);
+    return success(
+      tools.map((name) => ({
+        name,
+        version: "1.0.0",
+        latest_version: "1.0.0",
+        error: null,
+        installed_but_broken: false,
+        env_type: "macos",
+        wsl_distro: null,
+      })),
+    );
+  }),
   http.post(`${TAURI_ENDPOINT}/get_skills_migration_result`, () =>
     success(null),
   ),

@@ -35,14 +35,24 @@ pub enum ProfileScope {
     #[serde(rename = "claude-desktop")]
     ClaudeDesktop,
     Codex,
+    Gemini,
+    GrokBuild,
+    OpenCode,
+    OpenClaw,
+    Hermes,
 }
 
 impl ProfileScope {
     /// 全部分组（扩展新分组时同步扩展 apps/for_app 与前端 scope.ts 镜像）
-    pub const ALL: [ProfileScope; 3] = [
+    pub const ALL: [ProfileScope; 8] = [
         ProfileScope::Claude,
         ProfileScope::ClaudeDesktop,
         ProfileScope::Codex,
+        ProfileScope::Gemini,
+        ProfileScope::GrokBuild,
+        ProfileScope::OpenCode,
+        ProfileScope::OpenClaw,
+        ProfileScope::Hermes,
     ];
 
     pub fn as_str(&self) -> &'static str {
@@ -50,6 +60,11 @@ impl ProfileScope {
             ProfileScope::Claude => "claude",
             ProfileScope::ClaudeDesktop => "claude-desktop",
             ProfileScope::Codex => "codex",
+            ProfileScope::Gemini => "gemini",
+            ProfileScope::GrokBuild => "grokbuild",
+            ProfileScope::OpenCode => "opencode",
+            ProfileScope::OpenClaw => "openclaw",
+            ProfileScope::Hermes => "hermes",
         }
     }
 
@@ -58,6 +73,11 @@ impl ProfileScope {
             "claude" => Ok(ProfileScope::Claude),
             "claude-desktop" => Ok(ProfileScope::ClaudeDesktop),
             "codex" => Ok(ProfileScope::Codex),
+            "gemini" => Ok(ProfileScope::Gemini),
+            "grokbuild" => Ok(ProfileScope::GrokBuild),
+            "opencode" => Ok(ProfileScope::OpenCode),
+            "openclaw" => Ok(ProfileScope::OpenClaw),
+            "hermes" => Ok(ProfileScope::Hermes),
             other => Err(AppError::InvalidInput(format!(
                 "Unknown profile scope: {other}"
             ))),
@@ -70,6 +90,11 @@ impl ProfileScope {
             ProfileScope::Claude => &[AppType::Claude],
             ProfileScope::ClaudeDesktop => &[AppType::ClaudeDesktop],
             ProfileScope::Codex => &[AppType::Codex],
+            ProfileScope::Gemini => &[AppType::Gemini],
+            ProfileScope::GrokBuild => &[AppType::GrokBuild],
+            ProfileScope::OpenCode => &[AppType::OpenCode],
+            ProfileScope::OpenClaw => &[AppType::OpenClaw],
+            ProfileScope::Hermes => &[AppType::Hermes],
         }
     }
 
@@ -79,7 +104,11 @@ impl ProfileScope {
             AppType::Claude => Some(ProfileScope::Claude),
             AppType::ClaudeDesktop => Some(ProfileScope::ClaudeDesktop),
             AppType::Codex => Some(ProfileScope::Codex),
-            _ => None,
+            AppType::Gemini => Some(ProfileScope::Gemini),
+            AppType::GrokBuild => Some(ProfileScope::GrokBuild),
+            AppType::OpenCode => Some(ProfileScope::OpenCode),
+            AppType::OpenClaw => Some(ProfileScope::OpenClaw),
+            AppType::Hermes => Some(ProfileScope::Hermes),
         }
     }
 }
@@ -92,6 +121,11 @@ pub struct PerApp<T> {
     #[serde(rename = "claude-desktop")]
     pub claude_desktop: T,
     pub codex: T,
+    pub gemini: T,
+    pub grokbuild: T,
+    pub opencode: T,
+    pub openclaw: T,
+    pub hermes: T,
 }
 
 impl<T> PerApp<T> {
@@ -100,7 +134,11 @@ impl<T> PerApp<T> {
             AppType::Claude => Some(&self.claude),
             AppType::ClaudeDesktop => Some(&self.claude_desktop),
             AppType::Codex => Some(&self.codex),
-            _ => None,
+            AppType::Gemini => Some(&self.gemini),
+            AppType::GrokBuild => Some(&self.grokbuild),
+            AppType::OpenCode => Some(&self.opencode),
+            AppType::OpenClaw => Some(&self.openclaw),
+            AppType::Hermes => Some(&self.hermes),
         }
     }
 
@@ -109,7 +147,11 @@ impl<T> PerApp<T> {
             AppType::Claude => Some(&mut self.claude),
             AppType::ClaudeDesktop => Some(&mut self.claude_desktop),
             AppType::Codex => Some(&mut self.codex),
-            _ => None,
+            AppType::Gemini => Some(&mut self.gemini),
+            AppType::GrokBuild => Some(&mut self.grokbuild),
+            AppType::OpenCode => Some(&mut self.opencode),
+            AppType::OpenClaw => Some(&mut self.openclaw),
+            AppType::Hermes => Some(&mut self.hermes),
         }
     }
 }
@@ -122,6 +164,8 @@ impl<T> PerApp<T> {
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 #[serde(default)]
 pub struct ProfilePayload {
+    /// 项目自身的工作区信息，不随应用分组切换而变化。
+    pub project: ProjectWorkspace,
     /// 每 app 的当前供应商 id
     pub providers: PerApp<Option<String>>,
     /// 每 app 启用的 MCP server id 集合
@@ -130,6 +174,14 @@ pub struct ProfilePayload {
     pub skills: PerApp<Option<Vec<String>>>,
     /// 每 app 激活的 prompt id
     pub prompts: PerApp<Option<String>>,
+}
+
+/// 项目目录和默认启动工具。字段放在 payload 中以兼容现有 profiles 表。
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+#[serde(default, rename_all = "camelCase")]
+pub struct ProjectWorkspace {
+    pub directory: Option<String>,
+    pub default_tool: Option<String>,
 }
 
 impl ProfilePayload {
@@ -295,6 +347,61 @@ impl ProfileService {
             profile.payload = serde_json::to_string(&payload)
                 .map_err(|e| AppError::Config(format!("序列化 profile payload 失败: {e}")))?;
         }
+        profile.updated_at = Some(chrono::Utc::now().timestamp());
+        state.db.save_profile(&profile)?;
+        Ok(profile)
+    }
+
+    /// 更新全局项目工作区信息，不触碰任何应用分组快照。
+    pub fn update_workspace(
+        state: &AppState,
+        id: &str,
+        directory: Option<String>,
+        default_tool: Option<String>,
+    ) -> Result<Profile, AppError> {
+        const SUPPORTED_TOOLS: &[&str] = &[
+            "claude",
+            "codex",
+            "gemini",
+            "grokbuild",
+            "opencode",
+            "openclaw",
+            "hermes",
+        ];
+
+        let mut profile = state
+            .db
+            .get_profile(id)?
+            .ok_or_else(|| AppError::InvalidInput(format!("Profile not found: {id}")))?;
+        let mut payload: ProfilePayload = serde_json::from_str(&profile.payload)
+            .map_err(|e| AppError::Config(format!("解析 profile payload 失败: {e}")))?;
+
+        payload.project.directory = match directory {
+            Some(path) if !path.trim().is_empty() => {
+                let canonical = std::fs::canonicalize(path.trim())
+                    .map_err(|e| AppError::InvalidInput(format!("项目目录不可用: {e}")))?;
+                if !canonical.is_dir() {
+                    return Err(AppError::InvalidInput("项目路径不是文件夹".to_string()));
+                }
+                Some(canonical.to_string_lossy().to_string())
+            }
+            _ => None,
+        };
+        payload.project.default_tool = match default_tool {
+            Some(tool) if !tool.trim().is_empty() => {
+                let tool = tool.trim().to_lowercase();
+                if !SUPPORTED_TOOLS.contains(&tool.as_str()) {
+                    return Err(AppError::InvalidInput(format!(
+                        "Unsupported project tool: {tool}"
+                    )));
+                }
+                Some(tool)
+            }
+            _ => None,
+        };
+
+        profile.payload = serde_json::to_string(&payload)
+            .map_err(|e| AppError::Config(format!("序列化 profile payload 失败: {e}")))?;
         profile.updated_at = Some(chrono::Utc::now().timestamp());
         state.db.save_profile(&profile)?;
         Ok(profile)
@@ -468,6 +575,8 @@ impl ProfileService {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::Database;
+    use std::sync::Arc;
 
     fn ids(v: &[&str]) -> Vec<String> {
         v.iter().map(|s| s.to_string()).collect()
@@ -476,25 +585,33 @@ mod tests {
     #[test]
     fn test_payload_serde_roundtrip() {
         let payload = ProfilePayload {
+            project: ProjectWorkspace {
+                directory: Some("/tmp/project-a".into()),
+                default_tool: Some("claude".into()),
+            },
             providers: PerApp {
                 claude: Some("p1".into()),
                 claude_desktop: Some("d1".into()),
                 codex: None,
+                ..Default::default()
             },
             mcp: PerApp {
                 claude: Some(ids(&["m1", "m2"])),
                 claude_desktop: Some(vec![]),
                 codex: None,
+                ..Default::default()
             },
             skills: PerApp {
                 claude: Some(vec![]),
                 claude_desktop: Some(vec![]),
                 codex: Some(ids(&["s1"])),
+                ..Default::default()
             },
             prompts: PerApp {
                 claude: None,
                 claude_desktop: None,
                 codex: Some("pr1".into()),
+                ..Default::default()
             },
         };
         let json = serde_json::to_string(&payload).unwrap();
@@ -502,6 +619,7 @@ mod tests {
         assert!(json.contains("\"claude\""));
         assert!(json.contains("\"claude-desktop\""));
         assert!(json.contains("\"codex\""));
+        assert!(json.contains("\"defaultTool\":\"claude\""));
         let back: ProfilePayload = serde_json::from_str(&json).unwrap();
         assert_eq!(back, payload);
     }
@@ -520,6 +638,7 @@ mod tests {
         assert_eq!(back.mcp.claude_desktop, None);
         assert_eq!(back.mcp.codex, None, "missing slot means untouched");
         assert_eq!(back.prompts.codex, None);
+        assert_eq!(back.project, ProjectWorkspace::default());
 
         let empty: ProfilePayload = serde_json::from_str("{}").unwrap();
         assert_eq!(empty, ProfilePayload::default());
@@ -533,11 +652,13 @@ mod tests {
                 claude: Some("p1".into()),
                 claude_desktop: Some("d1".into()),
                 codex: Some("c1".into()),
+                ..Default::default()
             },
             mcp: PerApp {
                 claude: Some(ids(&["m1"])),
                 claude_desktop: Some(vec![]),
                 codex: Some(ids(&["m9"])),
+                ..Default::default()
             },
             ..Default::default()
         };
@@ -547,11 +668,13 @@ mod tests {
                 claude: Some("p2".into()),
                 claude_desktop: None,
                 codex: Some("SHOULD-NOT-LEAK".into()),
+                ..Default::default()
             },
             mcp: PerApp {
                 claude: Some(ids(&["m2"])),
                 claude_desktop: Some(vec![]),
                 codex: None,
+                ..Default::default()
             },
             ..Default::default()
         };
@@ -590,12 +713,16 @@ mod tests {
     }
 
     #[test]
-    fn test_per_app_get_only_supports_profile_apps() {
+    fn test_per_app_get_supports_all_managed_apps() {
         let per: PerApp<Option<String>> = PerApp::default();
         assert!(per.get(&AppType::Claude).is_some());
         assert!(per.get(&AppType::ClaudeDesktop).is_some());
         assert!(per.get(&AppType::Codex).is_some());
-        assert!(per.get(&AppType::Gemini).is_none());
+        assert!(per.get(&AppType::Gemini).is_some());
+        assert!(per.get(&AppType::GrokBuild).is_some());
+        assert!(per.get(&AppType::OpenCode).is_some());
+        assert!(per.get(&AppType::OpenClaw).is_some());
+        assert!(per.get(&AppType::Hermes).is_some());
     }
 
     #[test]
@@ -608,7 +735,7 @@ mod tests {
             );
             assert_eq!(ProfileScope::parse(scope.as_str()).unwrap(), scope);
         }
-        assert!(ProfileScope::parse("gemini").is_err());
+        assert_eq!(ProfileScope::parse("gemini").unwrap(), ProfileScope::Gemini);
         assert!(ProfileScope::parse("").is_err());
     }
 
@@ -627,7 +754,10 @@ mod tests {
                 assert_eq!(ProfileScope::for_app(app), Some(scope));
             }
         }
-        assert_eq!(ProfileScope::for_app(&AppType::Gemini), None);
+        assert_eq!(
+            ProfileScope::for_app(&AppType::Gemini),
+            Some(ProfileScope::Gemini)
+        );
     }
 
     #[test]
@@ -652,5 +782,65 @@ mod tests {
         let (toggles, dangling) = plan_toggles(&current, &[]);
         assert_eq!(toggles, vec![("a".to_string(), false)]);
         assert!(dangling.is_empty());
+    }
+
+    #[test]
+    fn update_workspace_persists_directory_and_every_supported_tool() {
+        let db = Arc::new(Database::memory().expect("create memory db"));
+        let state = AppState::new(db);
+        let profile = ProfileService::create(&state, "project", ProfileScope::Claude)
+            .expect("create project");
+        let directory = tempfile::tempdir().expect("create project directory");
+        let canonical = std::fs::canonicalize(directory.path()).expect("canonical directory");
+
+        for tool in [
+            "claude",
+            "codex",
+            "gemini",
+            "grokbuild",
+            "opencode",
+            "openclaw",
+            "hermes",
+        ] {
+            let updated = ProfileService::update_workspace(
+                &state,
+                &profile.id,
+                Some(directory.path().to_string_lossy().into_owned()),
+                Some(tool.to_string()),
+            )
+            .expect("update project workspace");
+            let payload: ProfilePayload =
+                serde_json::from_str(&updated.payload).expect("parse project payload");
+            assert_eq!(
+                payload.project.directory.as_deref(),
+                Some(canonical.to_string_lossy().as_ref())
+            );
+            assert_eq!(payload.project.default_tool.as_deref(), Some(tool));
+        }
+    }
+
+    #[test]
+    fn update_workspace_rejects_invalid_directory_and_tool() {
+        let db = Arc::new(Database::memory().expect("create memory db"));
+        let state = AppState::new(db);
+        let profile = ProfileService::create(&state, "project", ProfileScope::Claude)
+            .expect("create project");
+        let missing = std::env::temp_dir().join(format!("missing-{}", uuid::Uuid::new_v4()));
+        assert!(ProfileService::update_workspace(
+            &state,
+            &profile.id,
+            Some(missing.to_string_lossy().into_owned()),
+            Some("claude".to_string()),
+        )
+        .is_err());
+
+        let directory = tempfile::tempdir().expect("create project directory");
+        assert!(ProfileService::update_workspace(
+            &state,
+            &profile.id,
+            Some(directory.path().to_string_lossy().into_owned()),
+            Some("unsupported".to_string()),
+        )
+        .is_err());
     }
 }

@@ -46,6 +46,11 @@ pub struct CurrentProfileIds {
     pub claude: Option<String>,
     pub claude_desktop: Option<String>,
     pub codex: Option<String>,
+    pub gemini: Option<String>,
+    pub grokbuild: Option<String>,
+    pub opencode: Option<String>,
+    pub openclaw: Option<String>,
+    pub hermes: Option<String>,
 }
 
 #[derive(Debug, Serialize)]
@@ -108,6 +113,26 @@ pub fn list_profiles(state: State<'_, AppState>) -> Result<ProfilesResponse, Str
             .db
             .get_current_profile_id(ProfileScope::Codex.as_str())
             .map_err(|e| e.to_string())?,
+        gemini: state
+            .db
+            .get_current_profile_id(ProfileScope::Gemini.as_str())
+            .map_err(|e| e.to_string())?,
+        grokbuild: state
+            .db
+            .get_current_profile_id(ProfileScope::GrokBuild.as_str())
+            .map_err(|e| e.to_string())?,
+        opencode: state
+            .db
+            .get_current_profile_id(ProfileScope::OpenCode.as_str())
+            .map_err(|e| e.to_string())?,
+        openclaw: state
+            .db
+            .get_current_profile_id(ProfileScope::OpenClaw.as_str())
+            .map_err(|e| e.to_string())?,
+        hermes: state
+            .db
+            .get_current_profile_id(ProfileScope::Hermes.as_str())
+            .map_err(|e| e.to_string())?,
     };
     Ok(ProfilesResponse {
         profiles: profiles.into_iter().map(ProfileDto::from).collect(),
@@ -140,6 +165,18 @@ pub fn update_profile(
         .transpose()
         .map_err(|e| e.to_string())?;
     ProfileService::update(&state, &id, name, resnapshot.unwrap_or(false), scope)
+        .map(ProfileDto::from)
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub fn update_profile_workspace(
+    state: State<'_, AppState>,
+    id: String,
+    directory: Option<String>,
+    #[allow(non_snake_case)] defaultTool: Option<String>,
+) -> Result<ProfileDto, String> {
+    ProfileService::update_workspace(&state, &id, directory, defaultTool)
         .map(ProfileDto::from)
         .map_err(|e| e.to_string())
 }

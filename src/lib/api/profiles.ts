@@ -1,4 +1,5 @@
 import { invoke } from "@tauri-apps/api/core";
+import type { AppId } from "./types";
 
 /**
  * Profile 操作的应用分组（与后端 services/profile.rs 的 ProfileScope 严格对应）
@@ -6,7 +7,15 @@ import { invoke } from "@tauri-apps/api/core";
  * 项目实体全应用共享，但快照/应用/当前指针按组进行；Claude Code 与
  * Claude Desktop 的供应商独立切换，因此各自有独立分组。
  */
-export type ProfileScope = "claude" | "claude-desktop" | "codex";
+export type ProfileScope =
+  | "claude"
+  | "claude-desktop"
+  | "codex"
+  | "gemini"
+  | "grokbuild"
+  | "opencode"
+  | "openclaw"
+  | "hermes";
 
 /**
  * 按 app 分槽的载荷容器（与后端 services/profile.rs 的 PerApp<T> 严格对应）
@@ -15,6 +24,11 @@ export interface PerApp<T> {
   claude: T;
   "claude-desktop": T;
   codex: T;
+  gemini: T;
+  grokbuild: T;
+  opencode: T;
+  openclaw: T;
+  hermes: T;
 }
 
 /**
@@ -24,6 +38,10 @@ export interface PerApp<T> {
  * （空数组，应用时清空启用）严格区分。
  */
 export interface ProfilePayload {
+  project: {
+    directory: string | null;
+    defaultTool: AppId | null;
+  };
   providers: PerApp<string | null>;
   mcp: PerApp<string[] | null>;
   skills: PerApp<string[] | null>;
@@ -47,6 +65,11 @@ export interface CurrentProfileIds {
   claude: string | null;
   claudeDesktop: string | null;
   codex: string | null;
+  gemini: string | null;
+  grokbuild: string | null;
+  opencode: string | null;
+  openclaw: string | null;
+  hermes: string | null;
 }
 
 export interface ProfilesResponse {
@@ -82,6 +105,24 @@ export const profilesApi = {
       name: options.name,
       resnapshot: options.resnapshot,
       scope: options.scope,
+    });
+  },
+
+  async updateWorkspace(
+    id: string,
+    workspace: { directory?: string | null; defaultTool?: AppId | null },
+  ): Promise<Profile> {
+    return await invoke("update_profile_workspace", {
+      id,
+      directory: workspace.directory ?? null,
+      defaultTool: workspace.defaultTool ?? null,
+    });
+  },
+
+  async launch(id: string, tool?: AppId): Promise<boolean> {
+    return await invoke("launch_project_tool", {
+      profileId: id,
+      tool,
     });
   },
 

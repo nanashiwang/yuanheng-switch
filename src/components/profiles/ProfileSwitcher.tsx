@@ -47,6 +47,11 @@ const CURRENT_ID_KEY: Record<ProfileScope, keyof CurrentProfileIds> = {
   claude: "claude",
   "claude-desktop": "claudeDesktop",
   codex: "codex",
+  gemini: "gemini",
+  grokbuild: "grokbuild",
+  opencode: "opencode",
+  openclaw: "openclaw",
+  hermes: "hermes",
 };
 
 interface ProfileSwitcherProps {

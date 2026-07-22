@@ -1283,6 +1283,13 @@ requires_openai_auth = true
         db.save_live_backup("claude-desktop", "{}")
             .await
             .expect("seed live backup");
+        db.update_proxy_config(ProxyConfig {
+            live_takeover_active: true,
+            listen_port: 0,
+            ..Default::default()
+        })
+        .await
+        .expect("use an ephemeral proxy port");
         {
             let mut config = db
                 .get_proxy_config_for_app("claude-desktop")
@@ -1299,6 +1306,12 @@ requires_openai_auth = true
             .start()
             .await
             .expect("start proxy service");
+        let proxy_port = state
+            .proxy_service
+            .get_status()
+            .await
+            .expect("read proxy status")
+            .port;
 
         let mut updated = Provider::with_id(
             "p1".into(),
@@ -1342,7 +1355,7 @@ requires_openai_auth = true
         let profile: Value = read_json_file(&profile_path).expect("read desktop profile");
         assert_eq!(
             profile["inferenceGatewayBaseUrl"],
-            json!("http://127.0.0.1:15721/claude-desktop"),
+            json!(format!("http://127.0.0.1:{proxy_port}/claude-desktop")),
             "desktop profile should stay pointed at the local gateway during takeover"
         );
         assert_eq!(profile["inferenceGatewayAuthScheme"], json!("bearer"));

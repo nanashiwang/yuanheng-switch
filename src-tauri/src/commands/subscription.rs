@@ -35,7 +35,6 @@ pub async fn get_subscription_quota(
             state
                 .usage_cache
                 .put_subscription(app_type, snapshot.clone());
-            crate::tray::schedule_tray_refresh(&app);
         }
     }
     inner

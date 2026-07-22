@@ -152,3 +152,8 @@ export function useTheme() {
   }
   return context;
 }
+
+/** 供可嵌入的顶栏控件使用；完整应用仍应使用 useTheme 强制校验 Provider。 */
+export function useOptionalTheme() {
+  return useContext(ThemeProviderContext);
+}

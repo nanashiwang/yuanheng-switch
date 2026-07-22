@@ -1,5 +1,11 @@
 import type { AppId } from "@/lib/api/types";
 import type {
+  CurrentProfileIds,
+  Profile,
+  ProfileScope,
+  ProfilesResponse,
+} from "@/lib/api/profiles";
+import type {
   McpServer,
   Provider,
   SessionMessage,
@@ -199,6 +205,24 @@ let mcpConfigs: McpConfigState = {
   hermes: {},
 };
 
+const emptyCurrentProfileIds = (): CurrentProfileIds => ({
+  claude: null,
+  claudeDesktop: null,
+  codex: null,
+  gemini: null,
+  grokbuild: null,
+  opencode: null,
+  openclaw: null,
+  hermes: null,
+});
+
+let profilesState: ProfilesResponse = {
+  profiles: [],
+  currentIds: emptyCurrentProfileIds(),
+};
+let profileApplyCalls: Array<{ id: string; scope: ProfileScope }> = [];
+let projectLaunchCalls: Array<{ profileId: string; tool?: AppId }> = [];
+
 const cloneProviders = (value: ProvidersByApp) =>
   deepClone(value) as ProvidersByApp;
 
@@ -267,7 +291,51 @@ export const resetProviderState = () => {
     openclaw: {},
     hermes: {},
   };
+  profilesState = {
+    profiles: [],
+    currentIds: emptyCurrentProfileIds(),
+  };
+  profileApplyCalls = [];
+  projectLaunchCalls = [];
 };
+
+const currentProfileKey: Record<ProfileScope, keyof CurrentProfileIds> = {
+  claude: "claude",
+  "claude-desktop": "claudeDesktop",
+  codex: "codex",
+  gemini: "gemini",
+  grokbuild: "grokbuild",
+  opencode: "opencode",
+  openclaw: "openclaw",
+  hermes: "hermes",
+};
+
+export const getProfilesResponse = () =>
+  deepClone(profilesState) as ProfilesResponse;
+
+export const setProfileFixtures = (
+  profiles: Profile[],
+  currentIds: Partial<CurrentProfileIds> = {},
+) => {
+  profilesState = {
+    profiles: deepClone(profiles) as Profile[],
+    currentIds: { ...emptyCurrentProfileIds(), ...currentIds },
+  };
+  profileApplyCalls = [];
+  projectLaunchCalls = [];
+};
+
+export const applyProfileFixture = (id: string, scope: ProfileScope) => {
+  profileApplyCalls.push({ id, scope });
+  profilesState.currentIds[currentProfileKey[scope]] = id;
+};
+
+export const recordProjectLaunch = (profileId: string, tool?: AppId) => {
+  projectLaunchCalls.push({ profileId, tool });
+};
+
+export const getProfileApplyCalls = () => [...profileApplyCalls];
+export const getProjectLaunchCalls = () => [...projectLaunchCalls];
 
 export const getProviders = (appType: AppId) =>
   cloneProviders(providers)[appType] ?? {};

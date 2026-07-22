@@ -229,8 +229,11 @@ fn run_tool_lifecycle_silently(command_line: &str, label: &str) -> Result<(), St
     use std::os::windows::process::CommandExt;
     use std::process::Command;
 
-    let bat_file =
-        std::env::temp_dir().join(format!("cc_switch_{}_{}.bat", label, std::process::id()));
+    let bat_file = std::env::temp_dir().join(format!(
+        "yuanheng_switch_{}_{}.bat",
+        label,
+        std::process::id()
+    ));
     std::fs::write(&bat_file, command_line).map_err(|e| format!("写入批处理文件失败: {e}"))?;
 
     let output = Command::new("cmd")
@@ -2715,6 +2718,63 @@ pub async fn open_provider_terminal(
     Ok(true)
 }
 
+fn project_tool_command(tool: &str) -> Option<&'static str> {
+    match tool {
+        "claude" => Some("claude"),
+        "codex" => Some("codex"),
+        "gemini" => Some("gemini"),
+        "grokbuild" => Some("grok"),
+        "opencode" => Some("opencode"),
+        "openclaw" => Some("openclaw"),
+        "hermes" => Some("hermes"),
+        _ => None,
+    }
+}
+
+/// 使用项目保存的目录和默认工具启动交互式终端。
+#[allow(non_snake_case)]
+#[tauri::command]
+pub async fn launch_project_tool(
+    state: State<'_, crate::store::AppState>,
+    profileId: String,
+    tool: Option<String>,
+) -> Result<bool, String> {
+    let profile = state
+        .db
+        .get_profile(&profileId)
+        .map_err(|e| e.to_string())?
+        .ok_or_else(|| format!("项目不存在: {profileId}"))?;
+    let payload: crate::services::profile::ProfilePayload =
+        serde_json::from_str(&profile.payload).map_err(|e| format!("项目配置损坏: {e}"))?;
+    let directory = payload
+        .project
+        .directory
+        .ok_or_else(|| "请先为项目选择目录".to_string())?;
+    let directory =
+        resolve_launch_cwd(Some(directory))?.ok_or_else(|| "请先为项目选择目录".to_string())?;
+    let tool = tool
+        .or(payload.project.default_tool)
+        .ok_or_else(|| "请先选择默认 AI 工具".to_string())?;
+    let command = project_tool_command(&tool).ok_or_else(|| format!("不支持的项目工具: {tool}"))?;
+
+    #[cfg(not(target_os = "windows"))]
+    let command_line = format!(
+        "cd -- {} && {}",
+        shell_single_quote(&directory.to_string_lossy()),
+        command
+    );
+
+    #[cfg(target_os = "windows")]
+    let command_line = format!("{}{}", build_windows_cwd_command(Some(&directory)), command);
+
+    tokio::task::spawn_blocking(move || {
+        launch_terminal_running(&command_line, &format!("project_{tool}"))
+    })
+    .await
+    .map_err(|e| format!("project launch task join error: {e}"))??;
+    Ok(true)
+}
+
 /// 从提供商配置中提取环境变量
 fn extract_env_vars_from_config(
     config: &serde_json::Value,
@@ -2874,7 +2934,10 @@ fn launch_macos_terminal(config_file: &std::path::Path, cwd: Option<&Path>) -> R
     let final_cd_command = build_final_shell_cd_command(&shell, cwd);
 
     let temp_dir = std::env::temp_dir();
-    let script_file = temp_dir.join(format!("cc_switch_launcher_{}.sh", std::process::id()));
+    let script_file = temp_dir.join(format!(
+        "yuanheng_switch_launcher_{}.sh",
+        std::process::id()
+    ));
     let config_path = config_file.to_string_lossy();
     let provider_command = build_provider_command_line(&shell, &config_path, cwd);
 
@@ -3207,7 +3270,10 @@ fn launch_linux_terminal(config_file: &std::path::Path, cwd: Option<&Path>) -> R
 
     // Create temp script file
     let temp_dir = std::env::temp_dir();
-    let script_file = temp_dir.join(format!("cc_switch_launcher_{}.sh", std::process::id()));
+    let script_file = temp_dir.join(format!(
+        "yuanheng_switch_launcher_{}.sh",
+        std::process::id()
+    ));
     let config_path = config_file.to_string_lossy();
     let provider_command = build_provider_command_line(&shell, &config_path, cwd);
 
@@ -3308,7 +3374,7 @@ fn launch_windows_terminal(
     let preferred = crate::settings::get_preferred_terminal();
     let terminal = preferred.as_deref().unwrap_or("cmd");
 
-    let bat_file = temp_dir.join(format!("cc_switch_claude_{}.bat", std::process::id()));
+    let bat_file = temp_dir.join(format!("yuanheng_switch_claude_{}.bat", std::process::id()));
     let config_path_for_batch = escape_windows_batch_value(&config_file.to_string_lossy());
     let cwd_command = build_windows_cwd_command(cwd);
 
@@ -3434,7 +3500,7 @@ pub(crate) fn launch_terminal_running(command_line: &str, label: &str) -> Result
 
     #[cfg(any(target_os = "macos", target_os = "linux"))]
     let (script_file, script_content) = {
-        let file = temp_dir.join(format!("cc_switch_{}_{}.sh", label, pid));
+        let file = temp_dir.join(format!("yuanheng_switch_{}_{}.sh", label, pid));
         let content = format!(
             r#"#!/usr/bin/env sh
 trap 'rm -f "{script_path}"' EXIT
@@ -3560,7 +3626,7 @@ read -r _
         let preferred = crate::settings::get_preferred_terminal();
         let terminal = preferred.as_deref().unwrap_or("cmd");
 
-        let bat_file = temp_dir.join(format!("cc_switch_{}_{}.bat", label, pid));
+        let bat_file = temp_dir.join(format!("yuanheng_switch_{}_{}.bat", label, pid));
         let content = format!(
             "@echo off\r\necho [yuanheng-switch] Starting: {label}\r\necho.\r\n{cmd}\r\necho.\r\necho [yuanheng-switch] Command exited. Press any key to close.\r\npause >nul\r\ndel \"%~f0\" >nul 2>&1\r\n",
             label = label,
@@ -5460,10 +5526,22 @@ mod tests {
         assert!(error.contains("目录不存在"));
     }
 
+    #[test]
+    fn project_tool_command_covers_every_project_cli() {
+        assert_eq!(project_tool_command("claude"), Some("claude"));
+        assert_eq!(project_tool_command("codex"), Some("codex"));
+        assert_eq!(project_tool_command("gemini"), Some("gemini"));
+        assert_eq!(project_tool_command("grokbuild"), Some("grok"));
+        assert_eq!(project_tool_command("opencode"), Some("opencode"));
+        assert_eq!(project_tool_command("openclaw"), Some("openclaw"));
+        assert_eq!(project_tool_command("hermes"), Some("hermes"));
+        assert_eq!(project_tool_command("claude-desktop"), None);
+    }
+
     #[cfg(target_os = "macos")]
     #[test]
     fn iterm2_applescript_cold_start_avoids_current_window_before_one_exists() {
-        let script = build_macos_iterm2_applescript(Path::new("/tmp/cc_switch_launcher.sh"));
+        let script = build_macos_iterm2_applescript(Path::new("/tmp/yuanheng_switch_launcher.sh"));
 
         let cold_start_branch = script
             .split("else\n        activate")
@@ -5482,7 +5560,7 @@ mod tests {
     #[cfg(target_os = "macos")]
     #[test]
     fn iterm2_applescript_keeps_new_tab_behavior_for_existing_windows() {
-        let script = build_macos_iterm2_applescript(Path::new("/tmp/cc_switch_launcher.sh"));
+        let script = build_macos_iterm2_applescript(Path::new("/tmp/yuanheng_switch_launcher.sh"));
 
         let running_branch = script
             .split("if was_running then")
@@ -5501,7 +5579,8 @@ mod tests {
     #[cfg(target_os = "macos")]
     #[test]
     fn terminal_applescript_cold_start_uses_launch_before_do_script() {
-        let script = build_macos_terminal_applescript(Path::new("/tmp/cc_switch_launcher.sh"));
+        let script =
+            build_macos_terminal_applescript(Path::new("/tmp/yuanheng_switch_launcher.sh"));
 
         assert!(
             script.contains(r#"set was_running to application "Terminal" is running"#),
@@ -5522,7 +5601,8 @@ mod tests {
             "already-running branch should use bare do script:\n{script}"
         );
         assert!(
-            script.contains(r#"set launcher_script to "exec sh '/tmp/cc_switch_launcher.sh'""#),
+            script
+                .contains(r#"set launcher_script to "exec sh '/tmp/yuanheng_switch_launcher.sh'""#),
             "Terminal should replace the auto-created shell:\n{script}"
         );
     }
@@ -5531,7 +5611,8 @@ mod tests {
     #[cfg(target_os = "macos")]
     #[test]
     fn terminal_applescript_does_not_hijack_restored_windows() {
-        let script = build_macos_terminal_applescript(Path::new("/tmp/cc_switch_launcher.sh"));
+        let script =
+            build_macos_terminal_applescript(Path::new("/tmp/yuanheng_switch_launcher.sh"));
         assert!(
             !script.contains(" in window 1"),
             "should not inject into an existing/restored Terminal window:\n{script}"
@@ -5546,11 +5627,11 @@ mod tests {
     #[cfg(target_os = "macos")]
     #[test]
     fn ghostty_applescript_cold_start_uses_initial_command() {
-        let script = build_macos_ghostty_applescript(Path::new("/tmp/cc_switch_launcher.sh"));
+        let script = build_macos_ghostty_applescript(Path::new("/tmp/yuanheng_switch_launcher.sh"));
 
         // Warm launches execute through the AppleScript command property, not `open -na ... -e`.
         assert!(
-            script.contains(r#"set launcher_command to "sh '/tmp/cc_switch_launcher.sh'""#),
+            script.contains(r#"set launcher_command to "sh '/tmp/yuanheng_switch_launcher.sh'""#),
             "missing launcher_command:\n{script}"
         );
         assert!(script.contains("if was_running then"));
@@ -5589,8 +5670,8 @@ mod tests {
     #[test]
     fn dash_c_command_wraps_script_path_inside_quoted_arg() {
         // The script path must stay inside the `-c` string, not as a bare argv.
-        let s = build_macos_dash_c_command(Path::new("/tmp/cc_switch_launcher_1.sh"));
-        assert_eq!(s, "exec sh '/tmp/cc_switch_launcher_1.sh'");
+        let s = build_macos_dash_c_command(Path::new("/tmp/yuanheng_switch_launcher_1.sh"));
+        assert_eq!(s, "exec sh '/tmp/yuanheng_switch_launcher_1.sh'");
 
         // Spaces and single quotes must stay shell-safe too.
         let s2 = build_macos_dash_c_command(Path::new("/Users/me/it's dir/x.sh"));

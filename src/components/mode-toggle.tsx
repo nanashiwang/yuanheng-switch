@@ -1,17 +1,18 @@
 import { Moon, Sun } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { Button } from "@/components/ui/button";
-import { useTheme } from "@/components/theme-provider";
+import { useOptionalTheme } from "@/components/theme-provider";
 
 export function ModeToggle() {
-  const { theme, setTheme } = useTheme();
+  const themeContext = useOptionalTheme();
+  const theme = themeContext?.theme ?? "light";
   const { t } = useTranslation();
 
   const toggleTheme = () => {
     if (theme === "dark") {
-      setTheme("light");
+      themeContext?.setTheme("light");
     } else {
-      setTheme("dark");
+      themeContext?.setTheme("dark");
     }
   };
 

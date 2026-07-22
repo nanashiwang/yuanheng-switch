@@ -1,5 +1,10 @@
 import type { AppId } from "@/lib/api/types";
-import type { PerApp, Profile, ProfileScope } from "@/lib/api/profiles";
+import type {
+  CurrentProfileIds,
+  PerApp,
+  Profile,
+  ProfileScope,
+} from "@/lib/api/profiles";
 
 /**
  * 应用页 → 所属项目分组（后端 ProfileScope::for_app 的前端镜像，两处同步）
@@ -10,13 +15,42 @@ export const APP_PROFILE_SCOPE: Partial<Record<AppId, ProfileScope>> = {
   claude: "claude",
   "claude-desktop": "claude-desktop",
   codex: "codex",
+  gemini: "gemini",
+  grokbuild: "grokbuild",
+  opencode: "opencode",
+  openclaw: "openclaw",
+  hermes: "hermes",
 };
+
+const CURRENT_PROFILE_KEY: Record<ProfileScope, keyof CurrentProfileIds> = {
+  claude: "claude",
+  "claude-desktop": "claudeDesktop",
+  codex: "codex",
+  gemini: "gemini",
+  grokbuild: "grokbuild",
+  opencode: "opencode",
+  openclaw: "openclaw",
+  hermes: "hermes",
+};
+
+export function getCurrentProfileId(
+  currentIds: CurrentProfileIds | undefined,
+  app: AppId,
+) {
+  const scope = APP_PROFILE_SCOPE[app];
+  return scope && currentIds ? currentIds[CURRENT_PROFILE_KEY[scope]] : null;
+}
 
 /** 分组内的 payload 槽位 key（后端 ProfileScope::apps 的前端镜像） */
 const SCOPE_SLOT_KEYS: Record<ProfileScope, (keyof PerApp<unknown>)[]> = {
   claude: ["claude"],
   "claude-desktop": ["claude-desktop"],
   codex: ["codex"],
+  gemini: ["gemini"],
+  grokbuild: ["grokbuild"],
+  opencode: ["opencode"],
+  openclaw: ["openclaw"],
+  hermes: ["hermes"],
 };
 
 /**

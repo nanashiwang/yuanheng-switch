@@ -469,7 +469,6 @@ pub async fn queryProviderUsage(
         state
             .usage_cache
             .put_script(app_type, providerId, snapshot.clone());
-        crate::tray::schedule_tray_refresh(&app_handle);
     }
     inner
 }

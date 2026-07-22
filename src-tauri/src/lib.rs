@@ -45,7 +45,7 @@ pub use commands::open_provider_terminal;
 pub use commands::*;
 pub use config::{get_claude_mcp_path, get_claude_settings_path, read_json_file};
 pub use database::{Database, Profile};
-pub use deeplink::{import_provider_from_deeplink, parse_deeplink_url, DeepLinkImportRequest};
+pub use deeplink::{parse_deeplink_url, DeepLinkImportRequest};
 pub use error::AppError;
 pub use grok_config::get_grok_config_path;
 pub use mcp::{
@@ -72,7 +72,7 @@ use tauri_plugin_dialog::{DialogExt, MessageDialogButtons, MessageDialogKind};
 use std::{fmt, sync::Arc};
 #[cfg(target_os = "macos")]
 use tauri::image::Image;
-use tauri::tray::{TrayIconBuilder, TrayIconEvent};
+use tauri::tray::TrayIconBuilder;
 use tauri::RunEvent;
 use tauri::{Emitter, Manager};
 use tauri_plugin_window_state::{AppHandleExt, StateFlags};
@@ -1036,18 +1036,6 @@ pub fn run() {
             // 构建托盘
             let mut tray_builder = TrayIconBuilder::with_id(tray::TRAY_ID)
                 .tooltip("YuanHeng Desktop") // 鼠标悬停提示
-                .on_tray_icon_event(|tray, event| match event {
-                    // 鼠标悬停/点击到托盘图标时，后台异步刷新用量缓存，
-                    // 让用户下一次（或快速打开菜单的那一刻）看到较新的数字。
-                    // refresh_all_usage_in_tray 内部有 10 秒防抖。
-                    TrayIconEvent::Enter { .. } | TrayIconEvent::Click { .. } => {
-                        let app = tray.app_handle().clone();
-                        tauri::async_runtime::spawn(async move {
-                            crate::tray::refresh_all_usage_in_tray(&app).await;
-                        });
-                    }
-                    _ => log::debug!("unhandled event {event:?}"),
-                })
                 .menu(&menu)
                 .on_menu_event(|app, event| {
                     tray::handle_tray_menu_event(app, &event.id.0);
@@ -1306,7 +1294,6 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             commands::get_providers,
             commands::get_current_provider,
-            commands::add_provider,
             commands::update_provider,
             commands::delete_provider,
             commands::remove_provider_from_live_config,
@@ -1439,8 +1426,6 @@ pub fn run() {
             commands::sync_current_providers_live,
             // Deep link import
             commands::parse_deeplink,
-            commands::merge_deeplink_config,
-            commands::import_from_deeplink,
             commands::import_from_deeplink_unified,
             update_tray_menu,
             // Environment variable management
@@ -1540,12 +1525,17 @@ pub fn run() {
             commands::get_tool_versions,
             commands::run_tool_lifecycle_action,
             commands::probe_tool_installations,
+            commands::update_profile_workspace,
             // Provider terminal
             commands::open_provider_terminal,
+            commands::launch_project_tool,
+            commands::get_yuanheng_connection,
+            commands::connect_yuanheng,
+            commands::refresh_yuanheng_connection,
+            commands::disconnect_yuanheng,
             // Universal Provider management
             commands::get_universal_providers,
             commands::get_universal_provider,
-            commands::upsert_universal_provider,
             commands::delete_universal_provider,
             commands::sync_universal_provider,
             // OpenCode specific

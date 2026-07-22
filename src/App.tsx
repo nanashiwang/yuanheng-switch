@@ -1,115 +1,89 @@
-import { useEffect, useMemo, useState, useRef } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import { useTranslation } from "react-i18next";
-import { motion, AnimatePresence } from "framer-motion";
-import { toast } from "sonner";
 import { invoke } from "@tauri-apps/api/core";
+import { getCurrentWindow } from "@tauri-apps/api/window";
 import { useQueryClient } from "@tanstack/react-query";
 import {
-  Plus,
-  Settings,
   ArrowLeft,
-  Minus,
-  Maximize2,
-  Minimize2,
-  X,
-  Book,
-  Brain,
-  Wrench,
-  History,
-  BarChart2,
   Download,
   FolderArchive,
+  History,
+  Maximize2,
+  Minimize2,
+  Minus,
+  Plus,
   Search,
-  FolderOpen,
-  KeyRound,
-  Shield,
-  Cpu,
-  LayoutDashboard,
+  Settings,
+  X,
 } from "lucide-react";
-import { getCurrentWindow } from "@tauri-apps/api/window";
-import type { Provider, VisibleApps } from "@/types";
-import type { EnvConflict } from "@/types/env";
-import { useProvidersQuery, useSettingsQuery } from "@/lib/query";
+import { toast } from "sonner";
+
+import type { AppId, ProviderSwitchEvent } from "@/lib/api";
+import { profilesApi, providersApi, settingsApi } from "@/lib/api";
+import { useSettingsQuery } from "@/lib/query";
+import { useProfilesQuery } from "@/lib/query/profiles";
 import {
-  providersApi,
-  settingsApi,
-  type AppId,
-  type ProviderSwitchEvent,
-} from "@/lib/api";
-import { checkAllEnvConflicts, checkEnvConflicts } from "@/lib/api/env";
-import { useProviderActions } from "@/hooks/useProviderActions";
-import { openclawKeys, useOpenClawHealth } from "@/hooks/useOpenClaw";
-import { hermesKeys, useOpenHermesWebUI } from "@/hooks/useHermes";
-import { hermesApi } from "@/lib/api/hermes";
-import { useProxyStatus } from "@/hooks/useProxyStatus";
-import { useAutoCompact } from "@/hooks/useAutoCompact";
-import { useUsageCacheBridge } from "@/hooks/useUsageCacheBridge";
-import { useTauriEvent } from "@/hooks/useTauriEvent";
-import { useLastValidValue } from "@/hooks/useLastValidValue";
-import { useScanUnmanagedSkills } from "@/hooks/useSkills";
+  APP_PROFILE_SCOPE,
+  getCurrentProfileId,
+} from "@/components/profiles/scope";
+import type { ProfileScope } from "@/lib/api/profiles";
+import { checkAllEnvConflicts } from "@/lib/api/env";
+import type { EnvConflict } from "@/types/env";
+import type { VisibleApps } from "@/types";
 import { extractErrorMessage } from "@/utils/errorUtils";
 import { isTextEditableTarget } from "@/utils/domUtils";
-import { cn } from "@/lib/utils";
 import {
-  isWindows,
-  isLinux,
   DRAG_REGION_ATTR,
   DRAG_REGION_STYLE,
+  isLinux,
+  isWindows,
 } from "@/lib/platform";
-import { AppSwitcher } from "@/components/AppSwitcher";
-import { ProfileSwitcher } from "@/components/profiles/ProfileSwitcher";
-import { ProviderList } from "@/components/providers/ProviderList";
-import { YuanhengProjectBanner } from "@/components/YuanhengProjectBanner";
-import { EditProviderDialog } from "@/components/providers/EditProviderDialog";
-import { ConfirmDialog } from "@/components/ConfirmDialog";
-import { SettingsPage } from "@/components/settings/SettingsPage";
+import { useTauriEvent } from "@/hooks/useTauriEvent";
+import { useUsageCacheBridge } from "@/hooks/useUsageCacheBridge";
+import { useProxyStatus } from "@/hooks/useProxyStatus";
+import { useScanUnmanagedSkills } from "@/hooks/useSkills";
+
+import { Button } from "@/components/ui/button";
 import { UpdateBadge } from "@/components/UpdateBadge";
+import { ModeToggle } from "@/components/mode-toggle";
 import { EnvWarningBanner } from "@/components/env/EnvWarningBanner";
-import { ProxyToggle } from "@/components/proxy/ProxyToggle";
-import { ClaudeDesktopRouteToggle } from "@/components/proxy/ClaudeDesktopRouteToggle";
-import { FailoverToggle } from "@/components/proxy/FailoverToggle";
-import UsageScriptModal from "@/components/UsageScriptModal";
+import { DeepLinkImportDialog } from "@/components/DeepLinkImportDialog";
+import { SettingsPage } from "@/components/settings/SettingsPage";
 import UnifiedMcpPanel from "@/components/mcp/UnifiedMcpPanel";
 import PromptPanel from "@/components/prompts/PromptPanel";
+import UnifiedSkillsPanel from "@/components/skills/UnifiedSkillsPanel";
 import {
   SkillsPage,
   getSkillsPageHeaderActions,
   type SkillsPageSource,
 } from "@/components/skills/SkillsPage";
-import UnifiedSkillsPanel from "@/components/skills/UnifiedSkillsPanel";
-import { DeepLinkImportDialog } from "@/components/DeepLinkImportDialog";
-import { FirstRunNoticeDialog } from "@/components/FirstRunNoticeDialog";
 import { AgentsPanel } from "@/components/agents/AgentsPanel";
-import { UniversalProviderPanel } from "@/components/universal";
-import { McpIcon } from "@/components/BrandIcons";
-import { Button } from "@/components/ui/button";
-import { SessionManagerPage } from "@/components/sessions/SessionManagerPage";
-import {
-  useDisableCurrentOmo,
-  useDisableCurrentOmoSlim,
-} from "@/lib/query/omo";
 import WorkspaceFilesPanel from "@/components/workspace/WorkspaceFilesPanel";
 import EnvPanel from "@/components/openclaw/EnvPanel";
 import ToolsPanel from "@/components/openclaw/ToolsPanel";
 import AgentsDefaultsPanel from "@/components/openclaw/AgentsDefaultsPanel";
-import OpenClawHealthBanner from "@/components/openclaw/OpenClawHealthBanner";
 import HermesMemoryPanel from "@/components/hermes/HermesMemoryPanel";
 
-type View =
-  | "providers"
-  | "settings"
-  | "prompts"
-  | "skills"
-  | "skillsDiscovery"
-  | "mcp"
-  | "agents"
-  | "universal"
-  | "sessions"
-  | "workspace"
-  | "openclawEnv"
-  | "openclawTools"
-  | "openclawAgents"
-  | "hermesMemory";
+import { DesktopSidebar } from "@/components/desktop/DesktopSidebar";
+import { ProjectSelector } from "@/components/desktop/ProjectSelector";
+import { WorkspaceDashboard } from "@/components/desktop/WorkspaceDashboard";
+import { ProjectsPage } from "@/components/desktop/ProjectsPage";
+import { ToolsPage } from "@/components/desktop/ToolsPage";
+import { CapabilityCenter } from "@/components/desktop/CapabilityCenter";
+import { UsageCenter } from "@/components/desktop/UsageCenter";
+import { ConnectionCenter } from "@/components/desktop/ConnectionCenter";
+import { OnboardingWizard } from "@/components/desktop/OnboardingWizard";
+import type { DesktopView } from "@/components/desktop/types";
+import { useYuanhengConnection } from "@/lib/query/yuanheng";
+import { APP_ICON_MAP } from "@/config/appConfig";
+import { ProviderIcon } from "@/components/ProviderIcon";
+
+const DEFAULT_DRAG_BAR_HEIGHT = isWindows() || isLinux() ? 0 : 28;
+const VIEW_KEY = "yuanheng-desktop-last-view";
+const APP_KEY = "yuanheng-switch-last-app";
+const PROJECT_KEY = "yuanheng-desktop-current-project";
+const IS_TAURI_RUNTIME =
+  typeof window !== "undefined" && "__TAURI_INTERNALS__" in window;
 
 interface SyncStatusUpdatedPayload {
   source?: string;
@@ -117,11 +91,12 @@ interface SyncStatusUpdatedPayload {
   error?: string;
 }
 
-const DEFAULT_DRAG_BAR_HEIGHT = isWindows() || isLinux() ? 0 : 28; // px
-const HEADER_HEIGHT = 64; // px
+interface ProfileAppliedEvent {
+  profileId: string | null;
+  scope: ProfileScope;
+}
 
-const STORAGE_KEY = "yuanheng-switch-last-app";
-const VALID_APPS: AppId[] = [
+const ALL_APPS: AppId[] = [
   "claude",
   "claude-desktop",
   "codex",
@@ -132,62 +107,108 @@ const VALID_APPS: AppId[] = [
   "hermes",
 ];
 
-const getInitialApp = (): AppId => {
-  const saved = localStorage.getItem(STORAGE_KEY) as AppId | null;
-  if (saved && VALID_APPS.includes(saved)) {
-    return saved;
-  }
-  return "claude";
-};
-
-const VIEW_STORAGE_KEY = "yuanheng-switch-last-view";
-const VALID_VIEWS: View[] = [
-  "providers",
+const TOP_LEVEL_VIEWS: DesktopView[] = [
+  "home",
+  "projects",
+  "tools",
+  "capabilities",
+  "usage",
+  "network",
   "settings",
-  "prompts",
-  "skills",
-  "skillsDiscovery",
-  "mcp",
-  "agents",
-  "universal",
-  "sessions",
-  "workspace",
-  "openclawEnv",
-  "openclawTools",
-  "openclawAgents",
-  "hermesMemory",
 ];
 
-const getInitialView = (): View => {
-  const saved = localStorage.getItem(VIEW_STORAGE_KEY) as View | null;
-  if (saved && VALID_VIEWS.includes(saved)) {
-    return saved;
-  }
-  return "providers";
-};
+function getInitialApp(): AppId {
+  const saved = localStorage.getItem(APP_KEY) as AppId | null;
+  return saved && ALL_APPS.includes(saved) ? saved : "claude";
+}
+
+function getInitialView(): DesktopView {
+  const saved = localStorage.getItem(VIEW_KEY) as DesktopView | null;
+  return saved && TOP_LEVEL_VIEWS.includes(saved) ? saved : "home";
+}
+
+interface DetailFrameProps {
+  title: string;
+  description: string;
+  onBack: () => void;
+  actions?: ReactNode;
+  children: ReactNode;
+}
+
+function DetailFrame({
+  title,
+  description,
+  onBack,
+  actions,
+  children,
+}: DetailFrameProps) {
+  return (
+    <div className="flex h-full min-h-0 flex-col overflow-hidden px-7 pt-5">
+      <div className="flex shrink-0 items-start gap-3 pb-4">
+        <Button
+          variant="outline"
+          size="icon"
+          className="h-9 w-9"
+          aria-label="返回能力中心"
+          onClick={onBack}
+        >
+          <ArrowLeft className="h-4 w-4" />
+        </Button>
+        <div className="min-w-0 flex-1">
+          <h1 className="font-display text-xl font-semibold">{title}</h1>
+          <p className="mt-0.5 text-[11px] text-muted-foreground">
+            {description}
+          </p>
+        </div>
+        {actions && <div className="flex items-center gap-2">{actions}</div>}
+      </div>
+      <div className="min-h-0 flex-1 overflow-hidden rounded-2xl border bg-card/45">
+        {children}
+      </div>
+    </div>
+  );
+}
 
 function App() {
   const { t } = useTranslation();
   const queryClient = useQueryClient();
-
-  const [activeApp, setActiveApp] = useState<AppId>(getInitialApp);
-  const sharedFeatureApp: AppId =
-    activeApp === "claude-desktop" ? "claude" : activeApp;
-  const [currentView, setCurrentView] = useState<View>(getInitialView);
+  const [view, setView] = useState<DesktopView>(getInitialView);
+  const [activeApp, setActiveAppState] = useState<AppId>(getInitialApp);
+  const [selectedProjectId, setSelectedProjectId] = useState<string | null>(
+    () => localStorage.getItem(PROJECT_KEY),
+  );
+  const [projectCreateSignal, setProjectCreateSignal] = useState(0);
+  const [settingsDefaultTab, setSettingsDefaultTab] = useState("general");
   const [skillsDiscoverySource, setSkillsDiscoverySource] =
     useState<SkillsPageSource>("repos");
-  const [settingsDefaultTab, setSettingsDefaultTab] = useState("general");
+  const [envConflicts, setEnvConflicts] = useState<EnvConflict[]>([]);
+  const [showEnvBanner, setShowEnvBanner] = useState(false);
   const [isWindowMaximized, setIsWindowMaximized] = useState(false);
 
-  useEffect(() => {
-    localStorage.setItem(VIEW_STORAGE_KEY, currentView);
-  }, [currentView]);
+  const promptPanelRef = useRef<any>(null);
+  const mcpPanelRef = useRef<any>(null);
+  const skillsPageRef = useRef<any>(null);
+  const unifiedSkillsPanelRef = useRef<any>(null);
 
   const { data: settingsData } = useSettingsQuery();
-  const useAppWindowControls =
-    isLinux() && (settingsData?.useAppWindowControls ?? false);
-  const dragBarHeight = useAppWindowControls ? 32 : DEFAULT_DRAG_BAR_HEIGHT;
-  const contentTopOffset = dragBarHeight + HEADER_HEIGHT;
+  const { data: profilesData } = useProfilesQuery();
+  const { data: yuanhengConnection } = useYuanhengConnection();
+  const activeProjectByScope = useRef<
+    Partial<Record<ProfileScope, string | null>>
+  >({});
+  const projectScopeTasks = useRef<
+    Partial<Record<ProfileScope, Promise<void>>>
+  >({});
+  const { data: unmanagedSkills } = useScanUnmanagedSkills();
+  const hasUnmanagedSkills = (unmanagedSkills?.length ?? 0) > 0;
+  const { isRunning: isProxyRunning } = useProxyStatus();
+
+  useUsageCacheBridge();
+
+  const profiles = profilesData?.profiles ?? [];
+  const selectedProject = profiles.find(
+    (profile) => profile.id === selectedProjectId,
+  );
   const visibleApps: VisibleApps = settingsData?.visibleApps ?? {
     claude: true,
     "claude-desktop": true,
@@ -198,1346 +219,699 @@ function App() {
     openclaw: true,
     hermes: true,
   };
+  const useAppWindowControls =
+    isLinux() && (settingsData?.useAppWindowControls ?? false);
+  const dragBarHeight = useAppWindowControls ? 32 : DEFAULT_DRAG_BAR_HEIGHT;
 
-  const getFirstVisibleApp = (): AppId => {
-    if (visibleApps.claude) return "claude";
-    if (visibleApps["claude-desktop"]) return "claude-desktop";
-    if (visibleApps.codex) return "codex";
-    if (visibleApps.gemini) return "gemini";
-    if (visibleApps.grokbuild) return "grokbuild";
-    if (visibleApps.opencode) return "opencode";
-    if (visibleApps.openclaw) return "openclaw";
-    if (visibleApps.hermes) return "hermes";
-    return "claude"; // fallback
+  const persistActiveApp = (app: AppId) => {
+    setActiveAppState(app);
+    localStorage.setItem(APP_KEY, app);
+  };
+
+  const navigate = (next: DesktopView) => {
+    setView(next);
+    if (TOP_LEVEL_VIEWS.includes(next)) localStorage.setItem(VIEW_KEY, next);
   };
 
   useEffect(() => {
-    if (!visibleApps[activeApp]) {
-      setActiveApp(getFirstVisibleApp());
-    }
-  }, [visibleApps, activeApp]);
-
-  // Fallback from sessions view when switching to an app without session support
-  useEffect(() => {
+    if (!profilesData) return;
     if (
-      currentView === "sessions" &&
-      sharedFeatureApp !== "claude" &&
-      sharedFeatureApp !== "codex" &&
-      sharedFeatureApp !== "grokbuild" &&
-      sharedFeatureApp !== "opencode" &&
-      sharedFeatureApp !== "openclaw" &&
-      sharedFeatureApp !== "gemini" &&
-      sharedFeatureApp !== "hermes"
-    ) {
-      setCurrentView("providers");
-    }
-  }, [sharedFeatureApp, currentView]);
+      selectedProjectId &&
+      profiles.some((profile) => profile.id === selectedProjectId)
+    )
+      return;
+    const fallbackId =
+      profilesData.currentIds.claude ??
+      profilesData.currentIds.codex ??
+      profilesData.currentIds.claudeDesktop ??
+      profilesData.currentIds.gemini ??
+      profilesData.currentIds.grokbuild ??
+      profilesData.currentIds.opencode ??
+      profilesData.currentIds.openclaw ??
+      profilesData.currentIds.hermes ??
+      profiles[0]?.id ??
+      null;
+    setSelectedProjectId(fallbackId);
+    if (fallbackId) localStorage.setItem(PROJECT_KEY, fallbackId);
+    else localStorage.removeItem(PROJECT_KEY);
+  }, [profiles, profilesData, selectedProjectId]);
 
-  const [editingProvider, setEditingProvider] = useState<Provider | null>(null);
-  const [usageProvider, setUsageProvider] = useState<Provider | null>(null);
-  const [confirmAction, setConfirmAction] = useState<{
-    provider: Provider;
-    action: "remove" | "delete";
-  } | null>(null);
-  const [envConflicts, setEnvConflicts] = useState<EnvConflict[]>([]);
-  const [showEnvBanner, setShowEnvBanner] = useState(false);
-
-  const effectiveEditingProvider = useLastValidValue(editingProvider);
-  const effectiveUsageProvider = useLastValidValue(usageProvider);
-
-  const toolbarRef = useRef<HTMLDivElement>(null);
-  const isToolbarCompact = useAutoCompact(toolbarRef);
-
-  useUsageCacheBridge();
-
-  const promptPanelRef = useRef<any>(null);
-  const mcpPanelRef = useRef<any>(null);
-  const skillsPageRef = useRef<any>(null);
-  const unifiedSkillsPanelRef = useRef<any>(null);
-  // 订阅未管理 Skill 的共享缓存（实际扫描由 UnifiedSkillsPanel 进入页面时触发）。
-  // 这里 enabled 默认 false，仅用于「导入」按钮的绿点提示，不主动发起扫描。
-  const { data: unmanagedSkills } = useScanUnmanagedSkills();
-  const hasUnmanagedSkills = (unmanagedSkills?.length ?? 0) > 0;
-  const {
-    isRunning: isProxyRunning,
-    takeoverStatus,
-    status: proxyStatus,
-  } = useProxyStatus();
-  const isCurrentAppTakeoverActive = takeoverStatus?.[activeApp] || false;
-  const activeProviderId = useMemo(() => {
-    const target = proxyStatus?.active_targets?.find(
-      (t) => t.app_type === activeApp,
-    );
-    return target?.provider_id;
-  }, [proxyStatus?.active_targets, activeApp]);
-
-  const { data, isLoading, refetch } = useProvidersQuery(activeApp, {
-    isProxyRunning,
-  });
-  const providers = useMemo(() => data?.providers ?? {}, [data]);
-  const currentProviderId = data?.currentProviderId ?? "";
-  const isOpenClawView =
-    activeApp === "openclaw" &&
-    (currentView === "providers" ||
-      currentView === "workspace" ||
-      currentView === "sessions" ||
-      currentView === "openclawEnv" ||
-      currentView === "openclawTools" ||
-      currentView === "openclawAgents");
-  const { data: openclawHealthWarnings = [] } =
-    useOpenClawHealth(isOpenClawView);
-  const hasSkillsSupport = sharedFeatureApp !== "openclaw";
-  const hasSessionSupport =
-    sharedFeatureApp === "claude" ||
-    sharedFeatureApp === "codex" ||
-    sharedFeatureApp === "grokbuild" ||
-    sharedFeatureApp === "opencode" ||
-    sharedFeatureApp === "openclaw" ||
-    sharedFeatureApp === "gemini" ||
-    sharedFeatureApp === "hermes";
-
-  const {
-    updateProvider,
-    switchProvider,
-    deleteProvider,
-    saveUsageScript,
-    setAsDefaultModel,
-  } = useProviderActions(
-    activeApp,
-    isProxyRunning,
-    isProxyRunning && isCurrentAppTakeoverActive,
-  );
-
-  const disableOmoMutation = useDisableCurrentOmo();
-  const handleDisableOmo = () => {
-    disableOmoMutation.mutate(undefined, {
-      onSuccess: () => {
-        toast.success(t("omo.disabled", { defaultValue: "OMO 已停用" }));
-      },
-      onError: (error: Error) => {
-        toast.error(
-          t("omo.disableFailed", {
-            defaultValue: "停用 OMO 失败: {{error}}",
-            error: extractErrorMessage(error),
-          }),
+  useEffect(() => {
+    if (!profilesData) return;
+    for (const app of ALL_APPS) {
+      const scope = APP_PROFILE_SCOPE[app];
+      if (scope) {
+        activeProjectByScope.current[scope] = getCurrentProfileId(
+          profilesData.currentIds,
+          app,
         );
-      },
+      }
+    }
+  }, [profilesData]);
+
+  useEffect(() => {
+    if (visibleApps[activeApp] !== false) return;
+    const fallback =
+      ALL_APPS.find((app) => visibleApps[app] !== false) ?? "claude";
+    persistActiveApp(fallback);
+  }, [activeApp, visibleApps]);
+
+  const ensureProjectScope = async (id: string, app: AppId) => {
+    const scope = APP_PROFILE_SCOPE[app];
+    if (!scope) return;
+    const previousTask = projectScopeTasks.current[scope] ?? Promise.resolve();
+    const task = previousTask
+      .catch(() => undefined)
+      .then(async () => {
+        const hasKnownCurrent = Object.prototype.hasOwnProperty.call(
+          activeProjectByScope.current,
+          scope,
+        );
+        const knownCurrent = hasKnownCurrent
+          ? activeProjectByScope.current[scope]
+          : getCurrentProfileId(profilesData?.currentIds, app);
+        if (knownCurrent === id) return;
+
+        const warnings = await profilesApi.apply(id, scope);
+        activeProjectByScope.current[scope] = id;
+        await queryClient.invalidateQueries({ queryKey: ["profiles"] });
+        if (warnings.length > 0) {
+          toast.warning("项目已切换，但部分配置未完全应用", {
+            description: warnings.join("\n"),
+            duration: 10000,
+          });
+        }
+      });
+    projectScopeTasks.current[scope] = task;
+    try {
+      await task;
+    } finally {
+      if (projectScopeTasks.current[scope] === task) {
+        delete projectScopeTasks.current[scope];
+      }
+    }
+  };
+
+  const handleSetActiveProjectApp = (app: AppId) => {
+    persistActiveApp(app);
+    if (!selectedProjectId) return;
+    void ensureProjectScope(selectedProjectId, app).catch((error) => {
+      toast.error(extractErrorMessage(error) || "项目上下文切换失败");
     });
   };
 
-  const disableOmoSlimMutation = useDisableCurrentOmoSlim();
-  const handleDisableOmoSlim = () => {
-    disableOmoSlimMutation.mutate(undefined, {
-      onSuccess: () => {
-        toast.success(t("omo.disabled", { defaultValue: "OMO 已停用" }));
-      },
-      onError: (error: Error) => {
-        toast.error(
-          t("omo.disableFailed", {
-            defaultValue: "停用 OMO 失败: {{error}}",
-            error: extractErrorMessage(error),
-          }),
-        );
-      },
+  const handleSelectProject = (id: string, preferredApp?: AppId) => {
+    setSelectedProjectId(id);
+    localStorage.setItem(PROJECT_KEY, id);
+    const project = profiles.find((item) => item.id === id);
+    const tool = preferredApp ?? project?.payload.project.defaultTool;
+    const app = tool ?? activeApp;
+    if (tool) persistActiveApp(tool);
+    void ensureProjectScope(id, app).catch((error) => {
+      toast.error(extractErrorMessage(error) || "项目切换失败");
+    });
+  };
+
+  const handleLaunchProject = async (tool?: AppId, profileId?: string) => {
+    const id = profileId ?? selectedProjectId;
+    if (!id) {
+      navigate("projects");
+      setProjectCreateSignal((value) => value + 1);
+      return;
+    }
+    const project = profiles.find((item) => item.id === id);
+    const launchTool =
+      tool ?? project?.payload.project.defaultTool ?? activeApp;
+    persistActiveApp(launchTool);
+    try {
+      if (id !== selectedProjectId) {
+        setSelectedProjectId(id);
+        localStorage.setItem(PROJECT_KEY, id);
+      }
+      await ensureProjectScope(id, launchTool);
+      await profilesApi.launch(id, launchTool);
+      toast.success(`${APP_ICON_MAP[launchTool].label} 已在项目目录启动`);
+    } catch (error) {
+      toast.error(extractErrorMessage(error) || "项目启动失败");
+    }
+  };
+
+  const handleCreateProject = () => {
+    navigate("projects");
+    setProjectCreateSignal((value) => value + 1);
+  };
+
+  const saveSettingsPatch = async (updates: Record<string, unknown>) => {
+    if (!settingsData) return false;
+    const next = { ...settingsData, ...updates };
+    const webdavSync = next.webdavSync;
+    void webdavSync;
+    const { webdavSync: _removed, ...payload } = next;
+    void _removed;
+    await settingsApi.save(payload);
+    await queryClient.invalidateQueries({ queryKey: ["settings"] });
+    return true;
+  };
+
+  const finishOnboarding = () => {
+    void saveSettingsPatch({ firstRunNoticeConfirmed: true }).catch((error) => {
+      console.error("Failed to save onboarding state", error);
     });
   };
 
   useEffect(() => {
     let unsubscribe: (() => void) | undefined;
     let active = true;
-
-    const setupListener = async () => {
-      try {
-        const off = await providersApi.onSwitched(
-          async (event: ProviderSwitchEvent) => {
-            if (event.appType === activeApp) {
-              await refetch();
-            }
-          },
-        );
-        if (!active) {
-          off();
-          return;
-        }
-        unsubscribe = off;
-      } catch (error) {
-        console.error("[App] Failed to subscribe provider switch event", error);
-      }
-    };
-
-    void setupListener();
+    void providersApi
+      .onSwitched(async (event: ProviderSwitchEvent) => {
+        await queryClient.invalidateQueries({
+          queryKey: ["providers", event.appType],
+        });
+        await queryClient.invalidateQueries({
+          queryKey: ["desktop", "tool-connections"],
+        });
+      })
+      .then((off) => {
+        if (active) unsubscribe = off;
+        else off();
+      })
+      .catch((error) =>
+        console.error("Failed to subscribe provider switch", error),
+      );
     return () => {
       active = false;
       unsubscribe?.();
     };
-  }, [activeApp, refetch]);
+  }, [queryClient]);
 
-  useTauriEvent("universal-provider-synced", async () => {
-    await queryClient.invalidateQueries({ queryKey: ["providers"] });
-    try {
-      await providersApi.updateTrayMenu();
-    } catch (error) {
-      console.error("[App] Failed to update tray menu", error);
-    }
-  });
-
-  // 应用项目后刷新相关缓存（providers 由既有 provider-switched 监听承接；
-  // proxy 状态由后端直接改 DB，不走 mutation，必须显式刷新）
-  useTauriEvent("profile-applied", async () => {
+  useTauriEvent<ProfileAppliedEvent>("profile-applied", async (event) => {
+    activeProjectByScope.current[event.scope] = event.profileId;
+    setSelectedProjectId(event.profileId);
+    if (event.profileId) localStorage.setItem(PROJECT_KEY, event.profileId);
+    else localStorage.removeItem(PROJECT_KEY);
     await queryClient.invalidateQueries({ queryKey: ["profiles"] });
     await queryClient.invalidateQueries({ queryKey: ["mcp", "all"] });
     await queryClient.invalidateQueries({ queryKey: ["skills"] });
-    await queryClient.invalidateQueries({ queryKey: ["proxyTakeoverStatus"] });
     await queryClient.invalidateQueries({ queryKey: ["proxyStatus"] });
-    await queryClient.invalidateQueries({
-      queryKey: ["providers", "claude-desktop"],
-    });
   });
 
   useTauriEvent<SyncStatusUpdatedPayload | null | undefined>(
     "webdav-sync-status-updated",
     async (payload) => {
-      const statusPayload = payload ?? {};
       await queryClient.invalidateQueries({ queryKey: ["settings"] });
-      if (statusPayload.source !== "auto" || statusPayload.status !== "error") {
-        return;
+      if (payload?.source === "auto" && payload.status === "error") {
+        toast.error(`WebDAV 自动同步失败：${payload.error || "未知错误"}`);
       }
-      toast.error(
-        t("settings.webdavSync.autoSyncFailedToast", {
-          error: statusPayload.error || t("common.unknown"),
-        }),
-      );
     },
   );
 
   useTauriEvent<SyncStatusUpdatedPayload | null | undefined>(
     "s3-sync-status-updated",
     async (payload) => {
-      const statusPayload = payload ?? {};
       await queryClient.invalidateQueries({ queryKey: ["settings"] });
-      if (statusPayload.source !== "auto" || statusPayload.status !== "error") {
-        return;
+      if (payload?.source === "auto" && payload.status === "error") {
+        toast.error(`S3 自动同步失败：${payload.error || "未知错误"}`);
       }
-      toast.error(
-        t("settings.s3Sync.autoSyncFailedToast", {
-          error: statusPayload.error || t("common.unknown"),
-        }),
-      );
-    },
-  );
-
-  useTauriEvent<{ appType: string; providerName: string }>(
-    "proxy-official-warning",
-    (payload) => {
-      toast.warning(
-        t("notifications.proxyOfficialWarning", {
-          name: payload.providerName,
-          defaultValue: `当前供应商 ${payload.providerName} 是官方供应商，建议切换到第三方供应商后再使用代理接管`,
-        }),
-        { duration: 8000 },
-      );
     },
   );
 
   useEffect(() => {
-    let active = true;
-    let unlistenResize: (() => void) | undefined;
-
-    const setupWindowStateSync = async () => {
+    const checkEnvironment = async () => {
       try {
-        const currentWindow = getCurrentWindow();
-        const syncWindowMaximizedState = async () => {
-          const maximized = await currentWindow.isMaximized();
-          if (active) {
-            setIsWindowMaximized(maximized);
-          }
-        };
-
-        await syncWindowMaximizedState();
-        unlistenResize = await currentWindow.onResized(() => {
-          void syncWindowMaximizedState();
-        });
+        const all = await checkAllEnvConflicts();
+        const conflicts = Object.values(all).flat();
+        setEnvConflicts(conflicts);
+        if (
+          conflicts.length > 0 &&
+          !sessionStorage.getItem("env_banner_dismissed")
+        ) {
+          setShowEnvBanner(true);
+        }
       } catch (error) {
-        console.error("[App] Failed to sync window maximized state", error);
+        console.error("Failed to check environment conflicts", error);
       }
     };
-
-    void setupWindowStateSync();
-    return () => {
-      active = false;
-      unlistenResize?.();
-    };
+    void checkEnvironment();
   }, []);
 
   useEffect(() => {
-    // settingsData 未加载时跳过，避免用 fallback false 覆盖 Rust 侧已设好的装饰状态
-    if (!settingsData) return;
-
-    const syncWindowDecorations = async () => {
-      try {
-        await getCurrentWindow().setDecorations(!useAppWindowControls);
-      } catch (error) {
-        console.error("[App] Failed to update window decorations", error);
-      }
-    };
-
-    void syncWindowDecorations();
-  }, [useAppWindowControls, settingsData]);
-
-  useEffect(() => {
-    const checkEnvOnStartup = async () => {
-      try {
-        const allConflicts = await checkAllEnvConflicts();
-        const flatConflicts = Object.values(allConflicts).flat();
-
-        if (flatConflicts.length > 0) {
-          setEnvConflicts(flatConflicts);
-          const dismissed = sessionStorage.getItem("env_banner_dismissed");
-          if (!dismissed) {
-            setShowEnvBanner(true);
-          }
-        }
-      } catch (error) {
-        console.error(
-          "[App] Failed to check environment conflicts on startup:",
-          error,
-        );
-      }
-    };
-
-    checkEnvOnStartup();
+    void invoke<boolean>("get_migration_result")
+      .then((migrated) => migrated && toast.success("配置迁移成功"))
+      .catch((error) =>
+        console.error("Failed to read migration result", error),
+      );
   }, []);
-
-  useEffect(() => {
-    const checkMigration = async () => {
-      try {
-        const migrated = await invoke<boolean>("get_migration_result");
-        if (migrated) {
-          toast.success(
-            t("migration.success", { defaultValue: "配置迁移成功" }),
-            { closeButton: true },
-          );
-        }
-      } catch (error) {
-        console.error("[App] Failed to check migration result:", error);
-      }
-    };
-
-    checkMigration();
-  }, [t]);
-
-  useEffect(() => {
-    const checkSkillsMigration = async () => {
-      try {
-        const result = await invoke<{ count: number; error?: string } | null>(
-          "get_skills_migration_result",
-        );
-        if (result?.error) {
-          toast.error(t("migration.skillsFailed"), {
-            description: t("migration.skillsFailedDescription"),
-            closeButton: true,
-          });
-          console.error("[App] Skills SSOT migration failed:", result.error);
-          return;
-        }
-        if (result && result.count > 0) {
-          toast.success(t("migration.skillsSuccess", { count: result.count }), {
-            closeButton: true,
-          });
-          await queryClient.invalidateQueries({ queryKey: ["skills"] });
-        }
-      } catch (error) {
-        console.error("[App] Failed to check skills migration result:", error);
-      }
-    };
-
-    checkSkillsMigration();
-  }, [t, queryClient]);
-
-  useEffect(() => {
-    const checkEnvOnSwitch = async () => {
-      try {
-        const conflicts = await checkEnvConflicts(activeApp);
-
-        if (conflicts.length > 0) {
-          setEnvConflicts((prev) => {
-            const existingKeys = new Set(
-              prev.map((c) => `${c.varName}:${c.sourcePath}`),
-            );
-            const newConflicts = conflicts.filter(
-              (c) => !existingKeys.has(`${c.varName}:${c.sourcePath}`),
-            );
-            return [...prev, ...newConflicts];
-          });
-          const dismissed = sessionStorage.getItem("env_banner_dismissed");
-          if (!dismissed) {
-            setShowEnvBanner(true);
-          }
-        }
-      } catch (error) {
-        console.error(
-          "[App] Failed to check environment conflicts on app switch:",
-          error,
-        );
-      }
-    };
-
-    checkEnvOnSwitch();
-  }, [activeApp]);
-
-  const currentViewRef = useRef(currentView);
-
-  useEffect(() => {
-    currentViewRef.current = currentView;
-  }, [currentView]);
 
   useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {
       if (event.key === "," && (event.metaKey || event.ctrlKey)) {
         event.preventDefault();
-        setCurrentView("settings");
+        navigate("settings");
         return;
       }
-
-      if (event.key !== "Escape" || event.defaultPrevented) return;
-
-      if (document.body.style.overflow === "hidden") return;
-
-      const view = currentViewRef.current;
-      if (view === "providers") return;
-
-      if (isTextEditableTarget(event.target)) return;
-
-      event.preventDefault();
-      setCurrentView(view === "skillsDiscovery" ? "skills" : "providers");
+      if (
+        event.key === "Escape" &&
+        !event.defaultPrevented &&
+        !isTextEditableTarget(event.target) &&
+        !TOP_LEVEL_VIEWS.includes(view)
+      ) {
+        event.preventDefault();
+        navigate("capabilities");
+      }
     };
-
     window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [view]);
+
+  useEffect(() => {
+    if (!IS_TAURI_RUNTIME) return;
+    let active = true;
+    let unlisten: (() => void) | undefined;
+    const sync = async () => {
+      try {
+        const window = getCurrentWindow();
+        const update = async () => {
+          const maximized = await window.isMaximized();
+          if (active) setIsWindowMaximized(maximized);
+        };
+        await update();
+        unlisten = await window.onResized(() => void update());
+      } catch (error) {
+        console.error("Failed to sync window state", error);
+      }
+    };
+    void sync();
     return () => {
-      window.removeEventListener("keydown", handleKeyDown);
+      active = false;
+      unlisten?.();
     };
   }, []);
 
-  const [launchDashboardOpen, setLaunchDashboardOpen] = useState(false);
-  const openHermesWebUI = useOpenHermesWebUI(() =>
-    setLaunchDashboardOpen(true),
-  );
-
-  const handleOpenWebsite = async (url: string) => {
+  useEffect(() => {
+    if (!settingsData || !IS_TAURI_RUNTIME) return;
     try {
-      await settingsApi.openExternal(url);
+      void getCurrentWindow()
+        .setDecorations(!useAppWindowControls)
+        .catch((error) =>
+          console.error("Failed to update window decorations", error),
+        );
     } catch (error) {
-      const detail =
-        extractErrorMessage(error) ||
-        t("notifications.openLinkFailed", {
-          defaultValue: "链接打开失败",
-        });
-      toast.error(detail);
+      console.debug("Window decorations unavailable", error);
     }
-  };
+  }, [settingsData, useAppWindowControls]);
 
-  const handleEditProvider = async ({
-    provider,
-    originalId,
-  }: {
-    provider: Provider;
-    originalId?: string;
-  }) => {
-    await updateProvider(provider, originalId);
-    setEditingProvider(null);
-  };
-
-  const handleConfirmAction = async () => {
-    if (!confirmAction) return;
-    const { provider, action } = confirmAction;
-
-    if (action === "remove") {
-      // Remove from live config only (for additive mode apps like OpenCode/OpenClaw)
-      // Does NOT delete from database - provider remains in the list
-      await providersApi.removeFromLiveConfig(provider.id, activeApp);
-      // Invalidate queries to refresh the isInConfig state
-      if (activeApp === "opencode") {
-        await queryClient.invalidateQueries({
-          queryKey: ["opencodeLiveProviderIds"],
-        });
-      } else if (activeApp === "openclaw") {
-        await queryClient.invalidateQueries({
-          queryKey: openclawKeys.liveProviderIds,
-        });
-        await queryClient.invalidateQueries({
-          queryKey: openclawKeys.health,
-        });
-      } else if (activeApp === "hermes") {
-        await queryClient.invalidateQueries({
-          queryKey: hermesKeys.liveProviderIds,
-        });
+  const windowAction = async (action: "minimize" | "maximize" | "close") => {
+    try {
+      const window = getCurrentWindow();
+      if (action === "minimize") await window.minimize();
+      if (action === "maximize") {
+        await window.toggleMaximize();
+        setIsWindowMaximized(await window.isMaximized());
       }
-      toast.success(
-        t("notifications.removeFromConfigSuccess", {
-          defaultValue: "已从配置移除",
-        }),
-        { closeButton: true },
-      );
-    } else {
-      await deleteProvider(provider.id);
-    }
-    setConfirmAction(null);
-  };
-
-  const handleOpenTerminal = async (provider: Provider) => {
-    try {
-      const selectedDir = await settingsApi.pickDirectory();
-      if (!selectedDir) {
-        return;
-      }
-
-      await providersApi.openTerminal(provider.id, activeApp, {
-        cwd: selectedDir,
-      });
-      toast.success(
-        t("provider.terminalOpened", {
-          defaultValue: "终端已打开",
-        }),
-      );
+      if (action === "close") await window.close();
     } catch (error) {
-      console.error("[App] Failed to open terminal", error);
-      const errorMessage = extractErrorMessage(error);
-      toast.error(
-        t("provider.terminalOpenFailed", {
-          defaultValue: "打开终端失败",
-        }) + (errorMessage ? `: ${errorMessage}` : ""),
-      );
+      toast.error(`窗口操作失败：${extractErrorMessage(error)}`);
     }
-  };
-
-  const handleImportSuccess = async () => {
-    try {
-      await queryClient.invalidateQueries({
-        queryKey: ["providers"],
-        refetchType: "all",
-      });
-      await queryClient.refetchQueries({
-        queryKey: ["providers"],
-        type: "all",
-      });
-    } catch (error) {
-      console.error("[App] Failed to refresh providers after import", error);
-      await refetch();
-    }
-    try {
-      await providersApi.updateTrayMenu();
-    } catch (error) {
-      console.error("[App] Failed to refresh tray menu", error);
-    }
-  };
-
-  const notifyWindowControlError = (error: unknown) => {
-    toast.error(
-      t("notifications.windowControlFailed", {
-        defaultValue: "窗口控制失败：{{error}}",
-        error: extractErrorMessage(error),
-      }),
-    );
-  };
-
-  const handleWindowMinimize = async () => {
-    try {
-      await getCurrentWindow().minimize();
-    } catch (error) {
-      console.error("[App] Failed to minimize window", error);
-      notifyWindowControlError(error);
-    }
-  };
-
-  const handleWindowToggleMaximize = async () => {
-    try {
-      const currentWindow = getCurrentWindow();
-      await currentWindow.toggleMaximize();
-      setIsWindowMaximized(await currentWindow.isMaximized());
-    } catch (error) {
-      console.error("[App] Failed to toggle maximize", error);
-      notifyWindowControlError(error);
-    }
-  };
-
-  const handleWindowClose = async () => {
-    try {
-      await getCurrentWindow().close();
-    } catch (error) {
-      console.error("[App] Failed to close window", error);
-      notifyWindowControlError(error);
-    }
-  };
-
-  const handleOpenSkillsDiscovery = () => {
-    setSkillsDiscoverySource("repos");
-    setCurrentView("skillsDiscovery");
   };
 
   const renderContent = () => {
-    const content = (() => {
-      switch (currentView) {
-        case "settings":
-          return (
+    switch (view) {
+      case "home":
+        return (
+          <WorkspaceDashboard
+            project={selectedProject}
+            activeApp={activeApp}
+            onNavigate={navigate}
+            onLaunch={(tool) => void handleLaunchProject(tool)}
+          />
+        );
+      case "projects":
+        return (
+          <ProjectsPage
+            profiles={profiles}
+            selectedId={selectedProjectId}
+            createSignal={projectCreateSignal}
+            onSelect={handleSelectProject}
+            onLaunch={(profileId, tool) =>
+              void handleLaunchProject(tool, profileId)
+            }
+          />
+        );
+      case "tools":
+        return (
+          <ToolsPage
+            project={selectedProject}
+            activeApp={activeApp}
+            visibleApps={visibleApps}
+            onSetActiveApp={handleSetActiveProjectApp}
+            onLaunch={(tool) => void handleLaunchProject(tool)}
+            onNavigate={navigate}
+          />
+        );
+      case "capabilities":
+        return (
+          <CapabilityCenter
+            project={selectedProject}
+            activeApp={activeApp}
+            onOpen={navigate}
+          />
+        );
+      case "usage":
+        return (
+          <UsageCenter
+            activeApp={activeApp}
+            onSetActiveApp={persistActiveApp}
+            refreshIntervalMs={settingsData?.usageDashboardRefreshIntervalMs}
+            onRefreshIntervalChange={(usageDashboardRefreshIntervalMs) =>
+              saveSettingsPatch({ usageDashboardRefreshIntervalMs })
+            }
+          />
+        );
+      case "network":
+        return <ConnectionCenter />;
+      case "settings":
+        return (
+          <div className="h-full pt-5">
             <SettingsPage
-              open={true}
-              onOpenChange={() => setCurrentView("providers")}
-              onImportSuccess={handleImportSuccess}
+              open
+              onOpenChange={() => navigate("home")}
               defaultTab={settingsDefaultTab}
+              onImportSuccess={() => queryClient.invalidateQueries()}
             />
-          );
-        case "prompts":
-          return (
-            <PromptPanel
-              ref={promptPanelRef}
-              open={true}
-              onOpenChange={() => setCurrentView("providers")}
-              appId={sharedFeatureApp}
-            />
-          );
-        case "hermesMemory":
-          return <HermesMemoryPanel />;
-        case "skills":
-          return (
+          </div>
+        );
+      case "skills":
+        return (
+          <DetailFrame
+            title="Skills"
+            description="安装、启用并同步项目需要的专业能力。"
+            onBack={() => navigate("capabilities")}
+            actions={
+              <>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() =>
+                    unifiedSkillsPanelRef.current?.openRestoreFromBackup()
+                  }
+                >
+                  <History className="h-3.5 w-3.5" /> 恢复
+                </Button>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() =>
+                    unifiedSkillsPanelRef.current?.openInstallFromZip()
+                  }
+                >
+                  <FolderArchive className="h-3.5 w-3.5" /> ZIP
+                </Button>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="relative"
+                  onClick={() => unifiedSkillsPanelRef.current?.openImport()}
+                >
+                  <Download className="h-3.5 w-3.5" /> 导入
+                  {hasUnmanagedSkills && (
+                    <span className="absolute right-1 top-1 h-1.5 w-1.5 rounded-full bg-emerald-500" />
+                  )}
+                </Button>
+                <Button size="sm" onClick={() => navigate("skillsDiscovery")}>
+                  <Search className="h-3.5 w-3.5" /> 发现
+                </Button>
+              </>
+            }
+          >
             <UnifiedSkillsPanel
               ref={unifiedSkillsPanelRef}
-              onOpenDiscovery={handleOpenSkillsDiscovery}
-              currentApp={
-                sharedFeatureApp === "openclaw" ? "claude" : sharedFeatureApp
-              }
+              onOpenDiscovery={() => navigate("skillsDiscovery")}
+              currentApp={activeApp === "openclaw" ? "claude" : activeApp}
             />
-          );
-        case "skillsDiscovery":
-          return (
+          </DetailFrame>
+        );
+      case "skillsDiscovery":
+        return (
+          <DetailFrame
+            title="发现 Skills"
+            description="从可信仓库查找并安装项目能力。"
+            onBack={() => navigate("skills")}
+            actions={getSkillsPageHeaderActions(skillsDiscoverySource).map(
+              ({ key, labelKey, Icon, execute }) => (
+                <Button
+                  key={key}
+                  variant="outline"
+                  size="sm"
+                  onClick={() => execute(skillsPageRef.current)}
+                >
+                  <Icon className="h-3.5 w-3.5" /> {t(labelKey)}
+                </Button>
+              ),
+            )}
+          >
             <SkillsPage
               ref={skillsPageRef}
-              initialApp={
-                sharedFeatureApp === "openclaw" ? "claude" : sharedFeatureApp
-              }
+              initialApp={activeApp === "openclaw" ? "claude" : activeApp}
               onSourceChange={setSkillsDiscoverySource}
             />
-          );
-        case "mcp":
-          return (
+          </DetailFrame>
+        );
+      case "mcp":
+        return (
+          <DetailFrame
+            title="MCP"
+            description="管理工具与本地或远程服务的连接。"
+            onBack={() => navigate("capabilities")}
+            actions={
+              <>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => mcpPanelRef.current?.openImport()}
+                >
+                  <Download className="h-3.5 w-3.5" /> 导入已有配置
+                </Button>
+                <Button
+                  size="sm"
+                  onClick={() => mcpPanelRef.current?.openAdd()}
+                >
+                  <Plus className="h-3.5 w-3.5" /> 添加 MCP
+                </Button>
+              </>
+            }
+          >
             <UnifiedMcpPanel
               ref={mcpPanelRef}
-              onOpenChange={() => setCurrentView("providers")}
+              onOpenChange={() => navigate("capabilities")}
             />
-          );
-        case "agents":
-          return (
-            <AgentsPanel onOpenChange={() => setCurrentView("providers")} />
-          );
-        case "universal":
-          return (
-            <div className="px-6 pt-4">
-              <UniversalProviderPanel />
-            </div>
-          );
-
-        case "sessions":
-          return (
-            <SessionManagerPage
-              key={sharedFeatureApp}
-              appId={sharedFeatureApp}
+          </DetailFrame>
+        );
+      case "prompts":
+        return (
+          <DetailFrame
+            title="Prompts"
+            description={`管理 ${APP_ICON_MAP[activeApp].label} 的项目提示词。`}
+            onBack={() => navigate("capabilities")}
+            actions={
+              <Button
+                size="sm"
+                onClick={() => promptPanelRef.current?.openAdd()}
+              >
+                <Plus className="h-3.5 w-3.5" /> 添加提示词
+              </Button>
+            }
+          >
+            <PromptPanel
+              ref={promptPanelRef}
+              open
+              onOpenChange={() => navigate("capabilities")}
+              appId={activeApp === "claude-desktop" ? "claude" : activeApp}
             />
-          );
-        case "workspace":
-          return <WorkspaceFilesPanel />;
-        case "openclawEnv":
-          return <EnvPanel />;
-        case "openclawTools":
-          return <ToolsPanel />;
-        case "openclawAgents":
-          return <AgentsDefaultsPanel />;
-        default:
-          return (
-            <div className="px-6 flex flex-col flex-1 min-h-0 overflow-hidden">
-              <div className="flex-1 overflow-y-auto overflow-x-hidden pb-12 px-1">
-                {Object.keys(providers).length > 0 && (
-                  <YuanhengProjectBanner
-                    activeApp={activeApp}
-                    currentProvider={providers[currentProviderId]}
-                  />
-                )}
-                <AnimatePresence mode="wait">
-                  <motion.div
-                    key={activeApp}
-                    initial={{ opacity: 0 }}
-                    animate={{ opacity: 1 }}
-                    exit={{ opacity: 0 }}
-                    transition={{ duration: 0.15 }}
-                    className="space-y-4"
-                  >
-                    <ProviderList
-                      providers={providers}
-                      currentProviderId={currentProviderId}
-                      appId={activeApp}
-                      isLoading={isLoading}
-                      isProxyRunning={isProxyRunning}
-                      isProxyTakeover={
-                        isProxyRunning && isCurrentAppTakeoverActive
-                      }
-                      activeProviderId={activeProviderId}
-                      onSwitch={switchProvider}
-                      onEdit={(provider) => {
-                        setEditingProvider(provider);
-                      }}
-                      onDelete={(provider) =>
-                        setConfirmAction({ provider, action: "delete" })
-                      }
-                      onRemoveFromConfig={
-                        activeApp === "opencode" ||
-                        activeApp === "openclaw" ||
-                        activeApp === "hermes"
-                          ? (provider) =>
-                              setConfirmAction({ provider, action: "remove" })
-                          : undefined
-                      }
-                      onDisableOmo={
-                        activeApp === "opencode" ? handleDisableOmo : undefined
-                      }
-                      onDisableOmoSlim={
-                        activeApp === "opencode"
-                          ? handleDisableOmoSlim
-                          : undefined
-                      }
-                      onConfigureUsage={setUsageProvider}
-                      onOpenWebsite={handleOpenWebsite}
-                      onOpenTerminal={
-                        activeApp === "claude" ? handleOpenTerminal : undefined
-                      }
-                      onSetAsDefault={
-                        activeApp === "openclaw"
-                          ? setAsDefaultModel
-                          : activeApp === "hermes"
-                            ? switchProvider
-                            : undefined
-                      }
-                    />
-                  </motion.div>
-                </AnimatePresence>
-              </div>
-            </div>
-          );
-      }
-    })();
-
-    return (
-      <AnimatePresence mode="wait">
-        <motion.div
-          key={currentView}
-          className="flex-1 min-h-0"
-          initial={{ opacity: 0 }}
-          animate={{ opacity: 1 }}
-          exit={{ opacity: 0 }}
-          transition={{ duration: 0.2 }}
-        >
-          {content}
-        </motion.div>
-      </AnimatePresence>
-    );
+          </DetailFrame>
+        );
+      case "agents":
+        return (
+          <DetailFrame
+            title="Agents"
+            description="Agent 编排正在建设中，当前不展示尚未实现的配置。"
+            onBack={() => navigate("capabilities")}
+          >
+            <AgentsPanel onOpenChange={() => navigate("capabilities")} />
+          </DetailFrame>
+        );
+      case "workspace":
+        return <WorkspaceFilesPanel />;
+      case "openclawEnv":
+        return <EnvPanel />;
+      case "openclawTools":
+        return <ToolsPanel />;
+      case "openclawAgents":
+        return <AgentsDefaultsPanel />;
+      case "hermesMemory":
+        return <HermesMemoryPanel />;
+      default:
+        return null;
+    }
   };
+
+  const forceOnboardingPreview =
+    import.meta.env.DEV &&
+    new URLSearchParams(window.location.search).has("onboarding");
+  const onboardingOpen =
+    forceOnboardingPreview ||
+    Boolean(settingsData && settingsData.firstRunNoticeConfirmed !== true);
 
   return (
     <div
-      className="flex flex-col h-screen overflow-hidden bg-background text-foreground selection:bg-primary/30 pb-4"
-      style={{ overflowX: "hidden", paddingTop: contentTopOffset }}
+      className="h-screen overflow-hidden bg-background text-foreground selection:bg-primary/20"
+      style={{ paddingTop: dragBarHeight }}
     >
       {(dragBarHeight > 0 || useAppWindowControls) && (
         <div
-          className="fixed top-0 left-0 right-0 z-[70] flex items-center justify-end px-2"
+          className="fixed left-0 right-0 top-0 z-[80] flex items-center justify-end bg-[#11191b] px-2"
           data-tauri-drag-region
-          style={{ WebkitAppRegion: "drag", height: dragBarHeight } as any}
+          style={
+            {
+              WebkitAppRegion: "drag",
+              height: dragBarHeight,
+            } as React.CSSProperties
+          }
         >
           {useAppWindowControls && (
             <div
               className="flex items-center gap-1"
-              style={{ WebkitAppRegion: "no-drag" } as any}
+              style={{ WebkitAppRegion: "no-drag" } as React.CSSProperties}
             >
               <Button
                 variant="ghost"
                 size="icon"
-                onClick={() => void handleWindowMinimize()}
-                title={t("header.windowMinimize")}
-                className="h-7 w-7"
+                className="h-7 w-7 text-slate-300"
+                aria-label="最小化窗口"
+                onClick={() => void windowAction("minimize")}
               >
-                <Minus className="w-4 h-4" />
+                <Minus className="h-4 w-4" />
               </Button>
               <Button
                 variant="ghost"
                 size="icon"
-                onClick={() => void handleWindowToggleMaximize()}
-                title={
-                  isWindowMaximized
-                    ? t("header.windowRestore")
-                    : t("header.windowMaximize")
-                }
-                className="h-7 w-7"
+                className="h-7 w-7 text-slate-300"
+                aria-label={isWindowMaximized ? "还原窗口" : "最大化窗口"}
+                onClick={() => void windowAction("maximize")}
               >
                 {isWindowMaximized ? (
-                  <Minimize2 className="w-4 h-4" />
+                  <Minimize2 className="h-4 w-4" />
                 ) : (
-                  <Maximize2 className="w-4 h-4" />
+                  <Maximize2 className="h-4 w-4" />
                 )}
               </Button>
               <Button
                 variant="ghost"
                 size="icon"
-                onClick={() => void handleWindowClose()}
-                title={t("header.windowClose")}
-                className="h-7 w-7 hover:bg-red-500/15 hover:text-red-500"
+                className="h-7 w-7 text-slate-300 hover:bg-red-500/20 hover:text-red-300"
+                aria-label="关闭窗口"
+                onClick={() => void windowAction("close")}
               >
-                <X className="w-4 h-4" />
+                <X className="h-4 w-4" />
               </Button>
             </div>
           )}
         </div>
       )}
-      {showEnvBanner && envConflicts.length > 0 && (
-        <EnvWarningBanner
-          conflicts={envConflicts}
-          onDismiss={() => {
-            setShowEnvBanner(false);
-            sessionStorage.setItem("env_banner_dismissed", "true");
-          }}
-          onDeleted={async () => {
-            try {
-              const allConflicts = await checkAllEnvConflicts();
-              const flatConflicts = Object.values(allConflicts).flat();
-              setEnvConflicts(flatConflicts);
-              if (flatConflicts.length === 0) {
-                setShowEnvBanner(false);
-              }
-            } catch (error) {
-              console.error(
-                "[App] Failed to re-check conflicts after deletion:",
-                error,
-              );
-            }
-          }}
-        />
-      )}
 
-      <header
-        className="fixed z-50 w-full transition-all duration-300 bg-background/80 backdrop-blur-md"
-        {...DRAG_REGION_ATTR}
-        style={
-          {
-            ...DRAG_REGION_STYLE,
-            top: dragBarHeight,
-            height: HEADER_HEIGHT,
-          } as any
-        }
-      >
-        <div
-          className="flex h-full items-center justify-between gap-2 px-6"
-          {...DRAG_REGION_ATTR}
-          style={{ ...DRAG_REGION_STYLE } as any}
-        >
-          <div
-            className="flex items-center gap-1"
-            style={{ WebkitAppRegion: "no-drag" } as any}
+      <div className="flex h-full min-h-0">
+        <DesktopSidebar
+          view={view}
+          onNavigate={navigate}
+          connected={Boolean(yuanhengConnection?.connected)}
+          proxyRunning={isProxyRunning}
+        />
+        <section className="flex min-w-0 flex-1 flex-col overflow-hidden bg-[radial-gradient(circle_at_92%_5%,hsl(var(--primary)/0.055),transparent_34%)]">
+          <header
+            className="flex h-[54px] shrink-0 items-center gap-3 border-b bg-background/85 px-5 backdrop-blur-md"
+            {...DRAG_REGION_ATTR}
+            style={{ ...DRAG_REGION_STYLE } as React.CSSProperties}
           >
-            {currentView !== "providers" ? (
-              <div className="flex items-center gap-2">
-                <Button
-                  variant="outline"
-                  size="icon"
-                  onClick={() =>
-                    setCurrentView(
-                      currentView === "skillsDiscovery"
-                        ? "skills"
-                        : "providers",
-                    )
-                  }
-                  className="mr-2 rounded-lg"
-                >
-                  <ArrowLeft className="w-4 h-4" />
-                </Button>
-                <h1 className="text-lg font-semibold">
-                  {currentView === "settings" && t("settings.title")}
-                  {currentView === "prompts" &&
-                    t("prompts.title", {
-                      appName: t(`apps.${sharedFeatureApp}`),
-                    })}
-                  {currentView === "skills" && t("skills.title")}
-                  {currentView === "skillsDiscovery" && t("skills.title")}
-                  {currentView === "mcp" && t("mcp.unifiedPanel.title")}
-                  {currentView === "agents" && t("agents.title")}
-                  {currentView === "universal" &&
-                    t("universalProvider.title", {
-                      defaultValue: "统一供应商",
-                    })}
-                  {currentView === "sessions" && t("sessionManager.title")}
-                  {currentView === "workspace" && t("workspace.title")}
-                  {currentView === "openclawEnv" && t("openclaw.env.title")}
-                  {currentView === "openclawTools" && t("openclaw.tools.title")}
-                  {currentView === "openclawAgents" &&
-                    t("openclaw.agents.title")}
-                  {currentView === "hermesMemory" && t("hermes.memory.title")}
-                </h1>
-              </div>
-            ) : (
-              <div className="flex items-center gap-2">
-                <div className="relative inline-flex items-center">
-                  <a
-                    href="https://cn.meta-api.vip"
-                    target="_blank"
-                    rel="noreferrer"
-                    className={cn(
-                      "text-xl font-semibold transition-colors",
-                      isProxyRunning && isCurrentAppTakeoverActive
-                        ? "text-emerald-500 hover:text-emerald-600 dark:text-emerald-400 dark:hover:text-emerald-300"
-                        : "text-blue-500 hover:text-blue-600 dark:text-blue-400 dark:hover:text-blue-300",
-                    )}
-                  >
-                    {t("app.title")}
-                  </a>
-                </div>
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  onClick={() => {
-                    setSettingsDefaultTab("general");
-                    setCurrentView("settings");
-                  }}
-                  title={t("common.settings")}
-                  className="hover:bg-black/5 dark:hover:bg-white/5"
-                >
-                  <Settings className="w-4 h-4" />
-                </Button>
-                <UpdateBadge
-                  onClick={() => {
-                    setSettingsDefaultTab("about");
-                    setCurrentView("settings");
-                  }}
-                />
-                {isCurrentAppTakeoverActive && (
-                  <Button
-                    variant="ghost"
-                    size="icon"
-                    onClick={() => {
-                      setSettingsDefaultTab("usage");
-                      setCurrentView("settings");
-                    }}
-                    title={t("usage.title", {
-                      defaultValue: "使用统计",
-                    })}
-                    className="hover:bg-black/5 dark:hover:bg-white/5"
-                  >
-                    <BarChart2 className="w-4 h-4" />
-                  </Button>
-                )}
-              </div>
-            )}
-          </div>
-
-          <div className="flex flex-1 min-w-0 items-center justify-end gap-1.5">
-            {currentView === "providers" &&
-              activeApp !== "opencode" &&
-              activeApp !== "openclaw" &&
-              activeApp !== "hermes" && (
-                <div
-                  className="flex shrink-0 items-center gap-1.5"
-                  style={{ WebkitAppRegion: "no-drag" } as any}
-                >
-                  {activeApp === "claude-desktop" ? (
-                    <ClaudeDesktopRouteToggle />
-                  ) : (
-                    settingsData?.enableLocalProxy && (
-                      <ProxyToggle activeApp={activeApp} />
-                    )
-                  )}
-                  {activeApp !== "claude-desktop" &&
-                    settingsData?.enableFailoverToggle && (
-                      <FailoverToggle activeApp={activeApp} />
-                    )}
-                </div>
-              )}
-            {currentView === "providers" &&
-              (settingsData?.showProfileSwitcher ?? true) && (
-                <div
-                  className="flex shrink-0 items-center"
-                  style={{ WebkitAppRegion: "no-drag" } as any}
-                >
-                  <ProfileSwitcher activeApp={activeApp} />
-                </div>
-              )}
             <div
-              ref={toolbarRef}
-              className="flex flex-1 min-w-0 overflow-x-hidden items-center py-4 pr-2"
+              className="min-w-0 flex-1"
+              style={{ WebkitAppRegion: "no-drag" } as React.CSSProperties}
             >
-              <div
-                className="flex shrink-0 items-center gap-1.5 ml-auto"
-                style={{ WebkitAppRegion: "no-drag" } as any}
-              >
-                {currentView === "prompts" && (
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    onClick={() => promptPanelRef.current?.openAdd()}
-                    className="hover:bg-black/5 dark:hover:bg-white/5"
-                  >
-                    <Plus className="w-4 h-4 mr-2" />
-                    {t("prompts.add")}
-                  </Button>
-                )}
-                {currentView === "mcp" && (
-                  <>
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      onClick={() => mcpPanelRef.current?.openImport()}
-                      className="hover:bg-black/5 dark:hover:bg-white/5"
-                    >
-                      <Download className="w-4 h-4 mr-2" />
-                      {t("mcp.importExisting")}
-                    </Button>
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      onClick={() => mcpPanelRef.current?.openAdd()}
-                      className="hover:bg-black/5 dark:hover:bg-white/5"
-                    >
-                      <Plus className="w-4 h-4 mr-2" />
-                      {t("mcp.addMcp")}
-                    </Button>
-                  </>
-                )}
-                {currentView === "skills" && (
-                  <>
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      onClick={() =>
-                        unifiedSkillsPanelRef.current?.openRestoreFromBackup()
-                      }
-                      className="hover:bg-black/5 dark:hover:bg-white/5"
-                    >
-                      <History className="w-4 h-4 mr-2" />
-                      {t("skills.restoreFromBackup.button")}
-                    </Button>
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      onClick={() =>
-                        unifiedSkillsPanelRef.current?.openInstallFromZip()
-                      }
-                      className="hover:bg-black/5 dark:hover:bg-white/5"
-                    >
-                      <FolderArchive className="w-4 h-4 mr-2" />
-                      {t("skills.installFromZip.button")}
-                    </Button>
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      onClick={() =>
-                        unifiedSkillsPanelRef.current?.openImport()
-                      }
-                      className="relative hover:bg-black/5 dark:hover:bg-white/5"
-                      title={
-                        hasUnmanagedSkills
-                          ? t("skills.unmanagedAvailable")
-                          : undefined
-                      }
-                    >
-                      <Download className="w-4 h-4 mr-2" />
-                      {t("skills.import")}
-                      {hasUnmanagedSkills && (
-                        <span
-                          className="absolute top-1 right-1 h-2 w-2 rounded-full bg-green-500"
-                          aria-hidden="true"
-                        />
-                      )}
-                    </Button>
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      onClick={handleOpenSkillsDiscovery}
-                      className="hover:bg-black/5 dark:hover:bg-white/5"
-                    >
-                      <Search className="w-4 h-4 mr-2" />
-                      {t("skills.discover")}
-                    </Button>
-                  </>
-                )}
-                {currentView === "skillsDiscovery" && (
-                  <>
-                    {getSkillsPageHeaderActions(skillsDiscoverySource).map(
-                      ({ key, labelKey, Icon, execute }) => (
-                        <Button
-                          key={key}
-                          variant="ghost"
-                          size="sm"
-                          onClick={() => execute(skillsPageRef.current)}
-                          className="hover:bg-black/5 dark:hover:bg-white/5"
-                        >
-                          <Icon className="w-4 h-4 mr-2" />
-                          {t(labelKey)}
-                        </Button>
-                      ),
-                    )}
-                  </>
-                )}
-                {currentView === "providers" && (
-                  <>
-                    <AppSwitcher
-                      activeApp={activeApp}
-                      onSwitch={setActiveApp}
-                      visibleApps={visibleApps}
-                      compact={isToolbarCompact}
-                    />
-
-                    <div className="flex items-center gap-1 p-1 bg-muted rounded-xl">
-                      <AnimatePresence mode="wait">
-                        <motion.div
-                          key={
-                            activeApp === "openclaw"
-                              ? "openclaw"
-                              : activeApp === "hermes"
-                                ? "hermes"
-                                : activeApp === "grokbuild"
-                                  ? "grokbuild"
-                                  : "default"
-                          }
-                          className="flex items-center gap-1"
-                          initial={{ opacity: 0 }}
-                          animate={{ opacity: 1 }}
-                          exit={{ opacity: 0 }}
-                          transition={{ duration: 0.15 }}
-                        >
-                          {activeApp === "hermes" ? (
-                            <>
-                              <Button
-                                variant="ghost"
-                                size="sm"
-                                onClick={() => setCurrentView("skills")}
-                                className="text-muted-foreground hover:text-foreground hover:bg-black/5 dark:hover:bg-white/5 w-8 px-2"
-                                title={t("skills.manage")}
-                              >
-                                <Wrench className="w-4 h-4" />
-                              </Button>
-                              <Button
-                                variant="ghost"
-                                size="sm"
-                                onClick={() => setCurrentView("hermesMemory")}
-                                className="text-muted-foreground hover:text-foreground hover:bg-black/5 dark:hover:bg-white/5 w-8 px-2"
-                                title={t("hermes.memory.title")}
-                              >
-                                <Brain className="w-4 h-4" />
-                              </Button>
-                              <Button
-                                variant="ghost"
-                                size="sm"
-                                onClick={() => void openHermesWebUI()}
-                                className="text-muted-foreground hover:text-foreground hover:bg-black/5 dark:hover:bg-white/5 w-8 px-2"
-                                title={t("hermes.webui.open")}
-                              >
-                                <LayoutDashboard className="w-4 h-4" />
-                              </Button>
-                              <Button
-                                variant="ghost"
-                                size="sm"
-                                onClick={() => setCurrentView("mcp")}
-                                className="text-muted-foreground hover:text-foreground hover:bg-black/5 dark:hover:bg-white/5 w-8 px-2"
-                                title={t("mcp.title")}
-                              >
-                                <McpIcon size={16} />
-                              </Button>
-                            </>
-                          ) : activeApp === "openclaw" ? (
-                            <>
-                              <Button
-                                variant="ghost"
-                                size="sm"
-                                onClick={() => setCurrentView("workspace")}
-                                className="text-muted-foreground hover:text-foreground hover:bg-black/5 dark:hover:bg-white/5 w-8 px-2"
-                                title={t("workspace.manage")}
-                              >
-                                <FolderOpen className="w-4 h-4" />
-                              </Button>
-                              <Button
-                                variant="ghost"
-                                size="sm"
-                                onClick={() => setCurrentView("openclawEnv")}
-                                className="text-muted-foreground hover:text-foreground hover:bg-black/5 dark:hover:bg-white/5 w-8 px-2"
-                                title={t("openclaw.env.title")}
-                              >
-                                <KeyRound className="w-4 h-4" />
-                              </Button>
-                              <Button
-                                variant="ghost"
-                                size="sm"
-                                onClick={() => setCurrentView("openclawTools")}
-                                className="text-muted-foreground hover:text-foreground hover:bg-black/5 dark:hover:bg-white/5 w-8 px-2"
-                                title={t("openclaw.tools.title")}
-                              >
-                                <Shield className="w-4 h-4" />
-                              </Button>
-                              <Button
-                                variant="ghost"
-                                size="sm"
-                                onClick={() => setCurrentView("openclawAgents")}
-                                className="text-muted-foreground hover:text-foreground hover:bg-black/5 dark:hover:bg-white/5 w-8 px-2"
-                                title={t("openclaw.agents.title")}
-                              >
-                                <Cpu className="w-4 h-4" />
-                              </Button>
-                              <Button
-                                variant="ghost"
-                                size="sm"
-                                onClick={() => setCurrentView("sessions")}
-                                className="text-muted-foreground hover:text-foreground hover:bg-black/5 dark:hover:bg-white/5 w-8 px-2"
-                                title={t("sessionManager.title")}
-                              >
-                                <History className="w-4 h-4" />
-                              </Button>
-                            </>
-                          ) : (
-                            <>
-                              <Button
-                                variant="ghost"
-                                size="sm"
-                                onClick={() => setCurrentView("skills")}
-                                className={cn(
-                                  "text-muted-foreground hover:text-foreground hover:bg-black/5 dark:hover:bg-white/5",
-                                  "transition-all duration-200 ease-in-out overflow-hidden",
-                                  hasSkillsSupport
-                                    ? "opacity-100 w-8 scale-100 px-2"
-                                    : "opacity-0 w-0 scale-75 pointer-events-none px-0 -ml-1",
-                                )}
-                                title={t("skills.manage")}
-                              >
-                                <Wrench className="flex-shrink-0 w-4 h-4" />
-                              </Button>
-                              <Button
-                                variant="ghost"
-                                size="sm"
-                                onClick={() => setCurrentView("prompts")}
-                                className="text-muted-foreground hover:text-foreground hover:bg-black/5 dark:hover:bg-white/5 w-8 px-2"
-                                title={t("prompts.manage")}
-                              >
-                                <Book className="w-4 h-4" />
-                              </Button>
-                              <Button
-                                variant="ghost"
-                                size="sm"
-                                onClick={() => setCurrentView("sessions")}
-                                className={cn(
-                                  "text-muted-foreground hover:text-foreground hover:bg-black/5 dark:hover:bg-white/5",
-                                  "transition-all duration-200 ease-in-out overflow-hidden",
-                                  hasSessionSupport
-                                    ? "opacity-100 w-8 scale-100 px-2"
-                                    : "opacity-0 w-0 scale-75 pointer-events-none px-0 -ml-1",
-                                )}
-                                title={t("sessionManager.title")}
-                              >
-                                <History className="flex-shrink-0 w-4 h-4" />
-                              </Button>
-                              <Button
-                                variant="ghost"
-                                size="sm"
-                                onClick={() => setCurrentView("mcp")}
-                                className="text-muted-foreground hover:text-foreground hover:bg-black/5 dark:hover:bg-white/5 w-8 px-2"
-                                title={t("mcp.title")}
-                              >
-                                <McpIcon size={16} />
-                              </Button>
-                            </>
-                          )}
-                        </motion.div>
-                      </AnimatePresence>
-                    </div>
-                  </>
-                )}
-              </div>
+              <ProjectSelector
+                profiles={profiles}
+                selectedId={selectedProjectId}
+                onSelect={handleSelectProject}
+                onCreate={handleCreateProject}
+              />
             </div>
-          </div>
-        </div>
-      </header>
+            <div
+              className="flex items-center gap-1.5"
+              style={{ WebkitAppRegion: "no-drag" } as React.CSSProperties}
+            >
+              <div className="mr-1 hidden h-8 items-center gap-2 rounded-lg bg-muted/60 px-2.5 text-[11px] text-muted-foreground sm:flex">
+                <ProviderIcon
+                  icon={
+                    activeApp === "codex"
+                      ? "openai"
+                      : activeApp === "claude-desktop"
+                        ? "claude"
+                        : activeApp
+                  }
+                  name={APP_ICON_MAP[activeApp].label}
+                  size={14}
+                />
+                {APP_ICON_MAP[activeApp].label}
+              </div>
+              <ModeToggle />
+              <Button
+                variant="outline"
+                size="icon"
+                onClick={() => {
+                  setSettingsDefaultTab("general");
+                  navigate("settings");
+                }}
+                title="设置"
+              >
+                <Settings className="h-4 w-4" />
+              </Button>
+              <UpdateBadge
+                onClick={() => {
+                  setSettingsDefaultTab("about");
+                  navigate("settings");
+                }}
+              />
+            </div>
+          </header>
 
-      <main className="flex-1 min-h-0 flex flex-col overflow-y-auto animate-fade-in">
-        {isOpenClawView && openclawHealthWarnings.length > 0 && (
-          <OpenClawHealthBanner warnings={openclawHealthWarnings} />
-        )}
-        {renderContent()}
-      </main>
+          {showEnvBanner && envConflicts.length > 0 && (
+            <EnvWarningBanner
+              conflicts={envConflicts}
+              onDismiss={() => {
+                setShowEnvBanner(false);
+                sessionStorage.setItem("env_banner_dismissed", "true");
+              }}
+              onDeleted={async () => {
+                const all = await checkAllEnvConflicts();
+                const conflicts = Object.values(all).flat();
+                setEnvConflicts(conflicts);
+                if (conflicts.length === 0) setShowEnvBanner(false);
+              }}
+            />
+          )}
 
-      <EditProviderDialog
-        open={Boolean(editingProvider)}
-        provider={effectiveEditingProvider}
-        onOpenChange={(open) => {
-          if (!open) {
-            setEditingProvider(null);
-          }
+          <main className="min-h-0 flex-1 overflow-hidden">
+            {renderContent()}
+          </main>
+        </section>
+      </div>
+
+      <OnboardingWizard
+        open={onboardingOpen}
+        profiles={profiles}
+        onFinish={finishOnboarding}
+        onProjectCreated={(id, defaultTool) => {
+          handleSelectProject(id, defaultTool);
         }}
-        onSubmit={handleEditProvider}
-        appId={activeApp}
-        isProxyTakeover={isCurrentAppTakeoverActive}
       />
-
-      {effectiveUsageProvider && (
-        <UsageScriptModal
-          key={effectiveUsageProvider.id}
-          provider={effectiveUsageProvider}
-          appId={activeApp}
-          isOpen={Boolean(usageProvider)}
-          onClose={() => setUsageProvider(null)}
-          onSave={(script) => {
-            if (usageProvider) {
-              void saveUsageScript(usageProvider, script);
-            }
-          }}
-        />
-      )}
-
-      <ConfirmDialog
-        isOpen={Boolean(confirmAction)}
-        title={
-          confirmAction?.action === "remove"
-            ? t("confirm.removeProvider")
-            : t("confirm.deleteProvider")
-        }
-        message={
-          confirmAction
-            ? confirmAction.action === "remove"
-              ? t("confirm.removeProviderMessage", {
-                  name: confirmAction.provider.name,
-                })
-              : t("confirm.deleteProviderMessage", {
-                  name: confirmAction.provider.name,
-                })
-            : ""
-        }
-        onConfirm={() => void handleConfirmAction()}
-        onCancel={() => setConfirmAction(null)}
-      />
-
-      <ConfirmDialog
-        isOpen={launchDashboardOpen}
-        title={t("hermes.webui.launchConfirmTitle")}
-        message={t("hermes.webui.launchConfirmMessage")}
-        confirmText={t("hermes.webui.launchConfirmAction")}
-        variant="info"
-        onConfirm={() => {
-          setLaunchDashboardOpen(false);
-          void (async () => {
-            try {
-              await hermesApi.launchDashboard();
-              toast.success(t("hermes.webui.launching"));
-            } catch (error) {
-              toast.error(t("hermes.webui.launchFailed"), {
-                description: extractErrorMessage(error) || undefined,
-              });
-            }
-          })();
-        }}
-        onCancel={() => setLaunchDashboardOpen(false)}
-      />
-
       <DeepLinkImportDialog />
-      <FirstRunNoticeDialog />
     </div>
   );
 }

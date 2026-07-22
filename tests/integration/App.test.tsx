@@ -1,8 +1,21 @@
 import { Suspense, type ComponentType } from "react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { render, screen, waitFor, fireEvent } from "@testing-library/react";
+import {
+  render,
+  screen,
+  waitFor,
+  fireEvent,
+  within,
+} from "@testing-library/react";
 import { describe, it, expect, beforeEach, vi } from "vitest";
-import { resetProviderState } from "../msw/state";
+import {
+  getProfileApplyCalls,
+  getProjectLaunchCalls,
+  resetProviderState,
+  setProfileFixtures,
+  setSettings,
+} from "../msw/state";
+import type { Profile } from "@/lib/api/profiles";
 import { emitTauriEvent } from "../msw/tauriMocks";
 
 const toastSuccessMock = vi.fn();
@@ -126,44 +139,38 @@ const renderApp = (AppComponent: ComponentType) => {
 describe("App integration with MSW", () => {
   beforeEach(() => {
     resetProviderState();
+    localStorage.clear();
     toastSuccessMock.mockReset();
     toastErrorMock.mockReset();
   });
 
-  it("covers basic provider flows via real hooks", async () => {
+  it("renders the project-first desktop workspace without provider management", async () => {
     const { default: App } = await import("@/App");
     renderApp(App);
 
+    const onboarding = await screen.findByRole("dialog", {
+      name: "首次配置",
+    });
+    expect(onboarding).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "稍后配置" }));
     await waitFor(() =>
-      expect(screen.getByTestId("provider-list").textContent).toContain(
-        "claude-1",
-      ),
+      expect(
+        screen.queryByRole("dialog", { name: "首次配置" }),
+      ).not.toBeInTheDocument(),
     );
 
-    fireEvent.click(screen.getByText("switch-codex"));
-    await waitFor(() =>
-      expect(screen.getByTestId("provider-list").textContent).toContain(
-        "codex-1",
-      ),
-    );
+    expect(
+      await screen.findByRole("heading", { name: "从一个项目开始" }),
+    ).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "项目" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "AI 工具" })).toBeInTheDocument();
+    expect(screen.queryByTestId("provider-list")).not.toBeInTheDocument();
+    expect(screen.queryByText("添加供应商")).not.toBeInTheDocument();
 
-    fireEvent.click(screen.getByText("usage"));
-    expect(screen.getByTestId("usage-modal")).toBeInTheDocument();
-    fireEvent.click(screen.getByText("save-script"));
-    fireEvent.click(screen.getByText("close-usage"));
-
-    fireEvent.click(screen.getByText("edit"));
-    expect(screen.getByTestId("edit-provider-dialog")).toBeInTheDocument();
-    fireEvent.click(screen.getByText("confirm-edit"));
-    await waitFor(() =>
-      expect(screen.getByTestId("provider-list").textContent).toMatch(
-        /-edited/,
-      ),
-    );
-
-    fireEvent.click(screen.getByText("switch"));
-
-    fireEvent.click(screen.getByText("open-website"));
+    fireEvent.click(screen.getByRole("button", { name: "能力中心" }));
+    expect(
+      await screen.findByRole("heading", { name: "能力中心" }),
+    ).toBeInTheDocument();
 
     emitTauriEvent("provider-switched", {
       appType: "codex",
@@ -171,17 +178,21 @@ describe("App integration with MSW", () => {
     });
 
     expect(toastErrorMock).not.toHaveBeenCalled();
-    expect(toastSuccessMock).toHaveBeenCalled();
   });
 
   it("shows toast when auto sync fails in background", async () => {
     const { default: App } = await import("@/App");
     renderApp(App);
 
+    const onboarding = await screen.findByRole("dialog", {
+      name: "首次配置",
+    });
+    expect(onboarding).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "稍后配置" }));
     await waitFor(() =>
-      expect(screen.getByTestId("provider-list").textContent).toContain(
-        "claude-1",
-      ),
+      expect(
+        screen.queryByRole("dialog", { name: "首次配置" }),
+      ).not.toBeInTheDocument(),
     );
 
     expect(() => {
@@ -214,5 +225,89 @@ describe("App integration with MSW", () => {
     await waitFor(() => {
       expect(toastErrorMock).toHaveBeenCalled();
     });
+  });
+
+  it("applies the selected project context before launching another tool", async () => {
+    const emptyPerApp = {
+      claude: null,
+      "claude-desktop": null,
+      codex: null,
+      gemini: null,
+      grokbuild: null,
+      opencode: null,
+      openclaw: null,
+      hermes: null,
+    };
+    const profile: Profile = {
+      id: "project-1",
+      name: "元衡桌面端",
+      payload: {
+        project: {
+          directory: "/mock/yuanheng",
+          defaultTool: "claude",
+        },
+        providers: { ...emptyPerApp },
+        mcp: { ...emptyPerApp },
+        skills: { ...emptyPerApp },
+        prompts: { ...emptyPerApp },
+      },
+    };
+    setSettings({ firstRunNoticeConfirmed: true });
+    setProfileFixtures([profile], { claude: profile.id });
+
+    const { default: App } = await import("@/App");
+    renderApp(App);
+
+    expect(
+      await screen.findByRole("heading", { name: "继续 元衡桌面端" }),
+    ).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "AI 工具" }));
+    await screen.findByRole("heading", { name: "AI 工具" });
+
+    const codexCard = screen
+      .getByRole("heading", { name: "Codex" })
+      .closest("article");
+    expect(codexCard).not.toBeNull();
+    fireEvent.click(codexCard!);
+
+    await waitFor(() =>
+      expect(getProfileApplyCalls()).toEqual([
+        { id: profile.id, scope: "codex" },
+      ]),
+    );
+
+    fireEvent.click(
+      within(codexCard!).getByRole("button", { name: "在项目中启动" }),
+    );
+    await waitFor(() =>
+      expect(getProjectLaunchCalls()).toEqual([
+        { profileId: profile.id, tool: "codex" },
+      ]),
+    );
+    expect(getProfileApplyCalls()).toHaveLength(1);
+  });
+
+  it("rejects legacy provider deep links without opening an import dialog", async () => {
+    setSettings({ firstRunNoticeConfirmed: true });
+    const { default: App } = await import("@/App");
+    renderApp(App);
+    await screen.findByRole("heading", { name: "从一个项目开始" });
+
+    emitTauriEvent("deeplink-import", {
+      version: "v1",
+      resource: "provider",
+      app: "claude",
+      name: "Legacy Provider",
+    });
+
+    await waitFor(() =>
+      expect(toastErrorMock).toHaveBeenCalledWith(
+        "供应商导入已移除",
+        expect.objectContaining({
+          description: expect.stringContaining("元衡账号统一管理"),
+        }),
+      ),
+    );
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
   });
 });
