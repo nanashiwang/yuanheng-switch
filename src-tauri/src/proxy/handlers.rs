@@ -768,6 +768,20 @@ pub async fn handle_responses(
     handle_responses_for_app(state, request, AppType::Codex, "Codex", "codex").await
 }
 
+pub async fn handle_chatgpt_desktop_responses(
+    State(state): State<ProxyState>,
+    request: axum::extract::Request,
+) -> Result<axum::response::Response, ProxyError> {
+    handle_responses_for_app(
+        state,
+        request,
+        AppType::Codex,
+        "ChatGPT Desktop",
+        "chatgpt-desktop",
+    )
+    .await
+}
+
 pub async fn handle_grokbuild_responses(
     State(state): State<ProxyState>,
     request: axum::extract::Request,
@@ -903,6 +917,20 @@ pub async fn handle_responses_compact(
     request: axum::extract::Request,
 ) -> Result<axum::response::Response, ProxyError> {
     handle_responses_compact_for_app(state, request, AppType::Codex, "Codex", "codex").await
+}
+
+pub async fn handle_chatgpt_desktop_responses_compact(
+    State(state): State<ProxyState>,
+    request: axum::extract::Request,
+) -> Result<axum::response::Response, ProxyError> {
+    handle_responses_compact_for_app(
+        state,
+        request,
+        AppType::Codex,
+        "ChatGPT Desktop",
+        "chatgpt-desktop",
+    )
+    .await
 }
 
 pub async fn handle_grokbuild_responses_compact(

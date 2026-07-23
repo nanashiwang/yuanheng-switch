@@ -545,6 +545,7 @@ fn append_responses_input_as_chat_messages(
     tool_context: &CodexToolContext,
 ) -> Result<(), ProxyError> {
     let mut pending_tool_calls = Vec::new();
+    let mut pending_tool_media = Vec::new();
     let mut pending_reasoning: Option<String> = None;
     let mut last_assistant_index: Option<usize> = None;
 
@@ -561,6 +562,7 @@ fn append_responses_input_as_chat_messages(
                     item,
                     messages,
                     &mut pending_tool_calls,
+                    &mut pending_tool_media,
                     &mut pending_reasoning,
                     &mut last_assistant_index,
                     tool_context,
@@ -572,6 +574,7 @@ fn append_responses_input_as_chat_messages(
                 input,
                 messages,
                 &mut pending_tool_calls,
+                &mut pending_tool_media,
                 &mut pending_reasoning,
                 &mut last_assistant_index,
                 tool_context,
@@ -586,6 +589,7 @@ fn append_responses_input_as_chat_messages(
         &mut pending_reasoning,
         &mut last_assistant_index,
     );
+    flush_pending_tool_media(messages, &mut pending_tool_media);
     // 整个 input 处理完毕后仍剩余的 pending reasoning 属于「真正的尾部」思考
     // （其后已没有任何可前向附挂的 message / function_call），回溯附挂到最后一条
     // assistant；目标已有 reasoning_content 时追加，以保留同一 turn 的 embedded
@@ -603,11 +607,15 @@ fn append_responses_item_as_chat_message(
     item: &Value,
     messages: &mut Vec<Value>,
     pending_tool_calls: &mut Vec<Value>,
+    pending_tool_media: &mut Vec<Value>,
     pending_reasoning: &mut Option<String>,
     last_assistant_index: &mut Option<usize>,
     tool_context: &CodexToolContext,
 ) -> Result<(), ProxyError> {
     let item_type = item.get("type").and_then(|v| v.as_str());
+    if item_type != Some("function_call_output") {
+        flush_pending_tool_media(messages, pending_tool_media);
+    }
     match item_type {
         Some("function_call") => {
             append_unique_pending_reasoning(pending_reasoning, responses_item_reasoning_text(item));
@@ -632,16 +640,13 @@ fn append_responses_item_as_chat_message(
                 last_assistant_index,
             );
             let call_id = item.get("call_id").and_then(|v| v.as_str()).unwrap_or("");
-            let output = match item.get("output") {
-                Some(Value::String(s)) => canonicalize_json_string_if_parseable(s),
-                Some(v) => canonical_json_string(v),
-                None => String::new(),
-            };
+            let (output, media) = split_tool_output_for_chat(item.get("output"));
             messages.push(json!({
                 "role": "tool",
                 "tool_call_id": call_id,
                 "content": output
             }));
+            pending_tool_media.extend(media);
         }
         Some("custom_tool_call_output") | Some("tool_search_output") => {
             flush_pending_tool_calls(
@@ -743,6 +748,96 @@ fn append_responses_item_as_chat_message(
     }
 
     Ok(())
+}
+
+fn split_tool_output_for_chat(output: Option<&Value>) -> (String, Vec<Value>) {
+    let Some(output) = output else {
+        return (String::new(), Vec::new());
+    };
+    if let Value::String(text) = output {
+        return (canonicalize_json_string_if_parseable(text), Vec::new());
+    }
+
+    let parts = match output {
+        Value::Array(parts) => parts.as_slice(),
+        Value::Object(_) => std::slice::from_ref(output),
+        _ => return (canonical_json_string(output), Vec::new()),
+    };
+    if !parts.iter().any(is_tool_media_part) {
+        return (canonical_json_string(output), Vec::new());
+    }
+
+    let mut text_parts = Vec::new();
+    let mut media_parts = Vec::new();
+    for part in parts {
+        match part.get("type").and_then(|value| value.as_str()) {
+            Some("input_text" | "output_text" | "text") => {
+                if let Some(text) = part.get("text").and_then(|value| value.as_str()) {
+                    if !text.is_empty() {
+                        text_parts.push(text.to_string());
+                    }
+                }
+            }
+            Some("input_image") => {
+                if let Some(image_url) = part.get("image_url") {
+                    let image_url = if image_url.is_object() {
+                        image_url.clone()
+                    } else {
+                        json!({ "url": image_url.as_str().unwrap_or_default() })
+                    };
+                    media_parts.push(json!({
+                        "type": "image_url",
+                        "image_url": image_url
+                    }));
+                }
+            }
+            Some("input_file") => {
+                if let Some(file) = responses_input_file_to_chat_file(part) {
+                    media_parts.push(json!({
+                        "type": "file",
+                        "file": file
+                    }));
+                }
+            }
+            Some("input_audio") => {
+                if let Some(input_audio) = part.get("input_audio") {
+                    media_parts.push(json!({
+                        "type": "input_audio",
+                        "input_audio": input_audio.clone()
+                    }));
+                }
+            }
+            _ => text_parts.push(canonical_json_string(part)),
+        }
+    }
+
+    if !media_parts.is_empty() {
+        text_parts.push("[Media output attached separately]".to_string());
+    }
+    (text_parts.join("\n"), media_parts)
+}
+
+fn is_tool_media_part(part: &Value) -> bool {
+    matches!(
+        part.get("type").and_then(|value| value.as_str()),
+        Some("input_image" | "input_file" | "input_audio")
+    )
+}
+
+fn flush_pending_tool_media(messages: &mut Vec<Value>, pending_tool_media: &mut Vec<Value>) {
+    if pending_tool_media.is_empty() {
+        return;
+    }
+
+    let mut content = vec![json!({
+        "type": "text",
+        "text": "Media returned by the preceding tool call(s)."
+    })];
+    content.append(pending_tool_media);
+    messages.push(json!({
+        "role": "user",
+        "content": content
+    }));
 }
 
 fn flush_pending_tool_calls(
@@ -2048,6 +2143,66 @@ mod tests {
         assert_eq!(result["tool_choice"]["function"]["name"], "get_weather");
         assert_eq!(result["max_tokens"], 100);
         assert_eq!(result["reasoning_effort"], "high");
+    }
+
+    #[test]
+    fn responses_request_to_chat_moves_tool_images_out_of_tool_text() {
+        let input = json!({
+            "model": "k3",
+            "input": [
+                {
+                    "type": "function_call",
+                    "call_id": "call_1",
+                    "name": "view_image",
+                    "arguments": "{\"path\":\"one.png\"}"
+                },
+                {
+                    "type": "function_call",
+                    "call_id": "call_2",
+                    "name": "view_image",
+                    "arguments": "{\"path\":\"two.png\"}"
+                },
+                {
+                    "type": "function_call_output",
+                    "call_id": "call_1",
+                    "output": [
+                        {"type": "input_text", "text": "First screenshot"},
+                        {"type": "input_image", "image_url": "data:image/png;base64,first"}
+                    ]
+                },
+                {
+                    "type": "function_call_output",
+                    "call_id": "call_2",
+                    "output": [
+                        {"type": "input_image", "image_url": "data:image/png;base64,second"}
+                    ]
+                }
+            ]
+        });
+
+        let result = responses_to_chat_completions(input).unwrap();
+        let messages = result["messages"].as_array().unwrap();
+
+        assert_eq!(messages.len(), 4);
+        assert_eq!(messages[0]["role"], "assistant");
+        assert_eq!(messages[0]["tool_calls"].as_array().unwrap().len(), 2);
+        assert_eq!(messages[1]["role"], "tool");
+        assert_eq!(messages[2]["role"], "tool");
+        assert!(messages[1]["content"]
+            .as_str()
+            .unwrap()
+            .contains("First screenshot"));
+        assert!(!messages[1]["content"].as_str().unwrap().contains("base64"));
+        assert!(!messages[2]["content"].as_str().unwrap().contains("base64"));
+        assert_eq!(messages[3]["role"], "user");
+        assert_eq!(
+            messages[3]["content"][1]["image_url"]["url"],
+            "data:image/png;base64,first"
+        );
+        assert_eq!(
+            messages[3]["content"][2]["image_url"]["url"],
+            "data:image/png;base64,second"
+        );
     }
 
     #[test]

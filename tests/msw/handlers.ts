@@ -1,5 +1,6 @@
 import { http, HttpResponse } from "msw";
 import type { AppId } from "@/lib/api/types";
+import type { YuanhengToolId } from "@/lib/api/yuanheng";
 import type { McpServer, Provider, Settings } from "@/types";
 import {
   addProvider,
@@ -27,6 +28,7 @@ import {
   getYuanhengConnection,
   getYuanhengToolStatuses,
   recordToolLaunch,
+  recordToolRestart,
   setYuanhengConnection,
 } from "./state";
 
@@ -90,6 +92,9 @@ export const handlers = [
   http.post(`${TAURI_ENDPOINT}/refresh_yuanheng_connection`, () =>
     success(getYuanhengConnection()),
   ),
+  http.post(`${TAURI_ENDPOINT}/rotate_yuanheng_device_token`, () =>
+    success(getYuanhengConnection()),
+  ),
   http.post(`${TAURI_ENDPOINT}/disconnect_yuanheng`, () => {
     setYuanhengConnection({ connected: false });
     return success({
@@ -103,19 +108,98 @@ export const handlers = [
   http.post(`${TAURI_ENDPOINT}/get_yuanheng_tool_statuses`, () =>
     success(getYuanhengToolStatuses()),
   ),
+  http.post(`${TAURI_ENDPOINT}/get_yuanheng_diagnostics`, () => {
+    const connection = getYuanhengConnection();
+    const readyTools = getYuanhengToolStatuses().filter(
+      (item) => item.configured,
+    ).length;
+    return success({
+      status: connection.connected
+        ? readyTools > 0
+          ? "ok"
+          : "warning"
+        : "error",
+      checkedAt: Math.floor(Date.now() / 1000),
+      readyTools,
+      attentionTools: [],
+      checks: connection.connected
+        ? [
+            {
+              id: "connection",
+              status: "ok",
+              title: "账号连接正常",
+              message: "登录状态有效。",
+              action: null,
+            },
+            {
+              id: "credential",
+              status: "ok",
+              title: "API 连接正常",
+              message: "本机凭据可访问模型接口。",
+              action: null,
+            },
+            {
+              id: "tools",
+              status: readyTools > 0 ? "ok" : "warning",
+              title: readyTools > 0 ? "工具配置正常" : "尚未配置 AI 工具",
+              message:
+                readyTools > 0
+                  ? `${readyTools} 个工具已经就绪。`
+                  : "选择本机已安装的工具后即可一键配置。",
+              action: readyTools > 0 ? null : "configure_tools",
+            },
+          ]
+        : [
+            {
+              id: "connection",
+              status: "error",
+              title: "尚未连接元衡",
+              message: "登录后会自动检查。",
+              action: "login",
+            },
+          ],
+    });
+  }),
+  http.post(`${TAURI_ENDPOINT}/export_yuanheng_diagnostics`, () =>
+    success("/tmp/yuanheng-diagnostics.json"),
+  ),
   http.post(
     `${TAURI_ENDPOINT}/configure_yuanheng_tools`,
     async ({ request }) => {
-      const { apps = [], models = {} } = await withJson<{
-        apps?: AppId[];
-        models?: Partial<Record<AppId, string>>;
+      const {
+        apps = [],
+        models = {},
+        groups = {},
+        reasoning = {},
+      } = await withJson<{
+        apps?: YuanhengToolId[];
+        models?: Partial<Record<YuanhengToolId, string>>;
+        groups?: Partial<Record<YuanhengToolId, string>>;
+        reasoning?: Partial<
+          Record<
+            YuanhengToolId,
+            | "auto"
+            | "none"
+            | "minimal"
+            | "low"
+            | "medium"
+            | "high"
+            | "xhigh"
+            | "max"
+            | "ultra"
+          >
+        >;
       }>(request);
-      return success(configureYuanhengTools(apps, models));
+      return success(configureYuanhengTools(apps, models, groups, reasoning));
     },
   ),
   http.post(`${TAURI_ENDPOINT}/launch_tool`, async ({ request }) => {
-    const { tool } = await withJson<{ tool: AppId }>(request);
+    const { tool, restart = false } = await withJson<{
+      tool: YuanhengToolId;
+      restart?: boolean;
+    }>(request);
     recordToolLaunch(tool);
+    if (restart) recordToolRestart(tool);
     return success(true);
   }),
   http.post(`${TAURI_ENDPOINT}/get_installed_skills`, () => success([])),

@@ -1,6 +1,8 @@
 import type { AppId } from "@/lib/api/types";
 import type {
   YuanhengConnectionStatus,
+  YuanhengReasoningLevel,
+  YuanhengToolId,
   YuanhengToolConfigureResult,
   YuanhengToolStatus,
 } from "@/lib/api/yuanheng";
@@ -210,6 +212,9 @@ const disconnectedYuanheng = (): YuanhengConnectionStatus => ({
   userId: null,
   account: null,
   models: [],
+  groups: [],
+  modelGroups: {},
+  reasoningLevels: {},
   announcement: null,
   lastSyncedAt: null,
 });
@@ -219,25 +224,33 @@ const emptyToolStatuses = (): YuanhengToolStatus[] =>
     "claude",
     "claude-desktop",
     "codex",
+    "chatgpt-desktop",
+    "workbuddy",
     "gemini",
     "grokbuild",
     "opencode",
     "openclaw",
     "hermes",
   ].map((app) => ({
-    app: app as AppId,
+    app: app as YuanhengToolId,
     supported: false,
     configured: false,
     needsUpdate: false,
     model: null,
+    reasoning: "auto",
     recommendedModel: null,
     message: "账号中暂时没有可用模型",
   }));
 
 let yuanhengConnectionState = disconnectedYuanheng();
 let yuanhengToolStatuses = emptyToolStatuses();
-let configuredToolCalls: AppId[][] = [];
-let launchedToolCalls: AppId[] = [];
+let configuredToolCalls: YuanhengToolId[][] = [];
+let configuredToolGroupCalls: Partial<Record<YuanhengToolId, string>>[] = [];
+let configuredToolReasoningCalls: Partial<
+  Record<YuanhengToolId, YuanhengReasoningLevel>
+>[] = [];
+let launchedToolCalls: YuanhengToolId[] = [];
+let restartedToolCalls: YuanhengToolId[] = [];
 
 const cloneProviders = (value: ProvidersByApp) =>
   deepClone(value) as ProvidersByApp;
@@ -310,7 +323,10 @@ export const resetProviderState = () => {
   yuanhengConnectionState = disconnectedYuanheng();
   yuanhengToolStatuses = emptyToolStatuses();
   configuredToolCalls = [];
+  configuredToolGroupCalls = [];
+  configuredToolReasoningCalls = [];
   launchedToolCalls = [];
+  restartedToolCalls = [];
 };
 
 export const getYuanhengConnection = () =>
@@ -324,7 +340,10 @@ export const setYuanhengConnection = (
   yuanhengToolStatuses = emptyToolStatuses().map((item) => {
     const preferred =
       item.app === "claude" || item.app === "claude-desktop"
-        ? models.find((model) => model.includes("claude"))
+        ? (models.find((model) => model.includes("claude")) ??
+          models.find((model) => model.includes("deepseek")) ??
+          models.find((model) => model.includes("gpt")) ??
+          models[0])
         : item.app === "gemini"
           ? models.find((model) => model.includes("gemini"))
           : (models.find((model) => model.includes("gpt")) ?? models[0]);
@@ -340,11 +359,23 @@ export const setYuanhengConnection = (
 export const getYuanhengToolStatuses = () =>
   deepClone(yuanhengToolStatuses) as YuanhengToolStatus[];
 
+export const setYuanhengToolStatus = (
+  app: YuanhengToolId,
+  status: Partial<YuanhengToolStatus>,
+) => {
+  const current = yuanhengToolStatuses.find((item) => item.app === app);
+  if (current) Object.assign(current, status);
+};
+
 export const configureYuanhengTools = (
-  apps: AppId[],
-  models: Partial<Record<AppId, string>> = {},
+  apps: YuanhengToolId[],
+  models: Partial<Record<YuanhengToolId, string>> = {},
+  groups: Partial<Record<YuanhengToolId, string>> = {},
+  reasoning: Partial<Record<YuanhengToolId, YuanhengReasoningLevel>> = {},
 ): YuanhengToolConfigureResult[] => {
   configuredToolCalls.push([...apps]);
+  configuredToolGroupCalls.push({ ...groups });
+  configuredToolReasoningCalls.push({ ...reasoning });
   return apps.map((app) => {
     const status = yuanhengToolStatuses.find((item) => item.app === app);
     if (!status?.supported) {
@@ -360,6 +391,8 @@ export const configureYuanhengTools = (
     status.configured = true;
     status.needsUpdate = false;
     status.model = model;
+    status.group = groups[app] ?? null;
+    status.reasoning = reasoning[app] ?? "auto";
     status.message = "元衡配置已写入";
     return {
       app,
@@ -371,9 +404,17 @@ export const configureYuanhengTools = (
   });
 };
 
-export const recordToolLaunch = (app: AppId) => launchedToolCalls.push(app);
+export const recordToolLaunch = (app: YuanhengToolId) =>
+  launchedToolCalls.push(app);
+export const recordToolRestart = (app: YuanhengToolId) =>
+  restartedToolCalls.push(app);
 export const getConfiguredToolCalls = () => [...configuredToolCalls];
+export const getConfiguredToolGroupCalls = () => [...configuredToolGroupCalls];
+export const getConfiguredToolReasoningCalls = () => [
+  ...configuredToolReasoningCalls,
+];
 export const getLaunchedToolCalls = () => [...launchedToolCalls];
+export const getRestartedToolCalls = () => [...restartedToolCalls];
 
 export const getProviders = (appType: AppId) =>
   cloneProviders(providers)[appType] ?? {};

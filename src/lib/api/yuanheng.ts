@@ -1,6 +1,8 @@
 import { invoke } from "@tauri-apps/api/core";
 import type { AppId } from "./types";
 
+export type YuanhengToolId = AppId | "chatgpt-desktop" | "workbuddy";
+
 export interface YuanhengAccount {
   username: string;
   displayName: string;
@@ -9,12 +11,21 @@ export interface YuanhengAccount {
   usedUsd: number;
 }
 
+export interface YuanhengGroupOption {
+  id: string;
+  description: string;
+  ratio: number | null;
+}
+
 export interface YuanhengConnectionStatus {
   connected: boolean;
   baseUrl: string;
   userId: string | null;
   account: YuanhengAccount | null;
   models: string[];
+  groups: YuanhengGroupOption[];
+  modelGroups: Record<string, string[]>;
+  reasoningLevels: Record<string, YuanhengReasoningLevel[]>;
   announcement: string | null;
   lastSyncedAt: number | null;
 }
@@ -24,18 +35,41 @@ export interface YuanhengAuthResult {
   connection: YuanhengConnectionStatus | null;
 }
 
+export type YuanhengReasoningLevel =
+  | "auto"
+  | "none"
+  | "minimal"
+  | "low"
+  | "medium"
+  | "high"
+  | "xhigh"
+  | "max"
+  | "ultra";
+
 export interface YuanhengToolStatus {
-  app: AppId;
+  app: YuanhengToolId;
   supported: boolean;
   configured: boolean;
   needsUpdate: boolean;
   model: string | null;
+  group?: string | null;
+  reasoning?: YuanhengReasoningLevel | null;
   recommendedModel: string | null;
   message: string | null;
+  runtimeWarning?: string | null;
+  runtimeStatus?: YuanhengRuntimeStatus | null;
+}
+
+export interface YuanhengRuntimeStatus {
+  state: "downloading" | "stalled";
+  title: string;
+  message: string;
+  downloadedBytes: number;
+  updatedAt: number;
 }
 
 export interface YuanhengToolConfigureResult {
-  app: AppId;
+  app: YuanhengToolId;
   configured: boolean;
   model: string | null;
   warnings: string[];
@@ -44,10 +78,33 @@ export interface YuanhengToolConfigureResult {
 
 export interface YuanhengDisconnectResult {
   disconnected: boolean;
-  restoredTools: AppId[];
-  removedTools: AppId[];
-  retainedTools: AppId[];
+  restoredTools: YuanhengToolId[];
+  removedTools: YuanhengToolId[];
+  retainedTools: YuanhengToolId[];
   warnings: string[];
+}
+
+export type YuanhengDiagnosticStatus = "ok" | "warning" | "error";
+
+export interface YuanhengDiagnosticCheck {
+  id: string;
+  status: YuanhengDiagnosticStatus;
+  title: string;
+  message: string;
+  action:
+    | "login"
+    | "repair_credentials"
+    | "repair_tools"
+    | "configure_tools"
+    | null;
+}
+
+export interface YuanhengDiagnosticReport {
+  status: YuanhengDiagnosticStatus;
+  checkedAt: number;
+  readyTools: number;
+  attentionTools: YuanhengToolId[];
+  checks: YuanhengDiagnosticCheck[];
 }
 
 export const yuanhengApi = {
@@ -71,6 +128,10 @@ export const yuanhengApi = {
     return invoke("refresh_yuanheng_connection");
   },
 
+  rotateDeviceToken(): Promise<YuanhengConnectionStatus> {
+    return invoke("rotate_yuanheng_device_token");
+  },
+
   disconnect(): Promise<YuanhengDisconnectResult> {
     return invoke("disconnect_yuanheng");
   },
@@ -79,14 +140,29 @@ export const yuanhengApi = {
     return invoke("get_yuanheng_tool_statuses");
   },
 
-  configureTools(
-    apps: AppId[],
-    models?: Partial<Record<AppId, string>>,
-  ): Promise<YuanhengToolConfigureResult[]> {
-    return invoke("configure_yuanheng_tools", { apps, models });
+  getDiagnostics(): Promise<YuanhengDiagnosticReport> {
+    return invoke("get_yuanheng_diagnostics");
   },
 
-  launchTool(app: AppId): Promise<boolean> {
-    return invoke("launch_tool", { tool: app });
+  exportDiagnostics(filePath: string): Promise<string> {
+    return invoke("export_yuanheng_diagnostics", { filePath });
+  },
+
+  configureTools(
+    apps: YuanhengToolId[],
+    models?: Partial<Record<YuanhengToolId, string>>,
+    groups?: Partial<Record<YuanhengToolId, string>>,
+    reasoning?: Partial<Record<YuanhengToolId, YuanhengReasoningLevel>>,
+  ): Promise<YuanhengToolConfigureResult[]> {
+    return invoke("configure_yuanheng_tools", {
+      apps,
+      models,
+      groups,
+      reasoning,
+    });
+  },
+
+  launchTool(app: YuanhengToolId, restart = false): Promise<boolean> {
+    return invoke("launch_tool", { tool: app, restart });
   },
 };

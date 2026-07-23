@@ -2360,6 +2360,7 @@
     "noInstalled": "暂无已安装的技能",
     "noInstalledDescription": "从仓库发现并安装技能，或导入已有的技能",
     "discover": "发现技能",
+    "importCta": "导入已有技能",
     "import": "导入已有",
     "importDescription": "选择要导入到 YuanHeng Switch 统一管理的技能",
     "importSuccess": "成功导入 {{count}} 个技能",

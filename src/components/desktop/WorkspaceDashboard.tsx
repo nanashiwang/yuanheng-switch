@@ -4,11 +4,9 @@ import {
   CheckCircle2,
   Cloud,
   Gauge,
-  Network,
   Play,
   ServerCog,
   Settings2,
-  Sparkles,
 } from "lucide-react";
 import type { AppId } from "@/lib/api";
 import { Button } from "@/components/ui/button";
@@ -21,6 +19,7 @@ import {
   useYuanhengToolStatuses,
 } from "@/lib/query/yuanheng";
 import type { DesktopView } from "./types";
+import { YuanhengHealthCard } from "./YuanhengHealthCard";
 
 interface WorkspaceDashboardProps {
   onNavigate: (view: DesktopView) => void;
@@ -86,8 +85,10 @@ export function WorkspaceDashboard({
                 {connection?.connected ? "元衡服务在线" : "尚未连接"}
               </span>
               <span className="inline-flex items-center gap-1.5 rounded-full bg-white/10 px-3 py-1 text-[11px] text-emerald-50">
-                <Sparkles className="h-3.5 w-3.5" />
-                {connection?.models.length ?? 0} 个可用模型
+                <CheckCircle2 className="h-3.5 w-3.5" />
+                {configuredTools.length > 0
+                  ? `${configuredTools.length} 个工具已就绪`
+                  : "等待配置工具"}
               </span>
             </div>
           </div>
@@ -164,67 +165,19 @@ export function WorkspaceDashboard({
           </div>
         </section>
 
-        <section className="rounded-2xl border bg-card p-5 shadow-sm">
-          <div className="flex items-center justify-between">
-            <div>
-              <h2 className="font-display text-base font-semibold">元衡账号</h2>
-              <p className="mt-0.5 text-[11px] text-muted-foreground">
-                余额与模型权限
-              </p>
-            </div>
-            <span
-              className={
-                connection?.connected
-                  ? "status-dot status-dot-online"
-                  : "status-dot"
-              }
-            />
-          </div>
-          {connection?.connected ? (
-            <div className="mt-5">
-              <p className="font-display text-2xl font-semibold">
-                ${connection.account?.remainingUsd.toFixed(2) ?? "0.00"}
-              </p>
-              <p className="mt-1 text-[11px] text-muted-foreground">
-                当前可用余额
-              </p>
-              <div className="mt-4 flex items-center justify-between rounded-lg bg-muted/60 px-3 py-2 text-[11px]">
-                <span className="text-muted-foreground">已配置工具</span>
-                <span className="font-semibold">
-                  {configuredTools.length} 个
-                </span>
-              </div>
-            </div>
-          ) : (
-            <div className="mt-5 rounded-xl border border-dashed p-4 text-center">
-              <Cloud className="mx-auto h-5 w-5 text-muted-foreground" />
-              <p className="mt-2 text-[12px] font-medium">尚未连接元衡账号</p>
-            </div>
-          )}
-          <Button
-            variant="outline"
-            size="sm"
-            className="mt-4 w-full"
-            onClick={() => onNavigate("network")}
-          >
-            {connection?.connected ? "查看账号详情" : "立即连接"}
-          </Button>
-        </section>
+        <YuanhengHealthCard
+          onOpenConnection={() => onNavigate("network")}
+          onConfigureTools={() => onNavigate("tools")}
+        />
       </div>
 
-      <div className="grid animate-rise-in stagger-3 gap-3 sm:grid-cols-3">
+      <div className="grid animate-rise-in stagger-3 gap-3 sm:grid-cols-2">
         {[
           {
             title: "能力中心",
             value: `${skills.length} Skills · ${Object.keys(mcpServers).length} MCP`,
             icon: Blocks,
             view: "capabilities" as const,
-          },
-          {
-            title: "连接与路由",
-            value: "账号、网络与故障诊断",
-            icon: Network,
-            view: "network" as const,
           },
           {
             title: "工具配置",

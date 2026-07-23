@@ -2360,6 +2360,7 @@
     "noInstalled": "No skills installed",
     "noInstalledDescription": "Discover and install skills from repositories, or import existing skills",
     "discover": "Discover Skills",
+    "importCta": "Import existing skills",
     "import": "Import Existing",
     "importDescription": "Select skills to import into YuanHeng Switch unified management",
     "importSuccess": "Successfully imported {{count}} skills",

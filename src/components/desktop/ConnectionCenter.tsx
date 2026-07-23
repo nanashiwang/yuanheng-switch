@@ -28,7 +28,7 @@ export function ConnectionCenter() {
         title="连接与路由"
         description="元衡账号负责远程权限和模型目录，本地路由负责接管、健康检查与故障转移。"
       />
-      <div className="min-h-0 flex-1 overflow-y-auto pb-8">
+      <div className="mx-auto min-h-0 w-full max-w-[880px] flex-1 overflow-y-auto pb-8">
         <YuanhengConnectionPanel />
 
         <div className="mb-4 mt-6 flex items-start gap-3">

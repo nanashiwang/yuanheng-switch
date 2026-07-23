@@ -8,13 +8,12 @@ import {
   RefreshCw,
   ShieldCheck,
   UserPlus,
-  WalletCards,
 } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import type { YuanhengAuthResult } from "@/lib/api/yuanheng";
+import type { YuanhengAuthResult, YuanhengToolId } from "@/lib/api/yuanheng";
 import { APP_ICON_MAP } from "@/config/appConfig";
 import {
   useDisconnectYuanheng,
@@ -24,6 +23,12 @@ import {
   useVerifyYuanhengTwoFactor,
   useYuanhengConnection,
 } from "@/lib/query/yuanheng";
+
+const toolLabel = (app: YuanhengToolId) => {
+  if (app === "chatgpt-desktop") return "ChatGPT Desktop";
+  if (app === "workbuddy") return "WorkBuddy";
+  return APP_ICON_MAP[app].label;
+};
 import { extractErrorMessage } from "@/utils/errorUtils";
 import { cn } from "@/lib/utils";
 
@@ -31,13 +36,6 @@ interface YuanhengConnectionPanelProps {
   compact?: boolean;
   onConnected?: () => void;
 }
-
-const formatUsd = (value?: number) =>
-  new Intl.NumberFormat("zh-CN", {
-    style: "currency",
-    currency: "USD",
-    maximumFractionDigits: 2,
-  }).format(value ?? 0);
 
 export function YuanhengConnectionPanel({
   compact = false,
@@ -133,9 +131,7 @@ export function YuanhengConnectionPanel({
     try {
       const result = await disconnect.mutateAsync();
       if (result.retainedTools.length > 0) {
-        const tools = result.retainedTools
-          .map((app) => APP_ICON_MAP[app]?.label ?? app)
-          .join("、");
+        const tools = result.retainedTools.map(toolLabel).join("、");
         toast.warning(`账号已断开；${tools} 缺少原配置，元衡配置仍保留`);
       } else if (
         result.restoredTools.length > 0 ||
@@ -389,73 +385,6 @@ export function YuanhengConnectionPanel({
           </Button>
         )}
       </div>
-      <div
-        className={cn(
-          "grid gap-px bg-border/60",
-          compact ? "grid-cols-2" : "grid-cols-3",
-        )}
-      >
-        <div className="bg-card px-5 py-4">
-          <div className="flex items-center gap-2 text-[11px] text-muted-foreground">
-            <WalletCards className="h-3.5 w-3.5" /> 可用余额
-          </div>
-          <p className="mt-1 font-display text-xl font-semibold">
-            {formatUsd(status.account?.remainingUsd)}
-          </p>
-          <p className="mt-0.5 text-[10px] text-muted-foreground">
-            已用 {formatUsd(status.account?.usedUsd)}
-          </p>
-        </div>
-        <div className="bg-card px-5 py-4">
-          <div className="flex items-center gap-2 text-[11px] text-muted-foreground">
-            <ShieldCheck className="h-3.5 w-3.5" /> 可用模型
-          </div>
-          <p className="mt-1 font-display text-xl font-semibold">
-            {status.models.length}
-          </p>
-        </div>
-        {!compact && (
-          <div className="bg-card px-5 py-4">
-            <div className="text-[11px] text-muted-foreground">API 入口</div>
-            <p className="mt-1 truncate font-mono text-[12px] font-medium">
-              {status.baseUrl}
-            </p>
-          </div>
-        )}
-      </div>
-      {!compact && status.models.length > 0 && (
-        <div className="border-t px-5 py-4">
-          <div className="flex items-center justify-between gap-3">
-            <p className="text-[11px] font-semibold">账号可用模型</p>
-            <span className="text-[10px] text-muted-foreground">
-              {status.lastSyncedAt
-                ? `${new Date(status.lastSyncedAt * 1000).toLocaleString("zh-CN")} 同步`
-                : "已同步"}
-            </span>
-          </div>
-          <div className="mt-2.5 flex flex-wrap gap-1.5">
-            {status.models.slice(0, 12).map((model) => (
-              <span
-                key={model}
-                className="max-w-full truncate rounded-md bg-muted/70 px-2 py-1 font-mono text-[10px] text-muted-foreground"
-                title={model}
-              >
-                {model}
-              </span>
-            ))}
-            {status.models.length > 12 && (
-              <span className="rounded-md bg-primary/10 px-2 py-1 text-[10px] font-medium text-primary">
-                +{status.models.length - 12}
-              </span>
-            )}
-          </div>
-        </div>
-      )}
-      {status.announcement && !compact && (
-        <p className="border-t px-5 py-3 text-[12px] leading-5 text-muted-foreground">
-          {status.announcement}
-        </p>
-      )}
     </section>
   );
 }

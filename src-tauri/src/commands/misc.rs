@@ -115,6 +115,18 @@ const VALID_TOOLS: [&str; 7] = [
     "claude", "codex", "gemini", "grok", "opencode", "openclaw", "hermes",
 ];
 
+const VALID_VERSION_TOOLS: [&str; 9] = [
+    "claude",
+    "codex",
+    "gemini",
+    "grok",
+    "opencode",
+    "openclaw",
+    "hermes",
+    "chatgpt-desktop",
+    "workbuddy",
+];
+
 #[derive(Debug, Clone, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct WslShellPreferenceInput {
@@ -156,25 +168,29 @@ pub async fn get_tool_versions(
 ) -> Result<Vec<ToolVersion>, String> {
     let requested: Vec<&str> = if let Some(tools) = tools.as_ref() {
         let set: std::collections::HashSet<&str> = tools.iter().map(|s| s.as_str()).collect();
-        VALID_TOOLS
+        VALID_VERSION_TOOLS
             .iter()
             .copied()
             .filter(|t| set.contains(t))
             .collect()
     } else {
-        VALID_TOOLS.to_vec()
+        VALID_VERSION_TOOLS.to_vec()
     };
-    let mut results = Vec::new();
-
-    for tool in requested {
+    let tasks = requested.into_iter().map(|tool| {
         let pref = wsl_shell_by_tool.as_ref().and_then(|m| m.get(tool));
-        let tool_wsl_shell = pref.and_then(|p| p.wsl_shell.as_deref());
-        let tool_wsl_shell_flag = pref.and_then(|p| p.wsl_shell_flag.as_deref());
+        let tool_wsl_shell = pref.and_then(|p| p.wsl_shell.clone());
+        let tool_wsl_shell_flag = pref.and_then(|p| p.wsl_shell_flag.clone());
+        async move {
+            get_single_tool_version_impl(
+                tool,
+                tool_wsl_shell.as_deref(),
+                tool_wsl_shell_flag.as_deref(),
+            )
+            .await
+        }
+    });
 
-        results.push(get_single_tool_version_impl(tool, tool_wsl_shell, tool_wsl_shell_flag).await);
-    }
-
-    Ok(results)
+    Ok(futures::future::join_all(tasks).await)
 }
 
 #[tauri::command]
@@ -741,6 +757,66 @@ fn windows_cmd_double_quote_arg(value: &str) -> String {
     win_double_quote(value)
 }
 
+fn desktop_app_candidates(tool: &str) -> Vec<PathBuf> {
+    #[cfg(target_os = "macos")]
+    {
+        let names: &[&str] = match tool {
+            "chatgpt-desktop" => &["ChatGPT.app", "Codex.app"],
+            "workbuddy" => &["WorkBuddy.app"],
+            _ => &[],
+        };
+        let mut paths = Vec::new();
+        for name in names {
+            paths.push(PathBuf::from("/Applications").join(name));
+            paths.push(
+                crate::config::get_home_dir()
+                    .join("Applications")
+                    .join(name),
+            );
+        }
+        return paths;
+    }
+
+    #[cfg(target_os = "windows")]
+    {
+        let local_app_data = std::env::var_os("LOCALAPPDATA")
+            .map(PathBuf::from)
+            .unwrap_or_default();
+        return match tool {
+            "chatgpt-desktop" => vec![
+                local_app_data.join("Programs/ChatGPT/ChatGPT.exe"),
+                local_app_data.join("Programs/Codex/Codex.exe"),
+            ],
+            "workbuddy" => vec![local_app_data.join("Programs/WorkBuddy/WorkBuddy.exe")],
+            _ => Vec::new(),
+        };
+    }
+
+    #[cfg(not(any(target_os = "macos", target_os = "windows")))]
+    {
+        let _ = tool;
+        Vec::new()
+    }
+}
+
+fn desktop_app_version(tool: &str) -> ToolVersion {
+    let (env_type, wsl_distro) = tool_env_type_and_wsl_distro(tool);
+    let installed = desktop_app_candidates(tool)
+        .into_iter()
+        .find(|path| path.exists());
+    ToolVersion {
+        name: tool.to_string(),
+        version: installed.as_ref().map(|_| "桌面应用".to_string()),
+        latest_version: None,
+        error: installed
+            .is_none()
+            .then(|| "desktop app not installed".to_string()),
+        installed_but_broken: false,
+        env_type,
+        wsl_distro,
+    }
+}
+
 /// 获取单个工具的版本信息（内部实现）
 async fn get_single_tool_version_impl(
     tool: &str,
@@ -748,9 +824,13 @@ async fn get_single_tool_version_impl(
     wsl_shell_flag: Option<&str>,
 ) -> ToolVersion {
     debug_assert!(
-        VALID_TOOLS.contains(&tool),
+        VALID_VERSION_TOOLS.contains(&tool),
         "unexpected tool name in get_single_tool_version_impl: {tool}"
     );
+
+    if matches!(tool, "chatgpt-desktop" | "workbuddy") {
+        return desktop_app_version(tool);
+    }
 
     // 判断该工具的运行环境 & WSL distro（如有）
     let (env_type, wsl_distro) = tool_env_type_and_wsl_distro(tool);
@@ -931,7 +1011,12 @@ async fn fetch_npm_dist_tags(
     package: &str,
 ) -> Option<serde_json::Map<String, serde_json::Value>> {
     let url = format!("https://registry.npmjs.org/{package}");
-    let resp = client.get(&url).send().await.ok()?;
+    let resp = client
+        .get(&url)
+        .timeout(std::time::Duration::from_secs(8))
+        .send()
+        .await
+        .ok()?;
     let json = resp.json::<serde_json::Value>().await.ok()?;
     json.get("dist-tags")?.as_object().cloned()
 }
@@ -953,6 +1038,7 @@ async fn fetch_github_latest_version(client: &reqwest::Client, repo: &str) -> Op
     let url = format!("https://api.github.com/repos/{repo}/releases/latest");
     match client
         .get(&url)
+        .timeout(std::time::Duration::from_secs(8))
         .header("User-Agent", "yuanheng-switch")
         .header("Accept", "application/vnd.github+json")
         .send()
@@ -974,7 +1060,12 @@ async fn fetch_github_latest_version(client: &reqwest::Client, repo: &str) -> Op
 /// Helper function to fetch latest version from PyPI
 async fn fetch_pypi_latest_version(client: &reqwest::Client, package: &str) -> Option<String> {
     let url = format!("https://pypi.org/pypi/{package}/json");
-    match client.get(&url).send().await {
+    match client
+        .get(&url)
+        .timeout(std::time::Duration::from_secs(8))
+        .send()
+        .await
+    {
         Ok(resp) => {
             if let Ok(json) = resp.json::<serde_json::Value>().await {
                 json.get("info")
@@ -2721,7 +2812,7 @@ pub async fn open_provider_terminal(
 fn tool_command(tool: &str) -> Option<&'static str> {
     match tool {
         "claude" => Some("claude"),
-        "codex" => Some("codex"),
+        "codex" => Some("codex --profile yuanheng-terminal"),
         "gemini" => Some("gemini"),
         "grokbuild" => Some("grok"),
         "opencode" => Some("opencode"),
@@ -2731,9 +2822,169 @@ fn tool_command(tool: &str) -> Option<&'static str> {
     }
 }
 
+#[cfg(target_os = "macos")]
+fn claude_desktop_running() -> bool {
+    std::process::Command::new("pgrep")
+        .args(["-x", "Claude"])
+        .status()
+        .is_ok_and(|status| status.success())
+}
+
+#[cfg(target_os = "macos")]
+fn launch_claude_desktop(restart: bool) -> Result<(), String> {
+    if restart && claude_desktop_running() {
+        let output = std::process::Command::new("pkill")
+            .args(["-TERM", "-x", "Claude"])
+            .output()
+            .map_err(|error| format!("退出 Claude Desktop 失败: {error}"))?;
+        if !output.status.success() {
+            return Err(format!(
+                "退出 Claude Desktop 失败: {}",
+                decode_command_output(&output.stderr)
+            ));
+        }
+        for _ in 0..40 {
+            if !claude_desktop_running() {
+                break;
+            }
+            std::thread::sleep(std::time::Duration::from_millis(125));
+        }
+        if claude_desktop_running() {
+            return Err("Claude Desktop 未能安全退出，请手动退出后重试".to_string());
+        }
+    }
+    let output = std::process::Command::new("open")
+        .args(["-a", "Claude"])
+        .output()
+        .map_err(|error| format!("打开 Claude Desktop 失败: {error}"))?;
+    if output.status.success() {
+        Ok(())
+    } else {
+        Err(format!(
+            "打开 Claude Desktop 失败: {}",
+            decode_command_output(&output.stderr)
+        ))
+    }
+}
+
+#[cfg(not(target_os = "macos"))]
+fn launch_claude_desktop(_restart: bool) -> Result<(), String> {
+    Err("当前平台暂不支持从元衡打开 Claude Desktop".to_string())
+}
+
+#[cfg(target_os = "macos")]
+fn launch_supported_desktop_app(tool: &str, restart: bool) -> Result<(), String> {
+    let (app_name, process_name) = match tool {
+        "chatgpt-desktop" => {
+            if desktop_app_candidates(tool)
+                .iter()
+                .any(|path| path.ends_with("Codex.app") && path.exists())
+                && !desktop_app_candidates(tool)
+                    .iter()
+                    .any(|path| path.ends_with("ChatGPT.app") && path.exists())
+            {
+                ("Codex", "Codex")
+            } else {
+                ("ChatGPT", "ChatGPT")
+            }
+        }
+        "workbuddy" => ("WorkBuddy", "WorkBuddy"),
+        _ => return Err(format!("不支持的桌面应用: {tool}")),
+    };
+    let installed = desktop_app_candidates(tool)
+        .iter()
+        .any(|path| path.exists());
+    if !installed {
+        return Err(format!("未检测到 {app_name}，请先安装后重试"));
+    }
+
+    if restart {
+        let running = std::process::Command::new("pgrep")
+            .args(["-x", process_name])
+            .status()
+            .is_ok_and(|status| status.success());
+        if running {
+            let output = std::process::Command::new("pkill")
+                .args(["-TERM", "-x", process_name])
+                .output()
+                .map_err(|error| format!("退出 {app_name} 失败: {error}"))?;
+            if !output.status.success() {
+                return Err(format!(
+                    "退出 {app_name} 失败: {}",
+                    decode_command_output(&output.stderr)
+                ));
+            }
+            for _ in 0..40 {
+                let still_running = std::process::Command::new("pgrep")
+                    .args(["-x", process_name])
+                    .status()
+                    .is_ok_and(|status| status.success());
+                if !still_running {
+                    break;
+                }
+                std::thread::sleep(std::time::Duration::from_millis(125));
+            }
+        }
+    }
+
+    let output = std::process::Command::new("open")
+        .args(["-a", app_name])
+        .output()
+        .map_err(|error| format!("打开 {app_name} 失败: {error}"))?;
+    if output.status.success() {
+        Ok(())
+    } else {
+        Err(format!(
+            "打开 {app_name} 失败: {}",
+            decode_command_output(&output.stderr)
+        ))
+    }
+}
+
+#[cfg(target_os = "windows")]
+fn launch_supported_desktop_app(tool: &str, restart: bool) -> Result<(), String> {
+    let executable = desktop_app_candidates(tool)
+        .into_iter()
+        .find(|path| path.exists())
+        .ok_or_else(|| "未检测到桌面应用，请先安装后重试".to_string())?;
+    if restart {
+        if let Some(name) = executable.file_name().and_then(|name| name.to_str()) {
+            let _ = std::process::Command::new("taskkill")
+                .args(["/IM", name, "/T"])
+                .creation_flags(CREATE_NO_WINDOW)
+                .output();
+        }
+    }
+    std::process::Command::new(&executable)
+        .creation_flags(CREATE_NO_WINDOW)
+        .spawn()
+        .map_err(|error| format!("打开桌面应用失败: {error}"))?;
+    Ok(())
+}
+
+#[cfg(not(any(target_os = "macos", target_os = "windows")))]
+fn launch_supported_desktop_app(_tool: &str, _restart: bool) -> Result<(), String> {
+    Err("当前平台暂不支持从元衡打开该桌面应用".to_string())
+}
+
 /// 在新终端中启动已经配置好的 AI CLI。
 #[tauri::command]
-pub async fn launch_tool(tool: String) -> Result<bool, String> {
+pub async fn launch_tool(tool: String, restart: Option<bool>) -> Result<bool, String> {
+    if tool == "claude-desktop" {
+        tokio::task::spawn_blocking(move || launch_claude_desktop(restart.unwrap_or(false)))
+            .await
+            .map_err(|e| format!("Claude Desktop 启动任务执行失败: {e}"))??;
+        return Ok(true);
+    }
+    if matches!(tool.as_str(), "chatgpt-desktop" | "workbuddy") {
+        let launch_tool = tool.clone();
+        tokio::task::spawn_blocking(move || {
+            launch_supported_desktop_app(&launch_tool, restart.unwrap_or(false))
+        })
+        .await
+        .map_err(|e| format!("桌面应用启动任务执行失败: {e}"))??;
+        return Ok(true);
+    }
     let command = tool_command(&tool).ok_or_else(|| format!("不支持的 AI 工具: {tool}"))?;
     tokio::task::spawn_blocking(move || launch_terminal_running(command, &format!("tool_{tool}")))
         .await
@@ -5495,7 +5746,10 @@ mod tests {
     #[test]
     fn tool_command_covers_every_supported_cli() {
         assert_eq!(tool_command("claude"), Some("claude"));
-        assert_eq!(tool_command("codex"), Some("codex"));
+        assert_eq!(
+            tool_command("codex"),
+            Some("codex --profile yuanheng-terminal")
+        );
         assert_eq!(tool_command("gemini"), Some("gemini"));
         assert_eq!(tool_command("grokbuild"), Some("grok"));
         assert_eq!(tool_command("opencode"), Some("opencode"));

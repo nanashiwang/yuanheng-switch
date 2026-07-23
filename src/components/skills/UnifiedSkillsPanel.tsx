@@ -6,6 +6,8 @@ import {
   ExternalLink,
   RefreshCw,
   Loader2,
+  Search,
+  Download,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -417,6 +419,16 @@ const UnifiedSkillsPanel = React.forwardRef<
             <p className="text-muted-foreground text-sm">
               {t("skills.noInstalledDescription")}
             </p>
+            <div className="mt-5 flex items-center justify-center gap-2">
+              <Button size="sm" onClick={onOpenDiscovery}>
+                <Search size={14} />
+                {t("skills.discover")}
+              </Button>
+              <Button variant="outline" size="sm" onClick={handleOpenImport}>
+                <Download size={14} />
+                {t("skills.importCta")}
+              </Button>
+            </div>
           </div>
         ) : (
           <TooltipProvider delayDuration={300}>

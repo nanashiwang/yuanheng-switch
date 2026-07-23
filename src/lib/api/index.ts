@@ -18,6 +18,11 @@ export type {
   YuanhengAccount,
   YuanhengToolStatus,
   YuanhengToolConfigureResult,
+  YuanhengDiagnosticCheck,
+  YuanhengDiagnosticReport,
+  YuanhengDiagnosticStatus,
+  YuanhengReasoningLevel,
+  YuanhengToolId,
 } from "./yuanheng";
 export * as configApi from "./config";
 export * as authApi from "./auth";

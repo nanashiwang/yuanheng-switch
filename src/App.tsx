@@ -5,6 +5,9 @@ import { getCurrentWindow } from "@tauri-apps/api/window";
 import { useQueryClient } from "@tanstack/react-query";
 import {
   ArrowLeft,
+  Check,
+  ChevronDown,
+  ChevronRight,
   Download,
   FolderArchive,
   History,
@@ -36,8 +39,15 @@ import { useTauriEvent } from "@/hooks/useTauriEvent";
 import { useUsageCacheBridge } from "@/hooks/useUsageCacheBridge";
 import { useProxyStatus } from "@/hooks/useProxyStatus";
 import { useScanUnmanagedSkills } from "@/hooks/useSkills";
+import { cn } from "@/lib/utils";
 
 import { Button } from "@/components/ui/button";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { UpdateBadge } from "@/components/UpdateBadge";
 import { ModeToggle } from "@/components/mode-toggle";
 import { EnvWarningBanner } from "@/components/env/EnvWarningBanner";
@@ -102,6 +112,39 @@ const TOP_LEVEL_VIEWS: DesktopView[] = [
   "settings",
 ];
 
+const VIEW_LABELS: Record<DesktopView, string> = {
+  home: "工作台",
+  tools: "AI 工具",
+  capabilities: "能力中心",
+  skills: "Skills",
+  skillsDiscovery: "发现 Skills",
+  mcp: "MCP",
+  prompts: "Prompts",
+  agents: "Agents",
+  usage: "会话与用量",
+  network: "连接与路由",
+  settings: "设置",
+  workspace: "工作区文件",
+  openclawEnv: "OpenClaw 环境",
+  openclawTools: "OpenClaw 工具",
+  openclawAgents: "OpenClaw Agents",
+  hermesMemory: "Hermes 记忆",
+};
+
+const VIEW_PARENTS: Partial<Record<DesktopView, DesktopView>> = {
+  skills: "capabilities",
+  mcp: "capabilities",
+  prompts: "capabilities",
+  agents: "capabilities",
+  skillsDiscovery: "skills",
+};
+
+function appProviderIcon(app: AppId): string {
+  if (app === "codex") return "openai";
+  if (app === "claude-desktop") return "claude";
+  return app;
+}
+
 function getInitialApp(): AppId {
   const saved = localStorage.getItem(APP_KEY) as AppId | null;
   return saved && ALL_APPS.includes(saved) ? saved : "claude";
@@ -116,6 +159,7 @@ interface DetailFrameProps {
   title: string;
   description: string;
   onBack: () => void;
+  backLabel?: string;
   actions?: ReactNode;
   children: ReactNode;
 }
@@ -124,6 +168,7 @@ function DetailFrame({
   title,
   description,
   onBack,
+  backLabel = "能力中心",
   actions,
   children,
 }: DetailFrameProps) {
@@ -134,7 +179,7 @@ function DetailFrame({
           variant="outline"
           size="icon"
           className="h-9 w-9"
-          aria-label="返回能力中心"
+          aria-label={`返回${backLabel}`}
           onClick={onBack}
         >
           <ArrowLeft className="h-4 w-4" />
@@ -391,7 +436,7 @@ function App() {
         return <ConnectionCenter />;
       case "settings":
         return (
-          <div className="h-full pt-5">
+          <div className="h-full">
             <SettingsPage
               open
               onOpenChange={() => navigate("home")}
@@ -456,6 +501,7 @@ function App() {
             title="发现 Skills"
             description="从可信仓库查找并安装工具能力。"
             onBack={() => navigate("skills")}
+            backLabel="Skills"
             actions={getSkillsPageHeaderActions(skillsDiscoverySource).map(
               ({ key, labelKey, Icon, execute }) => (
                 <Button
@@ -568,7 +614,10 @@ function App() {
     >
       {(dragBarHeight > 0 || useAppWindowControls) && (
         <div
-          className="fixed left-0 right-0 top-0 z-[80] flex items-center justify-end bg-[#11191b] px-2"
+          className={cn(
+            "fixed left-0 right-0 top-0 z-[80] flex items-center justify-end px-2",
+            useAppWindowControls && "bg-[#11191b]",
+          )}
           data-tauri-drag-region
           style={
             {
@@ -632,34 +681,69 @@ function App() {
             style={{ ...DRAG_REGION_STYLE } as React.CSSProperties}
           >
             <div
-              className="min-w-0 flex-1 px-1"
+              className="flex min-w-0 flex-1 items-center gap-1.5 px-1 text-[12px]"
               style={{ WebkitAppRegion: "no-drag" } as React.CSSProperties}
             >
-              <p className="truncate text-[12px] font-semibold">
-                AI 工具配置中心
-              </p>
-              <p className="truncate text-[10px] text-muted-foreground">
-                连接元衡，配置需要使用的本机工具
-              </p>
+              {VIEW_PARENTS[view] && (
+                <>
+                  <button
+                    type="button"
+                    onClick={() => navigate(VIEW_PARENTS[view]!)}
+                    className="shrink-0 font-medium text-muted-foreground transition-colors hover:text-foreground"
+                  >
+                    {VIEW_LABELS[VIEW_PARENTS[view]!]}
+                  </button>
+                  <ChevronRight className="h-3 w-3 shrink-0 text-muted-foreground/50" />
+                </>
+              )}
+              <span className="truncate font-semibold">
+                {VIEW_LABELS[view]}
+              </span>
             </div>
             <div
               className="flex items-center gap-1.5"
               style={{ WebkitAppRegion: "no-drag" } as React.CSSProperties}
             >
-              <div className="mr-1 hidden h-8 items-center gap-2 rounded-lg bg-muted/60 px-2.5 text-[11px] text-muted-foreground sm:flex">
-                <ProviderIcon
-                  icon={
-                    activeApp === "codex"
-                      ? "openai"
-                      : activeApp === "claude-desktop"
-                        ? "claude"
-                        : activeApp
-                  }
-                  name={APP_ICON_MAP[activeApp].label}
-                  size={14}
-                />
-                {APP_ICON_MAP[activeApp].label}
-              </div>
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <button
+                    type="button"
+                    className="mr-1 hidden h-8 items-center gap-2 rounded-lg bg-muted/60 px-2.5 text-[11px] text-muted-foreground transition-colors hover:bg-muted hover:text-foreground sm:flex"
+                    aria-label="切换当前工具"
+                  >
+                    <ProviderIcon
+                      icon={appProviderIcon(activeApp)}
+                      name={APP_ICON_MAP[activeApp].label}
+                      size={14}
+                    />
+                    {APP_ICON_MAP[activeApp].label}
+                    <ChevronDown className="h-3 w-3 opacity-60" />
+                  </button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end" className="w-44">
+                  {ALL_APPS.filter((app) => visibleApps[app] !== false).map(
+                    (app) => (
+                      <DropdownMenuItem
+                        key={app}
+                        onClick={() => persistActiveApp(app)}
+                        className="gap-2 text-[12px]"
+                      >
+                        <ProviderIcon
+                          icon={appProviderIcon(app)}
+                          name={APP_ICON_MAP[app].label}
+                          size={14}
+                        />
+                        <span className="flex-1">
+                          {APP_ICON_MAP[app].label}
+                        </span>
+                        {app === activeApp && (
+                          <Check className="h-3.5 w-3.5 text-primary" />
+                        )}
+                      </DropdownMenuItem>
+                    ),
+                  )}
+                </DropdownMenuContent>
+              </DropdownMenu>
               <ModeToggle />
               <Button
                 variant="outline"
