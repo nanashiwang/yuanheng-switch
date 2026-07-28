@@ -1,0 +1,584 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>元衡桌面端 · 首页设计稿</title>
+<script src="https://unpkg.com/lucide@latest/dist/umd/lucide.min.js"></script>
+<style>
+  :root {
+    --bg: #f4f2ec;
+    --card: #ffffff;
+    --border: #e6e2d7;
+    --ink: #1c2321;
+    --ink-2: #5c6663;
+    --ink-3: #9aa39f;
+    --green-900: #0f2a26;
+    --green-800: #173f3a;
+    --green-600: #1f6a5e;
+    --green-100: #e3efe9;
+    --amber: #d69554;
+    --sidebar: #11191b;
+    --sidebar-ink: #8b979b;
+    --shadow-sm: 0 1px 2px rgba(23, 32, 30, 0.05);
+    --shadow-md: 0 8px 24px -12px rgba(23, 32, 30, 0.12);
+    --radius: 14px;
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body { height: 100%; }
+  body {
+    font-family: -apple-system, "PingFang SC", "Microsoft YaHei", sans-serif;
+    background: var(--bg);
+    color: var(--ink);
+    font-size: 13px;
+    -webkit-font-smoothing: antialiased;
+  }
+  .font-display { font-family: "Songti SC", "Noto Serif SC", Georgia, serif; }
+  .lucide { width: 16px; height: 16px; stroke-width: 1.8; }
+
+  .app { display: flex; height: 100vh; overflow: hidden; }
+
+  /* 侧边栏 */
+  .sidebar {
+    width: 208px; flex-shrink: 0;
+    background: var(--sidebar);
+    color: #e8edec;
+    display: flex; flex-direction: column;
+    padding: 18px 12px 12px;
+  }
+  .brand { display: flex; align-items: center; gap: 10px; padding: 0 10px 20px; }
+  .brand-logo {
+    width: 34px; height: 34px; border-radius: 10px;
+    background: rgba(255,255,255,0.08);
+    border: 1px solid rgba(255,255,255,0.1);
+    display: flex; align-items: center; justify-content: center;
+    font-family: "Songti SC", serif; font-size: 15px; color: var(--amber);
+    position: relative;
+  }
+  .brand-logo::after {
+    content: ""; position: absolute; bottom: 2px; right: 2px;
+    width: 7px; height: 7px; border-radius: 50%;
+    background: var(--amber); border: 2px solid var(--sidebar);
+  }
+  .brand-name { font-family: "Songti SC", serif; font-size: 15px; font-weight: 600; letter-spacing: 0.02em; }
+  .brand-sub { font-size: 9px; letter-spacing: 0.18em; color: var(--sidebar-ink); margin-top: 2px; }
+
+  .nav-label {
+    font-size: 10px; letter-spacing: 0.16em;
+    color: #556164; padding: 14px 12px 6px; text-transform: uppercase;
+  }
+  .nav-item {
+    display: flex; align-items: center; gap: 10px;
+    height: 36px; padding: 0 12px; margin-bottom: 2px;
+    border-radius: 9px; border: none; background: transparent;
+    color: var(--sidebar-ink); font-size: 13px; font-weight: 500;
+    cursor: pointer; width: 100%; text-align: left;
+    transition: background 0.15s, color 0.15s;
+  }
+  .nav-item:hover { background: rgba(255,255,255,0.06); color: #fff; }
+  .nav-item.active { background: #fff; color: #16211f; box-shadow: var(--shadow-sm); }
+  .nav-item.active .lucide { color: var(--green-600); }
+  .nav-item .chev { margin-left: auto; opacity: 0.5; width: 13px; height: 13px; }
+
+  .sidebar-status {
+    margin-top: auto;
+    border: 1px solid rgba(255,255,255,0.08);
+    background: rgba(255,255,255,0.04);
+    border-radius: 12px; padding: 12px;
+  }
+  .status-row { display: flex; align-items: center; gap: 8px; font-size: 11px; color: #c3cdcb; }
+  .status-row + .status-row { margin-top: 8px; color: var(--sidebar-ink); }
+  .dot { width: 6px; height: 6px; border-radius: 50%; margin-left: auto; }
+  .dot.on { background: #34d399; box-shadow: 0 0 6px rgba(52,211,153,0.7); }
+
+  /* 主区域 */
+  .main { flex: 1; display: flex; flex-direction: column; min-width: 0; }
+  .topbar {
+    height: 52px; flex-shrink: 0;
+    display: flex; align-items: center; gap: 12px;
+    padding: 0 24px;
+    border-bottom: 1px solid var(--border);
+    background: rgba(244,242,236,0.85);
+    backdrop-filter: blur(8px);
+  }
+  .crumb { font-size: 12px; font-weight: 600; }
+  .topbar-right { margin-left: auto; display: flex; align-items: center; gap: 8px; }
+  .balance-pill {
+    display: flex; align-items: center; gap: 6px;
+    height: 30px; padding: 0 12px;
+    background: var(--card); border: 1px solid var(--border); border-radius: 8px;
+    font-size: 11px; color: var(--ink-2);
+  }
+  .balance-pill strong { color: var(--ink); font-variant-numeric: tabular-nums; }
+  .icon-btn {
+    width: 30px; height: 30px; border-radius: 8px;
+    border: 1px solid var(--border); background: var(--card);
+    display: flex; align-items: center; justify-content: center;
+    color: var(--ink-2); cursor: pointer; transition: border-color .15s;
+  }
+  .icon-btn:hover { border-color: var(--green-600); color: var(--green-600); }
+
+  .content { flex: 1; overflow-y: auto; padding: 18px 28px 32px; }
+  .content-inner { max-width: 1080px; margin: 0 auto; display: flex; flex-direction: column; gap: 14px; }
+
+  /* 公告条 */
+  .notice {
+    display: flex; align-items: center; gap: 10px;
+    padding: 9px 14px; border-radius: 11px;
+    background: var(--amber-soft, #f6e7d2);
+    border: 1px solid #ecd9bc;
+    font-size: 11.5px; color: #7a5426;
+  }
+  .notice .lucide { width: 14px; height: 14px; flex-shrink: 0; }
+  .notice strong { font-weight: 600; }
+  .notice .notice-close {
+    margin-left: auto; border: none; background: transparent;
+    color: #a9825a; cursor: pointer; display: flex; padding: 2px;
+  }
+  .notice .notice-close:hover { color: #7a5426; }
+  .notice .notice-close .lucide { width: 13px; height: 13px; }
+
+  /* 今日速览统计带 */
+  .stat-band {
+    display: grid; grid-template-columns: repeat(4, 1fr);
+    background: var(--card); border: 1px solid var(--border);
+    border-radius: var(--radius); box-shadow: var(--shadow-sm);
+  }
+  .stat-cell {
+    display: flex; align-items: center; gap: 12px;
+    padding: 14px 18px;
+  }
+  .stat-cell + .stat-cell { border-left: 1px solid #f0eee6; }
+  .stat-icon {
+    width: 34px; height: 34px; border-radius: 9px; flex-shrink: 0;
+    display: flex; align-items: center; justify-content: center;
+  }
+  .stat-icon .lucide { width: 15px; height: 15px; }
+  .stat-icon.green { background: var(--green-100); color: var(--green-600); }
+  .stat-icon.blue { background: #e2edf7; color: #3b6ea5; }
+  .stat-icon.amber { background: #f6e7d2; color: #b8792e; }
+  .stat-icon.violet { background: #eae6f7; color: #7161c4; }
+  .stat-value { font-family: "Songti SC", serif; font-size: 19px; font-weight: 600; font-variant-numeric: tabular-nums; line-height: 1.15; }
+  .stat-label { font-size: 10px; color: var(--ink-3); margin-top: 2px; display: flex; align-items: center; gap: 4px; }
+  .stat-delta { color: #059669; font-weight: 500; }
+
+  .grid { display: grid; grid-template-columns: 1.58fr 1fr; gap: 16px; align-items: start; }
+  .col { display: flex; flex-direction: column; gap: 16px; min-width: 0; }
+
+  .card {
+    background: var(--card); border: 1px solid var(--border);
+    border-radius: var(--radius); box-shadow: var(--shadow-sm);
+  }
+
+  /* 焦点工具卡 */
+  .focus-card {
+    position: relative; overflow: hidden;
+    background: linear-gradient(135deg, var(--green-900) 0%, var(--green-800) 78%);
+    border: none; border-radius: 18px;
+    color: #eef5f2; padding: 20px 22px;
+    box-shadow: 0 18px 40px -22px rgba(15, 42, 38, 0.55);
+  }
+  .focus-card::before, .focus-card::after {
+    content: ""; position: absolute; border: 1px solid rgba(255,255,255,0.07); border-radius: 50%;
+  }
+  .focus-card::before { width: 220px; height: 220px; right: -60px; top: -90px; }
+  .focus-card::after { width: 140px; height: 140px; right: 10px; top: -40px; }
+  .focus-top { display: flex; align-items: center; gap: 12px; position: relative; }
+  .focus-icon {
+    width: 42px; height: 42px; border-radius: 12px;
+    background: rgba(255,255,255,0.1); border: 1px solid rgba(255,255,255,0.12);
+    display: flex; align-items: center; justify-content: center;
+    font-size: 20px;
+  }
+  .focus-label { font-size: 10px; letter-spacing: 0.18em; color: rgba(238,245,242,0.55); text-transform: uppercase; font-weight: 600; }
+  .focus-tool { font-family: "Songti SC", serif; font-size: 17px; font-weight: 600; margin-top: 2px; display: flex; align-items: center; gap: 8px; }
+  .ready-badge {
+    display: inline-flex; align-items: center; gap: 4px;
+    font-size: 10px; padding: 2px 8px; border-radius: 99px;
+    background: rgba(52,211,153,0.15); color: #6ee7b7;
+  }
+  .focus-launch {
+    margin-left: auto; position: relative;
+    display: inline-flex; align-items: center; gap: 6px;
+    height: 34px; padding: 0 16px; border-radius: 10px; border: none;
+    background: #e9b67c; color: #163a36;
+    font-size: 12px; font-weight: 600; cursor: pointer;
+    transition: background .15s;
+  }
+  .focus-launch:hover { background: #f3c995; }
+
+  .focus-model-row { position: relative; margin-top: 16px; display: flex; align-items: baseline; gap: 10px; }
+  .focus-model-label { font-size: 11px; color: rgba(238,245,242,0.55); }
+  .focus-model {
+    font-family: "Songti SC", serif; font-size: 24px; font-weight: 600;
+    letter-spacing: -0.01em; font-variant-numeric: tabular-nums;
+  }
+  .focus-group {
+    font-size: 10px; padding: 2px 8px; border-radius: 99px;
+    background: rgba(255,255,255,0.1); color: rgba(238,245,242,0.75);
+  }
+
+  .chip-row { position: relative; margin-top: 14px; display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+  .chip-label { font-size: 10px; color: rgba(238,245,242,0.5); margin-right: 2px; }
+  .chip {
+    display: inline-flex; align-items: center; gap: 6px;
+    height: 30px; padding: 0 13px; border-radius: 99px;
+    border: 1px solid rgba(255,255,255,0.16);
+    background: rgba(255,255,255,0.06); color: rgba(238,245,242,0.85);
+    font-size: 11.5px; cursor: pointer;
+    transition: background .15s, border-color .15s;
+  }
+  .chip:hover { background: rgba(255,255,255,0.12); }
+  .chip.active { background: #e9b67c; border-color: #e9b67c; color: #163a36; font-weight: 600; }
+  .chip .rec { font-size: 9px; opacity: 0.7; }
+  .chip-more { background: transparent; border-style: dashed; color: rgba(238,245,242,0.6); }
+
+  /* 模型控制台 */
+  .console-head { display: flex; align-items: center; gap: 10px; padding: 14px 16px 10px; }
+  .console-title { font-family: "Songti SC", serif; font-size: 15px; font-weight: 600; }
+  .console-sub { font-size: 10.5px; color: var(--ink-3); margin-top: 2px; }
+  .console-head .spacer { flex: 1; }
+  .ghost-btn {
+    display: inline-flex; align-items: center; gap: 5px;
+    height: 26px; padding: 0 10px; border-radius: 7px; border: none;
+    background: transparent; color: var(--ink-2); font-size: 11px; cursor: pointer;
+  }
+  .ghost-btn:hover { background: var(--bg); color: var(--ink); }
+
+  .tool-row {
+    display: flex; align-items: center; gap: 12px;
+    margin: 0 10px; padding: 9px 8px;
+    border-radius: 11px;
+    border: 1px solid transparent;
+    transition: background .15s, border-color .15s;
+  }
+  .tool-row:hover { background: #faf9f5; border-color: var(--border); }
+  .tool-row + .tool-row { border-top: 1px solid #f0eee6; }
+  .tool-row:last-child { margin-bottom: 8px; }
+  .tool-icon {
+    width: 34px; height: 34px; border-radius: 9px; flex-shrink: 0;
+    background: var(--bg); display: flex; align-items: center; justify-content: center;
+    font-size: 16px;
+  }
+  .tool-meta { width: 118px; flex-shrink: 0; }
+  .tool-name { font-size: 12.5px; font-weight: 600; }
+  .tool-status { display: flex; align-items: center; gap: 4px; font-size: 10px; color: var(--ink-3); margin-top: 2px; }
+  .tool-status .ok { color: #059669; display: inline-flex; }
+  .tool-status .ok .lucide { width: 11px; height: 11px; }
+
+  .model-select-wrap { flex: 1; min-width: 0; position: relative; }
+  .model-select {
+    width: 100%; height: 34px;
+    padding: 0 30px 0 12px;
+    border: 1px solid var(--border); border-radius: 9px;
+    background: var(--card);
+    font-size: 12px; color: var(--ink);
+    font-variant-numeric: tabular-nums;
+    appearance: none; cursor: pointer; outline: none;
+    transition: border-color .15s, box-shadow .15s;
+  }
+  .model-select:hover, .model-select:focus { border-color: var(--green-600); box-shadow: 0 0 0 3px rgba(31,106,94,0.1); }
+  .model-select-wrap .lucide {
+    position: absolute; right: 10px; top: 50%; transform: translateY(-50%);
+    width: 13px; height: 13px; color: var(--ink-3); pointer-events: none;
+  }
+  .launch-btn {
+    width: 34px; height: 34px; flex-shrink: 0;
+    border-radius: 9px; border: 1px solid var(--border); background: var(--card);
+    display: flex; align-items: center; justify-content: center;
+    color: var(--ink-2); cursor: pointer;
+    transition: all .15s;
+  }
+  .launch-btn:hover { background: var(--green-800); border-color: var(--green-800); color: #fff; }
+  .launch-btn .lucide { width: 14px; height: 14px; fill: currentColor; }
+
+  /* 右侧栏卡片 */
+  .side-card { padding: 16px; }
+  .side-head { display: flex; align-items: center; gap: 8px; margin-bottom: 12px; }
+  .side-head .lucide { color: var(--green-600); }
+  .side-title { font-size: 13px; font-weight: 600; }
+  .side-more { margin-left: auto; font-size: 10.5px; color: var(--ink-3); cursor: pointer; display: inline-flex; align-items: center; gap: 3px; }
+  .side-more:hover { color: var(--ink); }
+
+  .usage-num { font-family: "Songti SC", serif; font-size: 26px; font-weight: 600; font-variant-numeric: tabular-nums; }
+  .usage-label { font-size: 10.5px; color: var(--ink-3); margin-top: 2px; }
+  .usage-bar { height: 6px; border-radius: 99px; background: var(--green-100); margin-top: 12px; overflow: hidden; }
+  .usage-bar i { display: block; height: 100%; width: 38%; border-radius: 99px; background: linear-gradient(90deg, var(--green-600), #4ade80); }
+  .usage-foot { display: flex; justify-content: space-between; font-size: 10px; color: var(--ink-3); margin-top: 6px; font-variant-numeric: tabular-nums; }
+
+  .health-ok {
+    display: flex; align-items: center; gap: 10px;
+    padding: 10px 12px; border-radius: 10px;
+    background: #ecf8f1; color: #047857;
+    font-size: 12px; font-weight: 500;
+  }
+  .health-ok .lucide { width: 15px; height: 15px; }
+  .health-list { margin-top: 10px; display: flex; flex-direction: column; gap: 7px; }
+  .health-item { display: flex; align-items: center; gap: 8px; font-size: 11px; color: var(--ink-2); }
+  .health-item .lucide { width: 13px; height: 13px; color: #059669; }
+  .health-item span:last-child { margin-left: auto; color: var(--ink-3); font-size: 10px; }
+
+  .entry-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+  .entry {
+    display: flex; align-items: center; gap: 10px;
+    padding: 11px 12px; border-radius: 11px;
+    border: 1px solid var(--border); background: var(--card);
+    cursor: pointer; transition: border-color .15s;
+  }
+  .entry:hover { border-color: var(--green-600); }
+  .entry-icon {
+    width: 30px; height: 30px; border-radius: 8px; flex-shrink: 0;
+    background: var(--green-100); color: var(--green-600);
+    display: flex; align-items: center; justify-content: center;
+  }
+  .entry-icon .lucide { width: 14px; height: 14px; }
+  .entry-name { font-size: 11.5px; font-weight: 600; display: block; text-align: left; }
+  .entry-value { font-size: 9.5px; color: var(--ink-3); margin-top: 1px; display: block; text-align: left; }
+
+  /* Toast */
+  .toast {
+    position: fixed; bottom: 24px; left: 50%;
+    transform: translateX(-50%) translateY(80px);
+    display: flex; align-items: center; gap: 8px;
+    background: var(--green-900); color: #eef5f2;
+    font-size: 12px; padding: 10px 18px; border-radius: 10px;
+    box-shadow: var(--shadow-md);
+    opacity: 0; transition: transform .25s, opacity .25s;
+    z-index: 99;
+  }
+  .toast.show { transform: translateX(-50%) translateY(0); opacity: 1; }
+  .toast .lucide { width: 14px; height: 14px; color: #6ee7b7; }
+</style>
+</head>
+<body>
+<div class="app">
+  <aside class="sidebar">
+    <div class="brand">
+      <div class="brand-logo">衡</div>
+      <div>
+        <div class="brand-name">元衡桌面端</div>
+        <div class="brand-sub">AI TOOL SETUP</div>
+      </div>
+    </div>
+    <div class="nav-label">日常使用</div>
+    <button class="nav-item active"><i data-lucide="gauge"></i>工作台<i data-lucide="chevron-right" class="chev"></i></button>
+    <button class="nav-item"><i data-lucide="bot"></i>AI 工具</button>
+    <button class="nav-item"><i data-lucide="blocks"></i>能力中心</button>
+    <button class="nav-item"><i data-lucide="activity"></i>会话与用量</button>
+    <div class="nav-label">专业控制</div>
+    <button class="nav-item"><i data-lucide="network"></i>连接与路由</button>
+    <button class="nav-item"><i data-lucide="settings"></i>设置</button>
+    <div class="sidebar-status">
+      <div class="status-row"><i data-lucide="sparkles" style="width:13px;height:13px;color:#d69554"></i>元衡服务<span class="dot on"></span></div>
+      <div class="status-row"><i data-lucide="boxes" style="width:13px;height:13px"></i>本地路由运行中</div>
+    </div>
+  </aside>
+
+  <section class="main">
+    <header class="topbar">
+      <div class="crumb">工作台</div>
+      <div class="topbar-right">
+        <div class="balance-pill"><i data-lucide="wallet" style="width:13px;height:13px;color:#1f6a5e"></i>余额 <strong>$12.47</strong></div>
+        <button class="icon-btn" title="切换主题"><i data-lucide="sun"></i></button>
+        <button class="icon-btn" title="设置"><i data-lucide="settings"></i></button>
+      </div>
+    </header>
+
+    <main class="content">
+      <div class="content-inner">
+        <div class="notice" id="notice">
+          <i data-lucide="megaphone"></i>
+          <span><strong>v0.2 已发布</strong>：新增 ChatGPT Desktop 与 WorkBuddy 支持，模型目录已同步 28 个可用模型。</span>
+          <button class="notice-close" onclick="document.getElementById('notice').remove()" title="关闭"><i data-lucide="x"></i></button>
+        </div>
+
+        <div class="grid">
+          <div class="col">
+            <section class="focus-card">
+              <div class="focus-top">
+                <div class="focus-icon">✳</div>
+                <div>
+                  <div class="focus-label">当前工具</div>
+                  <div class="focus-tool">Claude
+                    <span class="ready-badge"><i data-lucide="check-circle-2" style="width:10px;height:10px"></i>已配置</span>
+                  </div>
+                </div>
+                <button class="focus-launch" onclick="launch('Claude')"><i data-lucide="play" style="width:13px;height:13px;fill:currentColor"></i>启动</button>
+              </div>
+              <div class="focus-model-row">
+                <span class="focus-model-label">当前模型</span>
+                <span class="focus-model" id="focusModel">claude-sonnet-4-6</span>
+                <span class="focus-group">auto 分组 · 1x</span>
+              </div>
+              <div class="chip-row" id="chipRow">
+                <span class="chip-label">一键切换</span>
+                <button class="chip active" onclick="pickChip(this,'claude-sonnet-4-6')">claude-sonnet-4-6 <span class="rec">推荐</span></button>
+                <button class="chip" onclick="pickChip(this,'claude-opus-4-5')">claude-opus-4-5</button>
+                <button class="chip" onclick="pickChip(this,'claude-haiku-4-5')">claude-haiku-4-5</button>
+                <button class="chip chip-more" onclick="toast('已打开完整模型目录（设计稿示意）')"><i data-lucide="plus" style="width:12px;height:12px"></i>全部 28 个模型</button>
+              </div>
+            </section>
+          </div>
+
+          <div class="col">
+            <section class="card side-card">
+              <div class="side-head">
+                <i data-lucide="wallet"></i>
+                <span class="side-title">账号用量</span>
+                <span class="side-more">会话与用量<i data-lucide="arrow-right" style="width:11px;height:11px"></i></span>
+              </div>
+              <div class="usage-num">$12.47</div>
+              <div class="usage-label">剩余额度 · 本月已用 $7.53</div>
+              <div class="usage-bar"><i></i></div>
+              <div class="usage-foot"><span>已用 38%</span><span>$20.00 总额</span></div>
+            </section>
+          </div>
+        </div>
+
+        <section class="stat-band">
+          <div class="stat-cell">
+            <span class="stat-icon green"><i data-lucide="zap"></i></span>
+            <div>
+              <div class="stat-value">128</div>
+              <div class="stat-label">今日请求 <span class="stat-delta">+12%</span></div>
+            </div>
+          </div>
+          <div class="stat-cell">
+            <span class="stat-icon blue"><i data-lucide="database"></i></span>
+            <div>
+              <div class="stat-value">1.24M</div>
+              <div class="stat-label">今日 Tokens</div>
+            </div>
+          </div>
+          <div class="stat-cell">
+            <span class="stat-icon amber"><i data-lucide="coins"></i></span>
+            <div>
+              <div class="stat-value">$0.83</div>
+              <div class="stat-label">今日成本</div>
+            </div>
+          </div>
+          <div class="stat-cell">
+            <span class="stat-icon violet"><i data-lucide="database-backup"></i></span>
+            <div>
+              <div class="stat-value">46%</div>
+              <div class="stat-label">缓存命中率</div>
+            </div>
+          </div>
+        </section>
+
+        <div class="grid">
+          <div class="col">
+            <section class="card">
+              <div class="console-head">
+                <div>
+                  <div class="console-title">全部工具</div>
+                  <div class="console-sub">选择后立即写入对应工具的配置</div>
+                </div>
+                <div class="spacer"></div>
+                <button class="ghost-btn" onclick="toast('模型目录已刷新')"><i data-lucide="refresh-cw" style="width:12px;height:12px"></i>刷新模型</button>
+                <button class="ghost-btn" onclick="toast('前往 AI 工具页（设计稿示意）')">高级配置<i data-lucide="arrow-right" style="width:12px;height:12px"></i></button>
+              </div>
+              <div id="toolRows"></div>
+            </section>
+          </div>
+
+          <div class="col">
+            <section class="card side-card">
+              <div class="side-head">
+                <i data-lucide="stethoscope"></i>
+                <span class="side-title">智能体检</span>
+                <span class="side-more">详情<i data-lucide="arrow-right" style="width:11px;height:11px"></i></span>
+              </div>
+              <div class="health-ok"><i data-lucide="check-circle-2"></i>一切正常，4 个工具已就绪</div>
+              <div class="health-list">
+                <div class="health-item"><i data-lucide="check"></i>元衡 API 连接<span>32ms</span></div>
+                <div class="health-item"><i data-lucide="check"></i>本地路由服务<span>运行中</span></div>
+                <div class="health-item"><i data-lucide="check"></i>模型目录同步<span>刚刚</span></div>
+              </div>
+            </section>
+
+            <div class="entry-grid">
+              <button class="entry">
+                <span class="entry-icon"><i data-lucide="blocks"></i></span>
+                <span>
+                  <span class="entry-name">能力中心</span>
+                  <span class="entry-value">12 Skills · 3 MCP</span>
+                </span>
+              </button>
+              <button class="entry">
+                <span class="entry-icon"><i data-lucide="server-cog"></i></span>
+                <span>
+                  <span class="entry-name">工具配置</span>
+                  <span class="entry-value">4 个已就绪</span>
+                </span>
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </main>
+  </section>
+</div>
+
+<div class="toast" id="toast"><i data-lucide="check-circle-2"></i><span id="toastText"></span></div>
+
+<script>
+  lucide.createIcons();
+
+  const TOOLS = [
+    { id: "claude",   name: "Claude",   icon: "✳", model: "claude-sonnet-4-6", group: "auto", models: ["claude-sonnet-4-6", "claude-opus-4-5", "claude-haiku-4-5", "gpt-5.6", "deepseek-v3.2"] },
+    { id: "codex",    name: "Codex",    icon: "❖", model: "gpt-5.6",           group: "auto", models: ["gpt-5.6", "gpt-5.6-codex", "claude-sonnet-4-6", "k3"] },
+    { id: "gemini",   name: "Gemini",   icon: "✦", model: "gemini-3-pro",      group: "auto", models: ["gemini-3-pro", "gemini-3-flash", "claude-sonnet-4-6"] },
+    { id: "opencode", name: "OpenCode", icon: "▣", model: "deepseek-v3.2",     group: "vip",  models: ["deepseek-v3.2", "k3", "gpt-5.6", "claude-sonnet-4-6"] },
+  ];
+
+  const rows = document.getElementById("toolRows");
+  TOOLS.forEach((tool) => {
+    const row = document.createElement("div");
+    row.className = "tool-row";
+    row.innerHTML =
+      '<span class="tool-icon">' + tool.icon + '</span>' +
+      '<div class="tool-meta">' +
+        '<div class="tool-name">' + tool.name + '</div>' +
+        '<div class="tool-status"><span class="ok"><i data-lucide="check-circle-2"></i></span>已配置 · ' + tool.group + '</div>' +
+      '</div>' +
+      '<div class="model-select-wrap">' +
+        '<select class="model-select" aria-label="' + tool.name + ' 模型选择" onchange="switchModel(\'' + tool.id + '\', \'' + tool.name + '\', this)">' +
+          tool.models.map((m) => '<option ' + (m === tool.model ? "selected" : "") + '>' + m + '</option>').join("") +
+        '</select>' +
+        '<i data-lucide="chevrons-up-down"></i>' +
+      '</div>' +
+      '<button class="launch-btn" title="启动 ' + tool.name + '" onclick="launch(\'' + tool.name + '\')"><i data-lucide="play"></i></button>';
+    rows.appendChild(row);
+  });
+  lucide.createIcons();
+
+  let toastTimer;
+  function toast(text) {
+    const el = document.getElementById("toast");
+    document.getElementById("toastText").textContent = text;
+    el.classList.add("show");
+    clearTimeout(toastTimer);
+    toastTimer = setTimeout(() => el.classList.remove("show"), 2200);
+  }
+  function pickChip(btn, model) {
+    document.querySelectorAll("#chipRow .chip:not(.chip-more)").forEach((c) => c.classList.remove("active"));
+    btn.classList.add("active");
+    document.getElementById("focusModel").textContent = model;
+    toast("Claude 已切换到 " + model);
+  }
+  function switchModel(id, name, select) {
+    toast(name + " 已切换到 " + select.value);
+    if (id === "claude") {
+      document.getElementById("focusModel").textContent = select.value;
+      document.querySelectorAll("#chipRow .chip:not(.chip-more)").forEach((c) => {
+        c.classList.toggle("active", c.textContent.trim().indexOf(select.value) === 0);
+      });
+    }
+  }
+  function launch(name) {
+    toast(name + " 已启动");
+  }
+</script>
+</body>
+</html>

@@ -115,8 +115,9 @@ const VALID_TOOLS: [&str; 7] = [
     "claude", "codex", "gemini", "grok", "opencode", "openclaw", "hermes",
 ];
 
-const VALID_VERSION_TOOLS: [&str; 9] = [
+const VALID_VERSION_TOOLS: [&str; 10] = [
     "claude",
+    "claude-desktop",
     "codex",
     "gemini",
     "grok",
@@ -761,6 +762,7 @@ fn desktop_app_candidates(tool: &str) -> Vec<PathBuf> {
     #[cfg(target_os = "macos")]
     {
         let names: &[&str] = match tool {
+            "claude-desktop" => &["Claude.app"],
             "chatgpt-desktop" => &["ChatGPT.app", "Codex.app"],
             "workbuddy" => &["WorkBuddy.app"],
             _ => &[],
@@ -828,7 +830,7 @@ async fn get_single_tool_version_impl(
         "unexpected tool name in get_single_tool_version_impl: {tool}"
     );
 
-    if matches!(tool, "chatgpt-desktop" | "workbuddy") {
+    if matches!(tool, "claude-desktop" | "chatgpt-desktop" | "workbuddy") {
         return desktop_app_version(tool);
     }
 
@@ -1974,6 +1976,27 @@ fn resolve_path_default(tool: &str) -> Option<std::path::PathBuf> {
     std::fs::canonicalize(first).ok()
 }
 
+/// 保留命令入口（通常是 npm 的软链接），避免 GUI 后台直接执行其 JS 目标时找不到 node。
+#[cfg(not(target_os = "windows"))]
+fn resolve_path_launch_command(tool: &str) -> Option<std::path::PathBuf> {
+    use std::process::Command;
+    let shell = std::env::var("SHELL")
+        .ok()
+        .filter(|s| is_valid_shell(s))
+        .unwrap_or_else(|| "sh".to_string());
+    let flag = default_flag_for_shell(&shell);
+    let out = Command::new(shell)
+        .arg(flag)
+        .arg(format!("command -v {tool}"))
+        .output()
+        .ok()?;
+    if !out.status.success() {
+        return None;
+    }
+    let raw = decode_command_output(&out.stdout);
+    first_abs_path_line(&raw).map(std::path::PathBuf::from)
+}
+
 #[cfg(target_os = "windows")]
 fn resolve_path_default(tool: &str) -> Option<std::path::PathBuf> {
     use std::os::windows::process::CommandExt;
@@ -1995,6 +2018,11 @@ fn resolve_path_default(tool: &str) -> Option<std::path::PathBuf> {
     let preferred =
         windows_runnable_sibling_for_extensionless_tool(path).unwrap_or_else(|| path.to_path_buf());
     std::fs::canonicalize(preferred).ok()
+}
+
+#[cfg(target_os = "windows")]
+fn resolve_path_launch_command(tool: &str) -> Option<std::path::PathBuf> {
+    resolve_path_default(tool)
 }
 
 /// 枚举工具在系统中的所有安装（不短路）。与 `scan_cli_version` 共用
@@ -2874,29 +2902,15 @@ fn launch_claude_desktop(_restart: bool) -> Result<(), String> {
 
 #[cfg(target_os = "macos")]
 fn launch_supported_desktop_app(tool: &str, restart: bool) -> Result<(), String> {
-    let (app_name, process_name) = match tool {
-        "chatgpt-desktop" => {
-            if desktop_app_candidates(tool)
-                .iter()
-                .any(|path| path.ends_with("Codex.app") && path.exists())
-                && !desktop_app_candidates(tool)
-                    .iter()
-                    .any(|path| path.ends_with("ChatGPT.app") && path.exists())
-            {
-                ("Codex", "Codex")
-            } else {
-                ("ChatGPT", "ChatGPT")
-            }
-        }
-        "workbuddy" => ("WorkBuddy", "WorkBuddy"),
-        _ => return Err(format!("不支持的桌面应用: {tool}")),
-    };
-    let installed = desktop_app_candidates(tool)
-        .iter()
-        .any(|path| path.exists());
-    if !installed {
-        return Err(format!("未检测到 {app_name}，请先安装后重试"));
-    }
+    let app_path = desktop_app_candidates(tool)
+        .into_iter()
+        .find(|path| path.exists())
+        .ok_or_else(|| "未检测到桌面应用，请先安装后重试".to_string())?;
+    let app_name = app_path
+        .file_stem()
+        .and_then(|name| name.to_str())
+        .unwrap_or("桌面应用");
+    let process_name = app_name;
 
     if restart {
         let running = std::process::Command::new("pgrep")
@@ -2914,7 +2928,7 @@ fn launch_supported_desktop_app(tool: &str, restart: bool) -> Result<(), String>
                     decode_command_output(&output.stderr)
                 ));
             }
-            for _ in 0..40 {
+            for _ in 0..80 {
                 let still_running = std::process::Command::new("pgrep")
                     .args(["-x", process_name])
                     .status()
@@ -2924,13 +2938,31 @@ fn launch_supported_desktop_app(tool: &str, restart: bool) -> Result<(), String>
                 }
                 std::thread::sleep(std::time::Duration::from_millis(125));
             }
+            let still_running = std::process::Command::new("pgrep")
+                .args(["-x", process_name])
+                .status()
+                .is_ok_and(|status| status.success());
+            if still_running {
+                return Err(format!("{app_name} 未能安全退出，请手动退出后重试"));
+            }
+            // LaunchServices 在进程刚退出时可能仍保留旧实例，稍等后再拉起。
+            std::thread::sleep(std::time::Duration::from_millis(350));
         }
     }
 
-    let output = std::process::Command::new("open")
-        .args(["-a", app_name])
-        .output()
-        .map_err(|error| format!("打开 {app_name} 失败: {error}"))?;
+    let open_app = |force_new: bool| {
+        let mut command = std::process::Command::new("open");
+        if force_new {
+            command.arg("-n");
+        }
+        command.arg(&app_path).output()
+    };
+    let mut output = open_app(restart).map_err(|error| format!("打开 {app_name} 失败: {error}"))?;
+    let first_error = decode_command_output(&output.stderr);
+    if !output.status.success() && first_error.contains("-600") {
+        std::thread::sleep(std::time::Duration::from_millis(750));
+        output = open_app(true).map_err(|error| format!("重新打开 {app_name} 失败: {error}"))?;
+    }
     if output.status.success() {
         Ok(())
     } else {
@@ -2985,11 +3017,29 @@ pub async fn launch_tool(tool: String, restart: Option<bool>) -> Result<bool, St
         .map_err(|e| format!("桌面应用启动任务执行失败: {e}"))??;
         return Ok(true);
     }
+    if tool == "codex" {
+        let codex_executable = resolve_path_launch_command("codex")
+            .unwrap_or_else(|| std::path::PathBuf::from("codex"));
+        let endpoint =
+            crate::services::codex_session_bridge::ensure_codex_session_bridge(codex_executable)
+                .await?;
+        let command = format!("codex --remote {endpoint}");
+        tokio::task::spawn_blocking(move || launch_terminal_running(&command, "tool_codex"))
+            .await
+            .map_err(|e| format!("Codex 启动任务执行失败: {e}"))??;
+        return Ok(true);
+    }
     let command = tool_command(&tool).ok_or_else(|| format!("不支持的 AI 工具: {tool}"))?;
     tokio::task::spawn_blocking(move || launch_terminal_running(command, &format!("tool_{tool}")))
         .await
         .map_err(|e| format!("AI 工具启动任务执行失败: {e}"))??;
     Ok(true)
+}
+
+#[tauri::command]
+pub fn get_codex_session_bridge_status(
+) -> crate::services::codex_session_bridge::CodexSessionBridgeStatus {
+    crate::services::codex_session_bridge::codex_session_bridge_status()
 }
 
 /// 从提供商配置中提取环境变量

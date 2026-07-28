@@ -13,6 +13,7 @@ use crate::services::provider::{
     build_effective_settings_with_common_config, write_live_with_common_config,
 };
 use serde_json::{json, Map, Value};
+use std::path::PathBuf;
 use std::str::FromStr;
 use std::sync::Arc;
 use tauri::Emitter;
@@ -58,9 +59,17 @@ enum ClaudeTakeoverAuthPolicy {
 pub struct ProxyService {
     db: Arc<Database>,
     server: Arc<RwLock<Option<ProxyServer>>>,
+    runtime_mode: ProxyRuntimeMode,
+    core_config_dir: Arc<PathBuf>,
     /// AppHandle，用于传递给 ProxyServer 以支持故障转移时的 UI 更新
     app_handle: Arc<RwLock<Option<tauri::AppHandle>>>,
     switch_locks: SwitchLockManager,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum ProxyRuntimeMode {
+    InProcess,
+    ManagedCore,
 }
 
 #[derive(Debug, Clone, Copy, Default)]
@@ -73,9 +82,57 @@ impl ProxyService {
         Self {
             db,
             server: Arc::new(RwLock::new(None)),
+            runtime_mode: ProxyRuntimeMode::InProcess,
+            core_config_dir: Arc::new(crate::config::get_app_config_dir()),
             app_handle: Arc::new(RwLock::new(None)),
             switch_locks: SwitchLockManager::new(),
         }
+    }
+
+    pub fn new_managed(db: Arc<Database>) -> Self {
+        Self {
+            db,
+            server: Arc::new(RwLock::new(None)),
+            runtime_mode: ProxyRuntimeMode::ManagedCore,
+            core_config_dir: Arc::new(crate::config::get_app_config_dir()),
+            app_handle: Arc::new(RwLock::new(None)),
+            switch_locks: SwitchLockManager::new(),
+        }
+    }
+
+    pub fn uses_managed_core(&self) -> bool {
+        self.runtime_mode == ProxyRuntimeMode::ManagedCore
+    }
+
+    fn core_supervisor(&self) -> crate::core_daemon::CoreSupervisor {
+        crate::core_daemon::CoreSupervisor::new(self.core_config_dir.as_ref().clone())
+    }
+
+    pub async fn maintain_managed_core(&self) -> Result<(), String> {
+        if !self.uses_managed_core() {
+            return Ok(());
+        }
+
+        let supervisor = self.core_supervisor();
+        match supervisor.status(&self.db).await {
+            Ok(info)
+                if info.protocol_version == crate::core_daemon::CORE_PROTOCOL_VERSION =>
+            {
+                Ok(())
+            }
+            Ok(info) if info.status.active_connections > 0 => Ok(()),
+            _ => supervisor.ensure_running(&self.db).await.map(|_| ()),
+        }
+    }
+
+    pub async fn prepare_for_config_dir_change(&self) -> Result<(), String> {
+        if !self.uses_managed_core() {
+            return self.stop_with_restore_keep_state().await;
+        }
+
+        let restore_result = self.stop_with_restore_keep_state().await;
+        let stop_result = self.core_supervisor().stop(&self.db, true).await;
+        restore_result.and(stop_result)
     }
 
     #[cfg(test)]
@@ -423,6 +480,15 @@ impl ProxyService {
         let Ok(Some(provider)) = self.get_current_provider_for_app(app_type) else {
             return;
         };
+        if self.uses_managed_core() {
+            if let Err(error) = self.core_supervisor().reload(&self.db).await {
+                log::debug!(
+                    "通知 Core 刷新 {} 活跃目标失败（Core 可能尚未启动）: {error}",
+                    app_type.as_str()
+                );
+            }
+            return;
+        }
         if let Some(server) = self.server.read().await.as_ref() {
             server
                 .set_active_target(app_type.as_str(), &provider.id, &provider.name)
@@ -529,6 +595,15 @@ impl ProxyService {
                 .update_global_proxy_config(global_config.clone())
                 .await
                 .map_err(|e| format!("更新代理总开关失败: {e}"))?;
+        }
+
+        if self.uses_managed_core() {
+            let info = self.core_supervisor().ensure_running(&self.db).await?;
+            return Ok(ProxyServerInfo {
+                address: info.status.address,
+                port: info.status.port,
+                started_at: chrono::Utc::now().to_rfc3339(),
+            });
         }
 
         // 2. 获取配置
@@ -1259,6 +1334,24 @@ impl ProxyService {
 
     /// 停止代理服务器
     pub async fn stop(&self) -> Result<(), String> {
+        if self.uses_managed_core() {
+            self.core_supervisor().stop(&self.db, false).await?;
+            let mut global_config = self
+                .db
+                .get_global_proxy_config()
+                .await
+                .map_err(|e| format!("获取全局代理配置失败: {e}"))?;
+            if global_config.proxy_enabled {
+                global_config.proxy_enabled = false;
+                self.db
+                    .update_global_proxy_config(global_config)
+                    .await
+                    .map_err(|e| format!("更新代理总开关失败: {e}"))?;
+            }
+            log::info!("YuanHeng Core 已停止");
+            return Ok(());
+        }
+
         if let Some(server) = self.server.write().await.take() {
             server
                 .stop()
@@ -1485,7 +1578,13 @@ impl ProxyService {
         };
 
         let mut listen_port = config.listen_port;
-        if let Some(server) = self.server.read().await.as_ref() {
+        if self.uses_managed_core() {
+            if let Ok(info) = self.core_supervisor().status(&self.db).await {
+                if info.status.running {
+                    listen_port = info.status.port;
+                }
+            }
+        } else if let Some(server) = self.server.read().await.as_ref() {
             let status = server.get_status().await;
             if status.running {
                 listen_port = status.port;
@@ -2593,6 +2692,10 @@ impl ProxyService {
             server
                 .set_active_target(app_type_enum.as_str(), &provider.id, &provider.name)
                 .await;
+        } else if self.uses_managed_core() {
+            if let Err(error) = self.core_supervisor().reload(&self.db).await {
+                log::debug!("热切换后通知 Core 刷新失败: {error}");
+            }
         }
 
         Ok(HotSwitchOutcome {
@@ -3041,6 +3144,15 @@ impl ProxyService {
 
     /// 获取服务器状态
     pub async fn get_status(&self) -> Result<ProxyStatus, String> {
+        if self.uses_managed_core() {
+            return match self.core_supervisor().status(&self.db).await {
+                Ok(info) => Ok(info.status),
+                Err(_) => Ok(ProxyStatus {
+                    running: false,
+                    ..Default::default()
+                }),
+            };
+        }
         if let Some(server) = self.server.read().await.as_ref() {
             Ok(server.get_status().await)
         } else {
@@ -3077,6 +3189,22 @@ impl ProxyService {
             .update_proxy_config(new_config.clone())
             .await
             .map_err(|e| format!("保存代理配置失败: {e}"))?;
+
+        if self.uses_managed_core() {
+            if !self.is_running().await {
+                return Ok(());
+            }
+
+            let require_restart = new_config.listen_address != previous.listen_address
+                || new_config.listen_port != previous.listen_port;
+            if require_restart {
+                self.core_supervisor().restart(&self.db).await?;
+            } else {
+                self.core_supervisor().reload(&self.db).await?;
+            }
+            self.sync_takeover_urls_after_config_change().await?;
+            return Ok(());
+        }
 
         // 检查服务器当前状态
         let mut server_guard = self.server.write().await;
@@ -3155,6 +3283,9 @@ impl ProxyService {
 
     /// 检查服务器是否正在运行
     pub async fn is_running(&self) -> bool {
+        if self.uses_managed_core() {
+            return self.core_supervisor().status(&self.db).await.is_ok();
+        }
         self.server.read().await.is_some()
     }
 
@@ -3165,6 +3296,13 @@ impl ProxyService {
         &self,
         config: crate::proxy::CircuitBreakerConfig,
     ) -> Result<(), String> {
+        if self.uses_managed_core() {
+            let _ = config;
+            if self.is_running().await {
+                self.core_supervisor().reload(&self.db).await?;
+            }
+            return Ok(());
+        }
         if let Some(server) = self.server.read().await.as_ref() {
             server.update_circuit_breaker_configs(config).await;
             log::info!("已热更新运行中的熔断器配置");
@@ -3180,6 +3318,13 @@ impl ProxyService {
         app_type: &str,
         config: crate::proxy::CircuitBreakerConfig,
     ) -> Result<(), String> {
+        if self.uses_managed_core() {
+            let _ = (app_type, config);
+            if self.is_running().await {
+                self.core_supervisor().reload(&self.db).await?;
+            }
+            return Ok(());
+        }
         if let Some(server) = self.server.read().await.as_ref() {
             server
                 .update_circuit_breaker_config_for_app(app_type, config)
@@ -3199,11 +3344,38 @@ impl ProxyService {
         provider_id: &str,
         app_type: &str,
     ) -> Result<(), String> {
+        if self.uses_managed_core() {
+            return self
+                .core_supervisor()
+                .reset_circuit_breaker(&self.db, provider_id, app_type)
+                .await;
+        }
         if let Some(server) = self.server.read().await.as_ref() {
             server
                 .reset_provider_circuit_breaker(provider_id, app_type)
                 .await;
             log::info!("已重置 Provider {provider_id} (app: {app_type}) 的熔断器");
+        }
+        Ok(())
+    }
+
+    async fn sync_takeover_urls_after_config_change(&self) -> Result<(), String> {
+        let takeover = self.get_takeover_status().await?;
+        if takeover.claude {
+            self.takeover_live_config_best_effort(&AppType::Claude)
+                .await?;
+        }
+        if takeover.codex {
+            self.takeover_live_config_best_effort(&AppType::Codex)
+                .await?;
+        }
+        if takeover.gemini {
+            self.takeover_live_config_best_effort(&AppType::Gemini)
+                .await?;
+        }
+        if takeover.grokbuild {
+            self.takeover_live_config_best_effort(&AppType::GrokBuild)
+                .await?;
         }
         Ok(())
     }

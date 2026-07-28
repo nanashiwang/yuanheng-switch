@@ -1000,6 +1000,8 @@ mod tests {
             gemini_shadow: Arc::new(GeminiShadowStore::default()),
             codex_chat_history: Arc::new(CodexChatHistoryStore::default()),
             app_handle: None,
+            core_control: None,
+            auth_managers: None,
             failover_manager: Arc::new(FailoverSwitchManager::new(db)),
         }
     }

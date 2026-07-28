@@ -6,6 +6,7 @@ export const yuanhengKeys = {
   connection: ["yuanheng", "connection"] as const,
   tools: ["yuanheng", "tools"] as const,
   diagnostics: ["yuanheng", "diagnostics"] as const,
+  codexBridge: ["yuanheng", "codex-bridge"] as const,
 };
 
 export function useYuanhengConnection() {
@@ -100,6 +101,16 @@ export function useYuanhengToolStatuses() {
     queryFn: () => yuanhengApi.getToolStatuses(),
     retry: false,
     refetchInterval: 30_000,
+    refetchOnWindowFocus: true,
+  });
+}
+
+export function useCodexSessionBridgeStatus() {
+  return useQuery({
+    queryKey: yuanhengKeys.codexBridge,
+    queryFn: () => yuanhengApi.getCodexSessionBridgeStatus(),
+    retry: false,
+    refetchInterval: 2_000,
     refetchOnWindowFocus: true,
   });
 }

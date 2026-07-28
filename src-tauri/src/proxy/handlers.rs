@@ -44,9 +44,15 @@ use super::{
 };
 use crate::app_config::AppType;
 use crate::database::PRICING_SOURCE_REQUEST;
-use axum::{extract::State, http::StatusCode, response::IntoResponse, Json};
+use axum::{
+    extract::State,
+    http::{HeaderMap, StatusCode},
+    response::IntoResponse,
+    Json,
+};
 use bytes::Bytes;
 use http_body_util::BodyExt;
+use serde::Deserialize;
 use serde_json::{json, Value};
 
 // ============================================================================
@@ -59,6 +65,8 @@ pub async fn health_check() -> (StatusCode, Json<Value>) {
         StatusCode::OK,
         Json(json!({
             "status": "healthy",
+            "service": "yuanheng-core",
+            "protocolVersion": crate::core_daemon::CORE_PROTOCOL_VERSION,
             "timestamp": chrono::Utc::now().to_rfc3339(),
         })),
     )
@@ -66,8 +74,100 @@ pub async fn health_check() -> (StatusCode, Json<Value>) {
 
 /// 获取服务状态
 pub async fn get_status(State(state): State<ProxyState>) -> Result<Json<ProxyStatus>, ProxyError> {
-    let status = state.status.read().await.clone();
-    Ok(Json(status))
+    Ok(Json(state.snapshot_status().await))
+}
+
+pub async fn get_core_info(
+    State(state): State<ProxyState>,
+    headers: HeaderMap,
+) -> Result<Json<crate::core_daemon::CoreInfo>, StatusCode> {
+    let control = authorize_core_request(&state, &headers)?;
+    let status = state.snapshot_status().await;
+    Ok(Json(
+        crate::core_daemon::CoreInfo::from_control(control, status).await,
+    ))
+}
+
+pub async fn reload_core(
+    State(state): State<ProxyState>,
+    headers: HeaderMap,
+) -> Result<Json<Value>, StatusCode> {
+    let control = authorize_core_request(&state, &headers)?;
+    let (reply_tx, reply_rx) = tokio::sync::oneshot::channel();
+    control
+        .command_tx
+        .send(crate::core_daemon::CoreCommand::Reload { reply: reply_tx })
+        .map_err(|_| StatusCode::SERVICE_UNAVAILABLE)?;
+    let result = tokio::time::timeout(std::time::Duration::from_secs(5), reply_rx)
+        .await
+        .map_err(|_| StatusCode::GATEWAY_TIMEOUT)?
+        .map_err(|_| StatusCode::SERVICE_UNAVAILABLE)?;
+    result.map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+    Ok(Json(json!({ "ok": true })))
+}
+
+pub async fn shutdown_core(
+    State(state): State<ProxyState>,
+    headers: HeaderMap,
+) -> Result<Json<Value>, StatusCode> {
+    let control = authorize_core_request(&state, &headers)?;
+    let (reply_tx, reply_rx) = tokio::sync::oneshot::channel();
+    control
+        .command_tx
+        .send(crate::core_daemon::CoreCommand::Shutdown { reply: reply_tx })
+        .map_err(|_| StatusCode::SERVICE_UNAVAILABLE)?;
+    let result = tokio::time::timeout(std::time::Duration::from_secs(5), reply_rx)
+        .await
+        .map_err(|_| StatusCode::GATEWAY_TIMEOUT)?
+        .map_err(|_| StatusCode::SERVICE_UNAVAILABLE)?;
+    result.map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+    Ok(Json(json!({ "ok": true })))
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ResetCircuitBreakerRequest {
+    provider_id: String,
+    app_type: String,
+}
+
+pub async fn reset_core_circuit_breaker(
+    State(state): State<ProxyState>,
+    headers: HeaderMap,
+    Json(request): Json<ResetCircuitBreakerRequest>,
+) -> Result<Json<Value>, StatusCode> {
+    let control = authorize_core_request(&state, &headers)?;
+    let (reply_tx, reply_rx) = tokio::sync::oneshot::channel();
+    control
+        .command_tx
+        .send(crate::core_daemon::CoreCommand::ResetCircuitBreaker {
+            provider_id: request.provider_id,
+            app_type: request.app_type,
+            reply: reply_tx,
+        })
+        .map_err(|_| StatusCode::SERVICE_UNAVAILABLE)?;
+    let result = tokio::time::timeout(std::time::Duration::from_secs(5), reply_rx)
+        .await
+        .map_err(|_| StatusCode::GATEWAY_TIMEOUT)?
+        .map_err(|_| StatusCode::SERVICE_UNAVAILABLE)?;
+    result.map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+    Ok(Json(json!({ "ok": true })))
+}
+
+fn authorize_core_request<'a>(
+    state: &'a ProxyState,
+    headers: &HeaderMap,
+) -> Result<&'a crate::core_daemon::CoreControl, StatusCode> {
+    let control = state.core_control.as_ref().ok_or(StatusCode::NOT_FOUND)?;
+    let provided = headers
+        .get(axum::http::header::AUTHORIZATION)
+        .and_then(|value| value.to_str().ok())
+        .and_then(|value| value.strip_prefix("Bearer "))
+        .ok_or(StatusCode::UNAUTHORIZED)?;
+    if provided.as_bytes() != control.token.as_bytes() {
+        return Err(StatusCode::UNAUTHORIZED);
+    }
+    Ok(control)
 }
 
 /// GET /v1/models — Codex model list (reachability check)

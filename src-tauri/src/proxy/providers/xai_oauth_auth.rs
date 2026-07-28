@@ -802,6 +802,11 @@ impl XaiOAuthManager {
         Ok(())
     }
 
+    /// 独立 Core 用于感知 Desktop 进程写入的账号变更。
+    pub fn reload_from_disk(&self) -> Result<(), XaiOAuthError> {
+        self.load_from_disk_sync()
+    }
+
     fn write_store_atomic(&self, content: &str) -> Result<(), XaiOAuthError> {
         let parent = self
             .storage_path

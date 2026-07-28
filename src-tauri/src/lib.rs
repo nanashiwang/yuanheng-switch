@@ -9,6 +9,7 @@ mod codex_history_migration;
 mod codex_state_db;
 mod commands;
 mod config;
+mod core_daemon;
 mod database;
 mod deeplink;
 mod error;
@@ -44,6 +45,7 @@ pub use codex_config::{get_codex_auth_path, get_codex_config_path, write_codex_l
 pub use commands::open_provider_terminal;
 pub use commands::*;
 pub use config::{get_claude_mcp_path, get_claude_settings_path, read_json_file};
+pub use core_daemon::run_core_cli;
 pub use database::{Database, Profile};
 pub use deeplink::{parse_deeplink_url, DeepLinkImportRequest};
 pub use error::AppError;
@@ -613,7 +615,7 @@ pub fn run() {
                 }
             }
 
-            let app_state = AppState::new(db);
+            let app_state = AppState::new_desktop(db);
 
             // 设置 AppHandle 用于代理故障转移时的 UI 更新
             app_state.proxy_service.set_app_handle(app.handle().clone());
@@ -1147,35 +1149,82 @@ pub fn run() {
                 }
             }
 
-            // 异常退出恢复 + 代理状态自动恢复
+            // 独立 Core 生命周期恢复 + 代理状态自动恢复
             let app_handle = app.handle().clone();
             tauri::async_runtime::spawn(async move {
                 let state = app_handle.state::<AppState>();
+                let configured_takeover =
+                    !enabled_proxy_apps_on_startup(&state.db).await.is_empty();
 
-                // 检查是否有 Live 备份（表示上次异常退出时可能处于接管状态）
-                let has_backups = match state.db.has_any_live_backup().await {
-                    Ok(v) => v,
-                    Err(e) => {
-                        log::error!("检查 Live 备份失败: {e}");
-                        false
-                    }
-                };
-                // 检查 Live 配置是否仍处于被接管状态（包含占位符）
-                let live_taken_over = state.proxy_service.detect_takeover_in_live_configs();
+                // Managed Core 正常跨 GUI 退出存活，启用中的接管配置不是崩溃残留。
+                // 只有未配置接管时仍发现备份/占位符，才执行旧版残留恢复。
+                if !state.proxy_service.uses_managed_core() || !configured_takeover {
+                    let has_backups = match state.db.has_any_live_backup().await {
+                        Ok(v) => v,
+                        Err(e) => {
+                            log::error!("检查 Live 备份失败: {e}");
+                            false
+                        }
+                    };
+                    let live_taken_over = state.proxy_service.detect_takeover_in_live_configs();
 
-                if has_backups || live_taken_over {
-                    log::warn!("检测到上次异常退出（存在接管残留），正在恢复 Live 配置...");
-                    if let Err(e) = state.proxy_service.recover_from_crash().await {
-                        log::error!("恢复 Live 配置失败: {e}");
-                    } else {
-                        log::info!("Live 配置已恢复");
+                    if has_backups || live_taken_over {
+                        log::warn!("检测到无对应接管状态的 Live 残留，正在恢复...");
+                        if let Err(e) = state.proxy_service.recover_from_crash().await {
+                            log::error!("恢复 Live 配置失败: {e}");
+                        } else {
+                            log::info!("Live 配置已恢复");
+                        }
                     }
                 }
 
                 initialize_common_config_snippets(&state);
 
-                // 检查 settings 表中的代理状态，自动恢复代理服务
+                // 确保独立 Core 存活，并校验各应用的 Live 接管配置。
                 restore_proxy_state_on_startup(&state).await;
+
+                // GUI 存活期间补充健康巡检：Core 崩溃或延后升级后自动恢复。
+                let proxy_for_maintenance = state.proxy_service.clone();
+                let db_for_core_maintenance = state.db.clone();
+                tauri::async_runtime::spawn(async move {
+                    let mut interval = tokio::time::interval(std::time::Duration::from_secs(5));
+                    interval.tick().await;
+                    loop {
+                        interval.tick().await;
+                        if db_for_core_maintenance
+                            .is_live_takeover_active()
+                            .await
+                            .unwrap_or(false)
+                        {
+                            if let Err(error) = proxy_for_maintenance.maintain_managed_core().await {
+                                log::warn!("YuanHeng Core 健康巡检恢复失败: {error}");
+                            }
+                        }
+                    }
+                });
+
+                // Core 使用独立 SQLite 连接写日志，GUI 通过轻量 revision 轮询补发事件。
+                let db_for_usage_events = state.db.clone();
+                tauri::async_runtime::spawn(async move {
+                    let mut last_revision = db_for_usage_events.get_usage_log_revision().ok();
+                    let mut interval =
+                        tokio::time::interval(std::time::Duration::from_millis(750));
+                    interval.tick().await;
+                    loop {
+                        interval.tick().await;
+                        match db_for_usage_events.get_usage_log_revision() {
+                            Ok(revision) => {
+                                if last_revision.is_some_and(|previous| previous != revision) {
+                                    crate::usage_events::notify_log_recorded();
+                                }
+                                last_revision = Some(revision);
+                            }
+                            Err(error) => {
+                                log::debug!("检查独立 Core 用量日志变化失败: {error}");
+                            }
+                        }
+                    }
+                });
 
                 // Periodic backup check (on startup)
                 if let Err(e) = state.db.periodic_backup_if_needed() {
@@ -1521,6 +1570,7 @@ pub fn run() {
             // Provider terminal
             commands::open_provider_terminal,
             commands::launch_tool,
+            commands::get_codex_session_bridge_status,
             commands::get_yuanheng_connection,
             commands::get_yuanheng_tool_statuses,
             commands::get_yuanheng_diagnostics,
@@ -1649,7 +1699,7 @@ pub fn run() {
                 // 重启路径交还 Tauri 默认流程即可：
                 //   - 窗口状态：插件 Exit 钩子在主线程保存（同线程读取窗口几何，无死锁）
                 //   - 托盘图标：Tauri 内部 cleanup_before_exit 清理，正常走 Drop
-                //   - 代理/Live 配置：无需恢复，重启后新实例立即接管并恢复代理状态
+                //   - Core/Live 配置：独立 Core 持续运行，无需停止或恢复
                 //   - 100ms 落盘等待：重启前的 DB 写入均为命令驱动、此刻已完成，
                 //     与所有 Tauri 应用默认重启路径的行为一致，无需额外等待
                 ExitRequestAction::DeferToTauriRestart => {
@@ -1783,12 +1833,14 @@ pub fn run() {
 
 /// 应用退出前的清理工作
 ///
-/// 在应用退出前检查代理服务器状态，如果正在运行则停止代理并恢复 Live 配置。
-/// 确保 Claude Code/Codex/Gemini 的配置不会处于损坏状态。
-/// 使用 stop_with_restore_keep_state 保留 settings 表中的代理状态，下次启动时自动恢复。
+/// 旧版进程内代理在退出前停止并恢复 Live；独立 Core 模式不做任何代理清理。
 pub async fn cleanup_before_exit(app_handle: &tauri::AppHandle) {
     if let Some(state) = app_handle.try_state::<store::AppState>() {
         let proxy_service = &state.proxy_service;
+        if proxy_service.uses_managed_core() {
+            log::info!("Desktop 退出，YuanHeng Core 与 Live 接管保持运行");
+            return;
+        }
 
         // 退出时也需要兜底：代理可能已崩溃/未运行，但 Live 接管残留仍在（占位符/备份）。
         let has_backups = match state.db.has_any_live_backup().await {
@@ -2174,7 +2226,8 @@ pub fn destroy_single_instance_lock(app_handle: &tauri::AppHandle) {
 /// 直接走 `tauri::process::restart`（spawn 新进程 + `exit(0)`），不经过事件
 /// 循环退出，因此 Tauri 内部的 `cleanup_before_exit` 和各插件的
 /// `RunEvent::Exit` 钩子都不会执行。需要的清理由调用方与本函数显式补偿：
-/// 窗口状态、代理/Live 恢复（调用方）；托盘图标、single-instance 锁（本函数）。
+/// 窗口状态（调用方）；托盘图标、single-instance 锁（本函数）。
+/// 独立 Core 与 Live 接管在 Desktop 重启期间持续运行。
 ///
 /// 有意不调 `AppHandle::cleanup_before_exit()`：它会在调用线程上 Drop 托盘
 /// 图标，而 macOS 的 NSStatusItem 操作要求主线程；`set_visible(false)` 走

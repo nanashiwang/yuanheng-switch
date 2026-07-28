@@ -16,13 +16,14 @@ use crate::store::AppState;
 
 const BASE_URL: &str = "https://cn.meta-api.vip";
 const OPENAI_BASE_URL: &str = "https://cn.meta-api.vip/v1";
-const MANAGED_PROVIDER_ID: &str = "yuanheng-managed";
+pub(crate) const MANAGED_PROVIDER_ID: &str = "yuanheng-managed";
 const TOKEN_KEY: &str = "yuanheng_access_token";
 const USER_ID_KEY: &str = "yuanheng_user_id";
 const SESSION_COOKIE_KEY: &str = "yuanheng_session_cookie";
 const PENDING_SESSION_COOKIE_KEY: &str = "yuanheng_pending_session_cookie";
 const API_TOKEN_KEY: &str = "yuanheng_api_token";
 const API_TOKEN_ID_KEY: &str = "yuanheng_api_token_id";
+const API_TOKEN_GROUP_KEY: &str = "yuanheng_api_token_group";
 const CACHE_KEY: &str = "yuanheng_connection_cache";
 const PREVIOUS_PROVIDER_KEY_PREFIX: &str = "yuanheng_previous_provider_";
 const PREVIOUS_HERMES_MODEL_KEY: &str = "yuanheng_previous_hermes_model";
@@ -30,7 +31,6 @@ const PREVIOUS_WORKBUDDY_CONFIG_KEY: &str = "yuanheng_previous_workbuddy_config"
 const WORKBUDDY_MODEL_KEY: &str = "yuanheng_workbuddy_model";
 const WORKBUDDY_GROUP_KEY: &str = "yuanheng_workbuddy_group";
 const CHATGPT_DESKTOP_NAMESPACE: &str = "chatgpt-desktop";
-const CODEX_TERMINAL_PROFILE_NAME: &str = "yuanheng-terminal";
 const LOCAL_PROXY_TOKEN: &str = "PROXY_MANAGED";
 const NO_PREVIOUS_VALUE: &str = "__none__";
 
@@ -535,6 +535,14 @@ fn normalize_api_token(raw: &str) -> Result<String, String> {
     }
 }
 
+fn token_cache_for_stored_group(group: Option<&str>, token: String) -> HashMap<String, String> {
+    let mut cache = HashMap::new();
+    if let Some(group) = group.map(str::trim).filter(|group| !group.is_empty()) {
+        cache.insert(group.to_string(), token);
+    }
+    cache
+}
+
 async fn ensure_device_api_token(
     client: &reqwest::Client,
     session_cookie: &str,
@@ -832,10 +840,17 @@ fn persist_connection(
     api_token_id: i64,
     status: &YuanhengConnectionStatus,
 ) -> Result<(), String> {
+    let api_token_group = status
+        .account
+        .as_ref()
+        .map(|account| account.group.trim())
+        .filter(|group| !group.is_empty())
+        .unwrap_or("default");
     for (key, value) in [
         (SESSION_COOKIE_KEY, session_cookie),
         (USER_ID_KEY, user_id),
         (API_TOKEN_KEY, api_token),
+        (API_TOKEN_GROUP_KEY, api_token_group),
     ] {
         state
             .db
@@ -1229,9 +1244,7 @@ impl CodexSurface {
 }
 
 fn codex_terminal_profile_path() -> std::path::PathBuf {
-    crate::config::get_home_dir()
-        .join(".codex")
-        .join(format!("{CODEX_TERMINAL_PROFILE_NAME}.config.toml"))
+    crate::services::codex_session_bridge::codex_session_profile_path()
 }
 
 fn managed_codex_provider_for_namespace(
@@ -1377,11 +1390,30 @@ async fn write_codex_surface_configs(state: &AppState) -> Result<(), String> {
         .map_err(|error| format!("写入 ChatGPT Desktop 独立配置失败: {error}"))
 }
 
+fn set_codex_available_models(provider: &mut Provider, selected: &str, models: &[String]) {
+    let mut seen = BTreeSet::new();
+    let entries = std::iter::once(selected)
+        .chain(models.iter().map(String::as_str))
+        .map(str::trim)
+        .filter(|model| !model.is_empty())
+        .filter(|model| seen.insert((*model).to_string()))
+        .map(|model| {
+            json!({
+                "model": model,
+                "displayName": model,
+                "contextWindow": 200_000
+            })
+        })
+        .collect::<Vec<_>>();
+    provider.settings_config["modelCatalog"] = json!({ "models": entries });
+}
+
 async fn configure_codex_surface(
     state: &AppState,
     surface: CodexSurface,
     token: &str,
     model: &str,
+    available_models: &[String],
     group: &str,
     reasoning: &str,
 ) -> Result<YuanhengToolConfigureResult, String> {
@@ -1389,7 +1421,12 @@ async fn configure_codex_surface(
     // original provider before either one is configured for the first time.
     remember_tool_state(state, &AppType::Codex)?;
 
-    let selected = managed_provider(&AppType::Codex, token, model, group, reasoning)?;
+    let mut selected = managed_provider(&AppType::Codex, token, model, group, reasoning)?;
+    set_codex_available_models(&mut selected, model, available_models);
+    selected.settings_config["yuanhengSurface"] = json!(match surface {
+        CodexSurface::Terminal => "terminal",
+        CodexSurface::Desktop => "desktop",
+    });
     let terminal_before = managed_codex_provider_for_namespace(state, AppType::Codex.as_str())?;
     let desktop_before = managed_codex_provider_for_namespace(state, CHATGPT_DESKTOP_NAMESPACE)?;
 
@@ -1485,6 +1522,35 @@ fn provider_schema_current(provider: &Provider, app: &AppType) -> bool {
         }
         _ => true,
     }
+}
+
+fn codex_catalog_covers_available_models(provider: &Provider, models: &[String]) -> bool {
+    let configured = provider
+        .settings_config
+        .pointer("/modelCatalog/models")
+        .and_then(Value::as_array)
+        .map(|items| {
+            items
+                .iter()
+                .filter_map(|item| item.get("model").and_then(Value::as_str))
+                .collect::<BTreeSet<_>>()
+        })
+        .unwrap_or_default();
+    !models.is_empty()
+        && models
+            .iter()
+            .all(|model| configured.contains(model.as_str()))
+}
+
+fn codex_surface_matches(provider: &Provider, surface: CodexSurface) -> bool {
+    provider
+        .settings_config
+        .get("yuanhengSurface")
+        .and_then(Value::as_str)
+        == Some(match surface {
+            CodexSurface::Terminal => "terminal",
+            CodexSurface::Desktop => "desktop",
+        })
 }
 
 fn provider_has_credentials(provider: &Provider, app: &AppType) -> bool {
@@ -1658,9 +1724,12 @@ fn tool_status(state: &AppState, app: AppType, models: &[String]) -> YuanhengToo
     let credentials_current = provider
         .as_ref()
         .is_some_and(|item| provider_has_credentials(item, &app));
-    let provider_schema_current = provider
-        .as_ref()
-        .is_some_and(|item| provider_schema_current(item, &app));
+    let provider_schema_current = provider.as_ref().is_some_and(|item| {
+        provider_schema_current(item, &app)
+            && (!matches!(app, AppType::Codex)
+                || (codex_catalog_covers_available_models(item, models)
+                    && codex_surface_matches(item, CodexSurface::Terminal)))
+    });
     let surface_config_current = !matches!(app, AppType::Codex)
         || std::fs::read_to_string(codex_terminal_profile_path())
             .ok()
@@ -1803,9 +1872,11 @@ fn chatgpt_desktop_status(state: &AppState, models: &[String]) -> YuanhengToolSt
         .ok()
         .and_then(|config| crate::codex_config::extract_codex_base_url(&config))
         .is_some_and(|url| url.contains("/chatgpt-desktop/v1"));
-    let schema_current = stored
-        .as_ref()
-        .is_some_and(|provider| provider_schema_current(provider, &AppType::Codex));
+    let schema_current = stored.as_ref().is_some_and(|provider| {
+        provider_schema_current(provider, &AppType::Codex)
+            && codex_catalog_covers_available_models(provider, models)
+            && codex_surface_matches(provider, CodexSurface::Desktop)
+    });
     let configured = stored.is_some() && schema_current && route_current;
     let needs_update = display_provider.is_some() && !configured;
     let recommended = recommended_model(&AppType::Codex, models);
@@ -2163,6 +2234,7 @@ fn disconnect_yuanheng_inner(state: &AppState) -> Result<YuanhengDisconnectResul
         PENDING_SESSION_COOKIE_KEY,
         API_TOKEN_KEY,
         API_TOKEN_ID_KEY,
+        API_TOKEN_GROUP_KEY,
         CACHE_KEY,
     ] {
         state.db.set_setting(key, "").map_err(|e| e.to_string())?;
@@ -2514,6 +2586,10 @@ pub async fn configure_yuanheng_tools(
         .map_err(|e| e.to_string())?
         .filter(|value| !value.is_empty())
         .ok_or_else(|| "请先连接元衡账号".to_string())?;
+    let control_token_group = state
+        .db
+        .get_setting(API_TOKEN_GROUP_KEY)
+        .map_err(|e| e.to_string())?;
     let session_cookie = state
         .db
         .get_setting(SESSION_COOKIE_KEY)
@@ -2531,10 +2607,10 @@ pub async fn configure_yuanheng_tools(
     let requested_models = models.unwrap_or_default();
     let requested_groups = groups.unwrap_or_default();
     let requested_reasoning = reasoning.unwrap_or_default();
-    let mut token_cache = HashMap::new();
-    if let Some(account) = connection.account.as_ref() {
-        token_cache.insert(account.group.clone(), control_token);
-    }
+    // 旧版本没有记录令牌所属分组，不能用当前账号分组反推，否则会把 default
+    // 令牌误用于新选择的分组。缺少记录时按目标分组重新读取令牌。
+    let mut token_cache =
+        token_cache_for_stored_group(control_token_group.as_deref(), control_token);
     let mut results = Vec::new();
     let mut seen = BTreeSet::new();
     for app_name in apps {
@@ -2658,6 +2734,7 @@ pub async fn configure_yuanheng_tools(
                 },
                 &token,
                 &model,
+                &connection.models,
                 &group,
                 &reasoning,
             )
@@ -2677,6 +2754,11 @@ pub async fn configure_yuanheng_tools(
             Ok(mut result) => {
                 result.app = app_name.clone();
                 result.warnings.push(format!("使用令牌分组：{group}"));
+                if app_name == AppType::Codex.as_str() {
+                    crate::services::codex_session_bridge::update_codex_session_model(
+                        &model, &reasoning,
+                    );
+                }
                 results.push(result);
             }
             Err(error) => results.push(YuanhengToolConfigureResult {
@@ -2970,6 +3052,17 @@ mod tests {
         assert!(name.len() <= 50);
         assert_eq!(normalize_api_token("raw-key").unwrap(), "sk-raw-key");
         assert_eq!(normalize_api_token("sk-ready").unwrap(), "sk-ready");
+    }
+
+    #[test]
+    fn only_reuses_control_token_for_its_persisted_group() {
+        assert!(token_cache_for_stored_group(None, "default-token".to_string()).is_empty());
+        let cache = token_cache_for_stored_group(Some(" EMOXIA "), "emoxia-token".to_string());
+        assert_eq!(
+            cache.get("EMOXIA").map(String::as_str),
+            Some("emoxia-token")
+        );
+        assert!(!cache.contains_key("default"));
     }
 
     #[test]
@@ -3328,6 +3421,22 @@ mod tests {
             Some("openai_chat")
         );
         assert!(provider_schema_current(&codex_chat, &AppType::Codex));
+        let mut full_catalog = codex_chat.clone();
+        set_codex_available_models(
+            &mut full_catalog,
+            "k3",
+            &[
+                "gpt-5.6-sol".to_string(),
+                "deepseek-v4-pro".to_string(),
+                "k3".to_string(),
+            ],
+        );
+        let models = full_catalog.settings_config["modelCatalog"]["models"]
+            .as_array()
+            .unwrap();
+        assert_eq!(models.len(), 3);
+        assert_eq!(models[0]["model"], "k3");
+        assert_eq!(models[1]["model"], "gpt-5.6-sol");
         let mut legacy_codex_chat = codex_chat.clone();
         legacy_codex_chat.meta.as_mut().unwrap().api_format = Some("openai_responses".to_string());
         assert!(!provider_schema_current(

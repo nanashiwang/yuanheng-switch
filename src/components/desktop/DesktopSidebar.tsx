@@ -7,10 +7,12 @@ import {
   Gauge,
   Network,
   Settings,
-  Sparkles,
+  UserRound,
+  WalletCards,
   Wrench,
 } from "lucide-react";
 import appIcon from "@/assets/icons/app-icon.png";
+import type { YuanhengConnectionStatus } from "@/lib/api/yuanheng";
 import { cn } from "@/lib/utils";
 import type { DesktopView } from "./types";
 import { desktopSection } from "./types";
@@ -18,13 +20,13 @@ import { desktopSection } from "./types";
 interface DesktopSidebarProps {
   view: DesktopView;
   onNavigate: (view: DesktopView) => void;
-  connected: boolean;
+  connection?: YuanhengConnectionStatus;
   proxyRunning: boolean;
 }
 
 const dailyItems = [
   { id: "home" as const, label: "工作台", icon: Gauge },
-  { id: "tools" as const, label: "AI 工具", icon: Bot },
+  { id: "tools" as const, label: "工具管理", icon: Bot },
   { id: "capabilities" as const, label: "能力中心", icon: Blocks },
   { id: "usage" as const, label: "会话与用量", icon: Activity },
 ];
@@ -37,10 +39,15 @@ const professionalItems = [
 export function DesktopSidebar({
   view,
   onNavigate,
-  connected,
+  connection,
   proxyRunning,
 }: DesktopSidebarProps) {
   const active = desktopSection(view);
+  const accountName =
+    connection?.account?.displayName ||
+    connection?.account?.username ||
+    (connection?.userId ? `用户 ${connection.userId}` : "元衡用户");
+  const balance = connection?.account?.remainingUsd ?? 0;
 
   const renderItem = ({
     id,
@@ -80,7 +87,7 @@ export function DesktopSidebar({
             元衡桌面端
           </p>
           <p className="mt-0.5 text-[10px] tracking-[0.16em] text-slate-500">
-            AI TOOL SETUP
+            AI WORKSPACE
           </p>
         </div>
       </div>
@@ -99,18 +106,39 @@ export function DesktopSidebar({
         {professionalItems.map(renderItem)}
       </nav>
 
-      <div className="mt-auto rounded-xl border border-white/[0.07] bg-white/[0.035] p-3">
-        <div className="flex items-center gap-2 text-[11px] font-medium text-slate-300">
-          <Sparkles className="h-3.5 w-3.5 text-[#d69554]" />
-          元衡服务
-          <span
-            className={cn(
-              "ml-auto h-1.5 w-1.5 rounded-full",
-              connected ? "bg-emerald-400" : "bg-slate-600",
-            )}
-          />
-        </div>
-        <div className="mt-2 flex items-center gap-2 text-[11px] text-slate-500">
+      <div className="mt-auto space-y-2">
+        <button
+          type="button"
+          onClick={() => onNavigate("network")}
+          className="group w-full rounded-xl border border-white/[0.09] bg-white/[0.055] p-3 text-left transition-colors hover:bg-white/[0.09]"
+          aria-label="账号与余额"
+        >
+          <div className="flex items-center gap-2.5">
+            <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-[#d69554]/15 text-[#e3aa70]">
+              <UserRound className="h-4 w-4" />
+            </span>
+            <span className="min-w-0 flex-1">
+              <span className="block truncate text-[11px] font-semibold text-slate-200">
+                {accountName}
+              </span>
+              <span className="mt-0.5 flex items-center gap-1.5 text-[9px] text-emerald-400/80">
+                <span className="h-1.5 w-1.5 rounded-full bg-emerald-400" />
+                已登录
+              </span>
+            </span>
+            <ChevronRight className="h-3.5 w-3.5 text-slate-600 transition-colors group-hover:text-slate-300" />
+          </div>
+          <div className="mt-3 border-t border-white/[0.07] pt-2.5">
+            <span className="flex items-center gap-1.5 text-[9px] text-slate-500">
+              <WalletCards className="h-3 w-3" /> 可用余额
+            </span>
+            <strong className="mt-0.5 block font-display text-[17px] font-semibold tracking-[-0.02em] text-white">
+              ${balance.toFixed(2)}
+            </strong>
+          </div>
+        </button>
+
+        <div className="flex items-center gap-2 px-2 text-[10px] text-slate-600">
           {proxyRunning ? (
             <Boxes className="h-3.5 w-3.5" />
           ) : (

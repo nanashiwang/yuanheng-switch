@@ -105,7 +105,7 @@ export function OnboardingWizard({ open, onFinish }: OnboardingWizardProps) {
         <p className="mt-2 max-w-md text-[13px] leading-6 text-muted-foreground">
           {configuredCount > 0
             ? `已有 ${configuredCount} 个 AI 工具接入元衡，可以直接开始使用。`
-            : "你可以稍后进入 AI 工具页面完成配置。"}
+            : "你可以稍后进入工具管理页面完成配置。"}
         </p>
       </div>
     );

@@ -68,6 +68,16 @@ export interface YuanhengRuntimeStatus {
   updatedAt: number;
 }
 
+export interface CodexSessionBridgeStatus {
+  running: boolean;
+  endpoint: string | null;
+  connectedTerminals: number;
+  appliedTerminals: number;
+  pendingTerminals: number;
+  model: string | null;
+  reasoningEffort: string | null;
+}
+
 export interface YuanhengToolConfigureResult {
   app: YuanhengToolId;
   configured: boolean;
@@ -138,6 +148,10 @@ export const yuanhengApi = {
 
   getToolStatuses(): Promise<YuanhengToolStatus[]> {
     return invoke("get_yuanheng_tool_statuses");
+  },
+
+  getCodexSessionBridgeStatus(): Promise<CodexSessionBridgeStatus> {
+    return invoke("get_codex_session_bridge_status");
   },
 
   getDiagnostics(): Promise<YuanhengDiagnosticReport> {

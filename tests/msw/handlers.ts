@@ -71,6 +71,30 @@ export const handlers = [
   http.post(`${TAURI_ENDPOINT}/get_yuanheng_connection`, () =>
     success(getYuanhengConnection()),
   ),
+  http.post(`${TAURI_ENDPOINT}/get_codex_session_bridge_status`, () =>
+    success({
+      running: false,
+      endpoint: null,
+      connectedTerminals: 0,
+      appliedTerminals: 0,
+      pendingTerminals: 0,
+      model: null,
+      reasoningEffort: null,
+    }),
+  ),
+  http.post(`${TAURI_ENDPOINT}/get_usage_summary`, () =>
+    success({
+      totalRequests: 128,
+      totalCost: "3.45",
+      totalInputTokens: 82_000,
+      totalOutputTokens: 21_000,
+      totalCacheCreationTokens: 7_000,
+      totalCacheReadTokens: 15_000,
+      successRate: 0.984,
+      realTotalTokens: 125_000,
+      cacheHitRate: 0.42,
+    }),
+  ),
   http.post(`${TAURI_ENDPOINT}/login_yuanheng`, async ({ request }) => {
     const { username = "mock-user" } = await withJson<{ username?: string }>(
       request,

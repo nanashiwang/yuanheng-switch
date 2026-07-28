@@ -162,9 +162,11 @@ vi.mock("@/components/ui/dialog", () => ({
 
 vi.mock("@/components/ui/tabs", () => {
   return {
-    Tabs: ({ value, onValueChange, children }: any) => (
+    Tabs: ({ value, onValueChange, children, className }: any) => (
       <TabsContext.Provider value={{ value, onValueChange }}>
-        <div data-testid="tabs">{children}</div>
+        <div data-testid="tabs" className={className}>
+          {children}
+        </div>
       </TabsContext.Provider>
     ),
     TabsList: ({ children }: any) => <div>{children}</div>,
@@ -369,6 +371,16 @@ describe("SettingsPage Component", () => {
     fireEvent.click(screen.getByText("settings.tabAdvanced"));
 
     expect(scrollContainer!.scrollTop).toBe(0);
+  });
+
+  it("should let the settings tabs shrink below the page header", () => {
+    const { container } = renderSettingsPage();
+    const tabsRoot = screen.getByTestId("tabs");
+    const scrollContainer = container.querySelector(".overflow-y-auto");
+
+    expect(tabsRoot).toHaveClass("min-h-0", "flex-1");
+    expect(tabsRoot).not.toHaveClass("h-full");
+    expect(scrollContainer).toHaveClass("min-h-0", "flex-1");
   });
 
   it("should pass onImportSuccess callback to useImportExport hook", async () => {

@@ -21,6 +21,11 @@ fn update_cached_override(value: Option<PathBuf>) {
     }
 }
 
+/// 为无 Tauri AppHandle 的独立 Core 进程注入配置目录。
+pub(crate) fn set_app_config_dir_override_for_process(path: Option<PathBuf>) {
+    update_cached_override(path);
+}
+
 /// 获取缓存中的 app_config_dir 覆盖路径
 pub fn get_app_config_dir_override() -> Option<PathBuf> {
     override_cache().read().ok()?.clone()

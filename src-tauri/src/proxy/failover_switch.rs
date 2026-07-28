@@ -128,6 +128,15 @@ impl FailoverSwitchManager {
             if let Err(e) = app.emit("provider-switched", event_data) {
                 log::error!("[Failover] 发射事件失败: {e}");
             }
+        } else {
+            // 独立 Core 没有 Tauri AppHandle，但仍必须提交真实的供应商切换。
+            // ProxyService 在这里仅复用热切换事务，不持有或启动第二个 HTTP 服务。
+            let service = crate::services::ProxyService::new(self.db.clone());
+            switched = service
+                .hot_switch_provider(app_type, provider_id)
+                .await
+                .map_err(AppError::Message)?
+                .logical_target_changed;
         }
 
         Ok(switched)

@@ -4,9 +4,11 @@
   "description": "YuanHeng API desktop companion for local AI coding tools",
   "type": "module",
   "scripts": {
-    "dev": "pnpm tauri dev",
-    "build": "pnpm tauri build",
+    "dev": "pnpm run prepare:core:dev && pnpm tauri dev --config src-tauri/tauri.dev.conf.json",
+    "build": "node scripts/tauri-build.mjs",
     "tauri": "tauri",
+    "prepare:core:dev": "node scripts/prepare-core-sidecar.mjs debug",
+    "prepare:core:release": "node scripts/prepare-core-sidecar.mjs release",
     "dev:renderer": "vite",
     "build:renderer": "vite build",
     "typecheck": "tsc --noEmit",

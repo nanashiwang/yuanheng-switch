@@ -1419,6 +1419,11 @@ impl CopilotAuthManager {
         Ok(())
     }
 
+    /// 独立 Core 用于感知 Desktop 进程写入的账号变更。
+    pub fn reload_from_disk(&self) -> Result<(), CopilotAuthError> {
+        self.load_from_disk_sync()
+    }
+
     /// 确保迁移完成
     async fn ensure_migration_complete(&self) -> Result<(), CopilotAuthError> {
         let pending = {

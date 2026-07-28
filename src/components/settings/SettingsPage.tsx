@@ -230,9 +230,9 @@ export function SettingsPage({
         <Tabs
           value={activeTab}
           onValueChange={setActiveTab}
-          className="flex flex-col h-full"
+          className="flex min-h-0 flex-1 flex-col"
         >
-          <TabsList className="grid w-full grid-cols-6 mb-4 glass rounded-lg">
+          <TabsList className="mb-4 grid w-full shrink-0 grid-cols-6 rounded-lg glass">
             <TabsTrigger value="general">
               {t("settings.tabGeneral")}
             </TabsTrigger>
@@ -247,12 +247,12 @@ export function SettingsPage({
             <TabsTrigger value="about">{t("common.about")}</TabsTrigger>
           </TabsList>
 
-          <div className="flex-1 min-h-0 flex flex-col">
+          <div className="flex min-h-0 flex-1 flex-col pb-6">
             <div
               ref={tabScrollContainerRef}
-              className="flex-1 overflow-y-auto overflow-x-hidden pr-2"
+              className="min-h-0 flex-1 overflow-y-auto overflow-x-hidden pr-2"
             >
-              <TabsContent value="general" className="space-y-6 mt-0">
+              <TabsContent value="general" className="mt-0 space-y-6 pb-8">
                 {settings ? (
                   <motion.div
                     initial={{ opacity: 0, y: 10 }}
@@ -513,11 +513,11 @@ export function SettingsPage({
                 ) : null}
               </TabsContent>
 
-              <TabsContent value="about" className="mt-0">
+              <TabsContent value="about" className="mt-0 pb-8">
                 <AboutSection isPortable={isPortable} />
               </TabsContent>
 
-              <TabsContent value="usage" className="mt-0">
+              <TabsContent value="usage" className="mt-0 pb-8">
                 <UsageDashboard
                   refreshIntervalMs={settings?.usageDashboardRefreshIntervalMs}
                   onRefreshIntervalChange={(usageDashboardRefreshIntervalMs) =>
@@ -529,7 +529,7 @@ export function SettingsPage({
 
             {activeTab === "advanced" && settings && (
               <div
-                className="flex-shrink-0 pt-4 border-t border-border-default"
+                className="flex-shrink-0 border-t border-border-default pt-4"
                 style={{ backgroundColor: "hsl(var(--background))" }}
               >
                 <div className="px-6 flex items-center justify-end gap-3">

@@ -3,7 +3,6 @@ import { useQuery } from "@tanstack/react-query";
 import {
   Check,
   CheckCircle2,
-  ChevronsUpDown,
   CircleOff,
   Download,
   Loader2,
@@ -14,6 +13,7 @@ import {
 } from "lucide-react";
 import { toast } from "sonner";
 import type { AppId, YuanhengReasoningLevel, YuanhengToolId } from "@/lib/api";
+import type { YuanhengConnectionStatus } from "@/lib/api";
 import { settingsApi, yuanhengApi } from "@/lib/api";
 import {
   useConfigureYuanhengTools,
@@ -24,19 +24,7 @@ import {
 import { APP_ICON_MAP } from "@/config/appConfig";
 import { ProviderIcon } from "@/components/ProviderIcon";
 import { Button } from "@/components/ui/button";
-import {
-  Command,
-  CommandEmpty,
-  CommandGroup,
-  CommandInput,
-  CommandItem,
-  CommandList,
-} from "@/components/ui/command";
-import {
-  Popover,
-  PopoverContent,
-  PopoverTrigger,
-} from "@/components/ui/popover";
+import { ModelPicker } from "./ModelPicker";
 import { cn } from "@/lib/utils";
 import { extractErrorMessage } from "@/utils/errorUtils";
 
@@ -65,24 +53,30 @@ export const TOOL_COMMANDS: Partial<Record<YuanhengToolId, string>> = {
   hermes: "hermes",
 };
 
+export const TOOL_VERSION_TARGETS: Partial<Record<YuanhengToolId, string>> = {
+  ...TOOL_COMMANDS,
+  "claude-desktop": "claude-desktop",
+};
+
 const DESKTOP_DOWNLOAD_URLS: Partial<Record<YuanhengToolId, string>> = {
+  "claude-desktop": "https://claude.ai/download",
   "chatgpt-desktop": "https://openai.com/chatgpt/desktop/",
   workbuddy: "https://www.codebuddy.cn/work/",
 };
 
-const isCoreApp = (app: YuanhengToolId): app is AppId =>
+export const isCoreApp = (app: YuanhengToolId): app is AppId =>
   app !== "chatgpt-desktop" && app !== "workbuddy";
 
-const isDesktopApp = (app: YuanhengToolId) =>
+export const isDesktopApp = (app: YuanhengToolId) =>
   app === "claude-desktop" || app === "chatgpt-desktop" || app === "workbuddy";
 
-const toolLabel = (app: YuanhengToolId) => {
+export const toolLabel = (app: YuanhengToolId) => {
   if (app === "chatgpt-desktop") return "ChatGPT Desktop";
   if (app === "workbuddy") return "WorkBuddy";
   return APP_ICON_MAP[app].label;
 };
 
-const REASONING_LABELS: Record<YuanhengReasoningLevel, string> = {
+export const REASONING_LABELS: Record<YuanhengReasoningLevel, string> = {
   auto: "自动",
   none: "关闭",
   minimal: "极简",
@@ -94,102 +88,25 @@ const REASONING_LABELS: Record<YuanhengReasoningLevel, string> = {
   ultra: "极限",
 };
 
-function ModelPicker({
-  models,
-  value,
-  recommended,
-  label,
-  onChange,
-  onRefresh,
-}: {
-  models: string[];
-  value?: string;
-  recommended?: string | null;
-  label: string;
-  onChange: (value: string) => void;
-  onRefresh?: () => void;
-}) {
-  const [open, setOpen] = useState(false);
-  const orderedModels = useMemo(() => {
-    const priority = [value, recommended].filter((item): item is string =>
-      Boolean(item),
-    );
-    return [...models].sort((left, right) => {
-      const leftPriority = priority.indexOf(left);
-      const rightPriority = priority.indexOf(right);
-      if (leftPriority !== -1 || rightPriority !== -1) {
-        if (leftPriority === -1) return 1;
-        if (rightPriority === -1) return -1;
-        return leftPriority - rightPriority;
-      }
-      return left.localeCompare(right);
-    });
-  }, [models, recommended, value]);
-
-  return (
-    <Popover
-      modal
-      open={open}
-      onOpenChange={(nextOpen) => {
-        setOpen(nextOpen);
-        if (nextOpen) onRefresh?.();
-      }}
-    >
-      <PopoverTrigger asChild>
-        <button
-          type="button"
-          role="combobox"
-          aria-label={label}
-          aria-expanded={open}
-          className="mt-1.5 flex h-8 w-full items-center justify-between gap-2 rounded-md border bg-background px-3 text-left text-[11px] shadow-sm"
-          onClick={(event) => event.stopPropagation()}
-        >
-          <span className="truncate">{value || "选择模型"}</span>
-          <ChevronsUpDown className="h-3.5 w-3.5 shrink-0 opacity-50" />
-        </button>
-      </PopoverTrigger>
-      <PopoverContent
-        align="start"
-        sideOffset={6}
-        className="z-[1000] w-[var(--radix-popover-trigger-width)] min-w-[320px] p-0"
-        onClick={(event) => event.stopPropagation()}
-      >
-        <Command>
-          <CommandInput placeholder="搜索网站可用模型..." />
-          <CommandList className="max-h-[320px]">
-            <CommandEmpty>没有找到匹配的模型</CommandEmpty>
-            <CommandGroup
-              heading={`账号当前可用 ${orderedModels.length} 个模型`}
-            >
-              {orderedModels.map((model) => (
-                <CommandItem
-                  key={model}
-                  value={model}
-                  onSelect={() => {
-                    onChange(model);
-                    setOpen(false);
-                  }}
-                >
-                  <Check
-                    className={cn(
-                      "mr-1 h-3.5 w-3.5",
-                      value === model ? "opacity-100" : "opacity-0",
-                    )}
-                  />
-                  <span className="min-w-0 flex-1 truncate">{model}</span>
-                  {model === recommended && (
-                    <span className="shrink-0 text-[9px] text-emerald-600">
-                      推荐
-                    </span>
-                  )}
-                </CommandItem>
-              ))}
-            </CommandGroup>
-          </CommandList>
-        </Command>
-      </PopoverContent>
-    </Popover>
-  );
+/** 为模型挑选默认令牌分组：优先保留当前选择，其次 auto / 账号分组，最后按费率最低 */
+export function pickPreferredGroup(
+  connection: YuanhengConnectionStatus | undefined,
+  model: string,
+  current?: string,
+): string | undefined {
+  if (!connection) return undefined;
+  const available = connection.modelGroups[model] ?? [];
+  if (current && available.includes(current)) return current;
+  if (available.includes("auto")) return "auto";
+  const accountGroup = connection.account?.group;
+  if (accountGroup && available.includes(accountGroup)) return accountGroup;
+  const ratioOf = (id: string) =>
+    connection.groups.find((group) => group.id === id)?.ratio ??
+    Number.POSITIVE_INFINITY;
+  return [...available].sort(
+    (left, right) =>
+      ratioOf(left) - ratioOf(right) || left.localeCompare(right),
+  )[0];
 }
 
 interface ToolSetupGridProps {
@@ -213,7 +130,8 @@ export function ToolSetupGrid({
   const configure = useConfigureYuanhengTools();
   const versions = useQuery({
     queryKey: ["desktop", "tool-versions"],
-    queryFn: () => settingsApi.getToolVersions(Object.values(TOOL_COMMANDS)),
+    queryFn: () =>
+      settingsApi.getToolVersions(Object.values(TOOL_VERSION_TARGETS)),
   });
   const [selected, setSelected] = useState<YuanhengToolId[]>([]);
   const [models, setModels] = useState<Partial<Record<YuanhengToolId, string>>>(
@@ -243,18 +161,8 @@ export function ToolSetupGrid({
     [connection?.groups],
   );
 
-  const preferredGroup = (model: string, current?: string) => {
-    const available = connection?.modelGroups[model] ?? [];
-    if (current && available.includes(current)) return current;
-    if (available.includes("auto")) return "auto";
-    const accountGroup = connection?.account?.group;
-    if (accountGroup && available.includes(accountGroup)) return accountGroup;
-    return [...available].sort((left, right) => {
-      const leftRatio = groupMap.get(left)?.ratio ?? Number.POSITIVE_INFINITY;
-      const rightRatio = groupMap.get(right)?.ratio ?? Number.POSITIVE_INFINITY;
-      return leftRatio - rightRatio || left.localeCompare(right);
-    })[0];
-  };
+  const preferredGroup = (model: string, current?: string) =>
+    pickPreferredGroup(connection, model, current);
 
   useEffect(() => {
     if (!statuses.data) return;
@@ -299,10 +207,10 @@ export function ToolSetupGrid({
       return;
     const defaults = tools.filter((app) => {
       if (isDesktopApp(app)) return false;
-      const command = TOOL_COMMANDS[app];
+      const versionTarget = TOOL_VERSION_TARGETS[app];
       return Boolean(
-        command &&
-          versionMap.get(command)?.version &&
+        versionTarget &&
+          versionMap.get(versionTarget)?.version &&
           statusMap.get(app)?.supported,
       );
     });
@@ -311,9 +219,8 @@ export function ToolSetupGrid({
   }, [statusMap, statuses.data, tools, versionMap, versions.data]);
 
   const isInstalled = (app: YuanhengToolId) => {
-    if (app === "claude-desktop") return true;
-    const command = TOOL_COMMANDS[app];
-    return Boolean(command && versionMap.get(command)?.version);
+    const versionTarget = TOOL_VERSION_TARGETS[app];
+    return Boolean(versionTarget && versionMap.get(versionTarget)?.version);
   };
 
   const compatibleModels = () => connection?.models ?? [];
@@ -375,15 +282,54 @@ export function ToolSetupGrid({
     }
   };
 
+  const applyCodexModel = async (model: string) => {
+    const previousModel = models.codex;
+    const previousGroup = groups.codex;
+    const group = preferredGroup(model, previousGroup);
+    const selectedReasoning = selectedReasoningFor("codex", model);
+    setModels((current) => ({ ...current, codex: model }));
+    setGroups((current) => {
+      const next = { ...current };
+      if (group) next.codex = group;
+      else delete next.codex;
+      return next;
+    });
+    try {
+      const results = await configure.mutateAsync({
+        apps: ["codex"],
+        models: { codex: model },
+        groups: group ? { codex: group } : undefined,
+        reasoning: { codex: selectedReasoning },
+      });
+      const result = results.find((item) => item.app === "codex");
+      if (!result?.configured) throw new Error(result?.error || "模型切换失败");
+      toast.success(`Codex 已切换到 ${model}，下一条消息生效`);
+      onConfigured?.();
+    } catch (error) {
+      setModels((current) => ({ ...current, codex: previousModel }));
+      setGroups((current) => {
+        const next = { ...current };
+        if (previousGroup) next.codex = previousGroup;
+        else delete next.codex;
+        return next;
+      });
+      toast.error(extractErrorMessage(error) || "模型切换失败");
+    }
+  };
+
   const installTool = async (app: YuanhengToolId) => {
     const command = TOOL_COMMANDS[app];
-    if (!command) return;
+    const downloadUrl = DESKTOP_DOWNLOAD_URLS[app];
+    if (!command && !downloadUrl) return;
     try {
-      const downloadUrl = DESKTOP_DOWNLOAD_URLS[app];
       if (downloadUrl) {
         await settingsApi.openExternal(downloadUrl);
+        toast.success(
+          `已打开 ${toolLabel(app)} 官方下载页，安装完成后请刷新检测`,
+        );
         return;
       }
+      if (!command) return;
       await settingsApi.runToolLifecycleAction([command], "install");
       toast.success(`${toolLabel(app)} 安装任务已完成`);
       await versions.refetch();
@@ -526,7 +472,11 @@ export function ToolSetupGrid({
       >
         {tools.map((app, index) => {
           const command = TOOL_COMMANDS[app];
-          const version = command ? versionMap.get(command) : undefined;
+          const versionTarget = TOOL_VERSION_TARGETS[app];
+          const version = versionTarget
+            ? versionMap.get(versionTarget)
+            : undefined;
+          const canInstall = Boolean(command || DESKTOP_DOWNLOAD_URLS[app]);
           const installed = isInstalled(app);
           const status = statusMap.get(app);
           const configured = Boolean(status?.configured);
@@ -718,8 +668,13 @@ export function ToolSetupGrid({
                     value={selectedModel}
                     recommended={status.recommendedModel}
                     label={`${toolLabel(app)} 模型选择`}
+                    disabled={configure.isPending}
                     onRefresh={refreshModels}
                     onChange={(value) => {
+                      if (app === "codex") {
+                        void applyCodexModel(value);
+                        return;
+                      }
                       setModels((current) => ({ ...current, [app]: value }));
                       const group = preferredGroup(value);
                       setGroups((current) => {
@@ -819,7 +774,7 @@ export function ToolSetupGrid({
                   )}
                   {app === "codex" && (
                     <p className="mt-2 text-[9px] leading-4 text-muted-foreground">
-                      使用独立终端配置；从元衡启动 Codex 时生效。
+                      从元衡启动后，模型会在同一会话的下一条消息自动切换，无需重启。
                     </p>
                   )}
                   {app === "chatgpt-desktop" && (
@@ -846,16 +801,22 @@ export function ToolSetupGrid({
               )}
 
               <div className="mt-auto flex gap-2 pt-3">
-                {!installed && command ? (
+                {!installed && canInstall ? (
                   <Button
                     size="sm"
                     className="flex-1"
+                    aria-label={
+                      DESKTOP_DOWNLOAD_URLS[app]
+                        ? `打开 ${toolLabel(app)} 官方下载页`
+                        : `一键安装 ${toolLabel(app)}`
+                    }
                     onClick={(event) => {
                       event.stopPropagation();
                       void installTool(app);
                     }}
                   >
-                    <Download className="h-3.5 w-3.5" /> 安装
+                    <Download className="h-3.5 w-3.5" />
+                    {DESKTOP_DOWNLOAD_URLS[app] ? "官方下载" : "一键安装"}
                   </Button>
                 ) : (
                   <Button

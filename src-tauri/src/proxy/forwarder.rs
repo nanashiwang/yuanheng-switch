@@ -23,9 +23,6 @@ use super::{
     ProxyError,
 };
 use crate::commands::{CodexOAuthState, CopilotAuthState, XaiOAuthState};
-use crate::proxy::providers::codex_oauth_auth::CodexOAuthManager;
-use crate::proxy::providers::copilot_auth::CopilotAuthManager;
-use crate::proxy::providers::xai_oauth_auth::XaiOAuthManager;
 use crate::{
     app_config::AppType,
     provider::{LocalProxyRequestOverrides, Provider},
@@ -124,6 +121,8 @@ pub struct RequestForwarder {
     failover_manager: Arc<FailoverSwitchManager>,
     /// AppHandle，用于发射事件和更新托盘
     app_handle: Option<tauri::AppHandle>,
+    /// 独立 Core 直接持有的 OAuth 管理器。
+    auth_managers: Option<crate::core_daemon::ProxyAuthManagers>,
     /// 请求开始时的"当前供应商 ID"（用于判断是否需要同步 UI/托盘）
     current_provider_id_at_start: String,
     /// 代理会话 ID（用于 Gemini Native shadow replay）
@@ -149,6 +148,104 @@ pub struct RequestForwarder {
 }
 
 impl RequestForwarder {
+    async fn copilot_api_endpoint(&self, account_id: Option<&str>) -> Option<String> {
+        if let Some(managers) = &self.auth_managers {
+            let manager = managers.copilot.read().await;
+            return Some(match account_id {
+                Some(id) => manager.get_api_endpoint(id).await,
+                None => manager.get_default_api_endpoint().await,
+            });
+        }
+        let app_handle = self.app_handle.as_ref()?;
+        let state = app_handle.state::<CopilotAuthState>();
+        let manager = state.0.read().await;
+        Some(match account_id {
+            Some(id) => manager.get_api_endpoint(id).await,
+            None => manager.get_default_api_endpoint().await,
+        })
+    }
+
+    async fn copilot_access_token(&self, account_id: Option<&str>) -> Result<String, ProxyError> {
+        if let Some(managers) = &self.auth_managers {
+            let manager = managers.copilot.read().await;
+            return match account_id {
+                Some(id) => manager.get_valid_token_for_account(id).await,
+                None => manager.get_valid_token().await,
+            }
+            .map_err(|error| ProxyError::AuthError(format!("GitHub Copilot 认证失败: {error}")));
+        }
+        let app_handle = self.app_handle.as_ref().ok_or_else(|| {
+            ProxyError::AuthError("GitHub Copilot 认证管理器不可用".to_string())
+        })?;
+        let state = app_handle.state::<CopilotAuthState>();
+        let manager = state.0.read().await;
+        match account_id {
+            Some(id) => manager.get_valid_token_for_account(id).await,
+            None => manager.get_valid_token().await,
+        }
+        .map_err(|error| ProxyError::AuthError(format!("GitHub Copilot 认证失败: {error}")))
+    }
+
+    async fn codex_oauth_access(
+        &self,
+        account_id: Option<&str>,
+    ) -> Result<(String, Option<String>), ProxyError> {
+        if let Some(managers) = &self.auth_managers {
+            let manager = managers.codex.read().await;
+            let token = match account_id {
+                Some(id) => manager.get_valid_token_for_account(id).await,
+                None => manager.get_valid_token().await,
+            }
+            .map_err(|error| ProxyError::AuthError(format!("Codex OAuth 认证失败: {error}")))?;
+            let resolved = match account_id {
+                Some(id) => Some(id.to_string()),
+                None => manager.default_account_id().await,
+            };
+            return Ok((token, resolved));
+        }
+        let app_handle = self
+            .app_handle
+            .as_ref()
+            .ok_or_else(|| ProxyError::AuthError("Codex OAuth 认证管理器不可用".to_string()))?;
+        let state = app_handle.state::<CodexOAuthState>();
+        let manager = state.0.read().await;
+        let token = match account_id {
+            Some(id) => manager.get_valid_token_for_account(id).await,
+            None => manager.get_valid_token().await,
+        }
+        .map_err(|error| ProxyError::AuthError(format!("Codex OAuth 认证失败: {error}")))?;
+        let resolved = match account_id {
+            Some(id) => Some(id.to_string()),
+            None => manager.default_account_id().await,
+        };
+        Ok((token, resolved))
+    }
+
+    async fn xai_oauth_access_token(
+        &self,
+        account_id: Option<&str>,
+    ) -> Result<String, ProxyError> {
+        if let Some(managers) = &self.auth_managers {
+            let manager = managers.xai.read().await;
+            return match account_id {
+                Some(id) => manager.get_valid_token_for_account(id).await,
+                None => manager.get_valid_token().await,
+            }
+            .map_err(|error| ProxyError::AuthError(format!("xAI OAuth 认证失败: {error}")));
+        }
+        let app_handle = self
+            .app_handle
+            .as_ref()
+            .ok_or_else(|| ProxyError::AuthError("xAI OAuth 认证管理器不可用".to_string()))?;
+        let state = app_handle.state::<XaiOAuthState>();
+        let manager = state.0.read().await;
+        match account_id {
+            Some(id) => manager.get_valid_token_for_account(id).await,
+            None => manager.get_valid_token().await,
+        }
+        .map_err(|error| ProxyError::AuthError(format!("xAI OAuth 认证失败: {error}")))
+    }
+
     /// 预防式 media 降级：发送前对 text-only 模型把图片块替换为标记。
     ///
     /// 受 `enabled && request_media_fallback` 管辖；其中"启发式模型名单预测"
@@ -204,6 +301,7 @@ impl RequestForwarder {
         codex_chat_history: Arc<CodexChatHistoryStore>,
         failover_manager: Arc<FailoverSwitchManager>,
         app_handle: Option<tauri::AppHandle>,
+        auth_managers: Option<crate::core_daemon::ProxyAuthManagers>,
         current_provider_id_at_start: String,
         session_id: String,
         session_client_provided: bool,
@@ -225,6 +323,7 @@ impl RequestForwarder {
             codex_chat_history,
             failover_manager,
             app_handle,
+            auth_managers,
             current_provider_id_at_start,
             session_id,
             session_client_provided,
@@ -1297,21 +1396,13 @@ impl RequestForwarder {
         // GitHub Copilot 动态 endpoint 路由
         // 从 CopilotAuthManager 获取缓存的 API endpoint（支持企业版等非默认 endpoint）
         if is_copilot && !is_full_url {
-            if let Some(app_handle) = &self.app_handle {
-                let copilot_state = app_handle.state::<CopilotAuthState>();
-                let copilot_auth = copilot_state.0.read().await;
-
-                // 从 provider.meta 获取关联的 GitHub 账号 ID
-                let account_id = provider
-                    .meta
-                    .as_ref()
-                    .and_then(|m| m.managed_account_id_for("github_copilot"));
-
-                let dynamic_endpoint = match &account_id {
-                    Some(id) => copilot_auth.get_api_endpoint(id).await,
-                    None => copilot_auth.get_default_api_endpoint().await,
-                };
-
+            let account_id = provider
+                .meta
+                .as_ref()
+                .and_then(|m| m.managed_account_id_for("github_copilot"));
+            if let Some(dynamic_endpoint) =
+                self.copilot_api_endpoint(account_id.as_deref()).await
+            {
                 // 只在动态 endpoint 与当前 base_url 不同时替换
                 if dynamic_endpoint != base_url {
                     log::debug!(
@@ -1589,6 +1680,21 @@ impl RequestForwarder {
         {
             outbound_model = Some(m.to_string());
         }
+        if matches!(app_type, AppType::Codex)
+            && provider.id == crate::commands::MANAGED_PROVIDER_ID
+            && provider
+                .settings_config
+                .get("yuanhengSurface")
+                .and_then(Value::as_str)
+                == Some("terminal")
+        {
+            if let Some(model) = outbound_model.as_deref() {
+                crate::services::codex_session_bridge::confirm_codex_session_model(
+                    &self.session_id,
+                    model,
+                );
+            }
+        }
         log_prompt_cache_trace(
             app_type,
             provider,
@@ -1614,144 +1720,53 @@ impl RequestForwarder {
         let mut auth_headers = if let Some(mut auth) = adapter.extract_auth(provider) {
             // GitHub Copilot 特殊处理：从 CopilotAuthManager 获取真实 token
             if auth.strategy == AuthStrategy::GitHubCopilot {
-                if let Some(app_handle) = &self.app_handle {
-                    let copilot_state = app_handle.state::<CopilotAuthState>();
-                    let copilot_auth: tokio::sync::RwLockReadGuard<'_, CopilotAuthManager> =
-                        copilot_state.0.read().await;
-
-                    // 从 provider.meta 获取关联的 GitHub 账号 ID（多账号支持）
-                    let account_id = provider
-                        .meta
-                        .as_ref()
-                        .and_then(|m| m.managed_account_id_for("github_copilot"));
-
-                    // 根据账号 ID 获取对应 token（向后兼容：无账号 ID 时使用第一个账号）
-                    let token_result = match &account_id {
-                        Some(id) => {
-                            log::debug!("[Copilot] 使用指定账号 {id} 获取 token");
-                            copilot_auth.get_valid_token_for_account(id).await
-                        }
-                        None => {
-                            log::debug!("[Copilot] 使用默认账号获取 token");
-                            copilot_auth.get_valid_token().await
-                        }
-                    };
-
-                    match token_result {
-                        Ok(token) => {
-                            auth = AuthInfo::new(token, AuthStrategy::GitHubCopilot);
-                            log::debug!(
-                                "[Copilot] 成功获取 Copilot token (account={})",
-                                account_id.as_deref().unwrap_or("default")
-                            );
-                        }
-                        Err(e) => {
-                            log::error!(
-                                "[Copilot] 获取 Copilot token 失败 (account={}): {e}",
-                                account_id.as_deref().unwrap_or("default")
-                            );
-                            return Err(ProxyError::AuthError(format!(
-                                "GitHub Copilot 认证失败: {e}"
-                            )));
-                        }
-                    }
-                } else {
-                    log::error!("[Copilot] AppHandle 不可用");
-                    return Err(ProxyError::AuthError(
-                        "GitHub Copilot 认证不可用（无 AppHandle）".to_string(),
-                    ));
-                }
+                let account_id = provider
+                    .meta
+                    .as_ref()
+                    .and_then(|m| m.managed_account_id_for("github_copilot"));
+                let token = self
+                    .copilot_access_token(account_id.as_deref())
+                    .await?;
+                auth = AuthInfo::new(token, AuthStrategy::GitHubCopilot);
+                log::debug!(
+                    "[Copilot] 成功获取 Copilot token (account={})",
+                    account_id.as_deref().unwrap_or("default")
+                );
             }
 
             // Codex OAuth 特殊处理：从 CodexOAuthManager 获取真实 access_token
             if auth.strategy == AuthStrategy::CodexOAuth {
-                if let Some(app_handle) = &self.app_handle {
-                    let codex_state = app_handle.state::<CodexOAuthState>();
-                    let codex_auth: tokio::sync::RwLockReadGuard<'_, CodexOAuthManager> =
-                        codex_state.0.read().await;
-
-                    // 从 provider.meta 获取关联的 ChatGPT 账号 ID
-                    let account_id = provider
-                        .meta
-                        .as_ref()
-                        .and_then(|m| m.managed_account_id_for("codex_oauth"));
-
-                    let token_result = match &account_id {
-                        Some(id) => {
-                            log::debug!("[CodexOAuth] 使用指定账号 {id} 获取 token");
-                            codex_auth.get_valid_token_for_account(id).await
-                        }
-                        None => {
-                            log::debug!("[CodexOAuth] 使用默认账号获取 token");
-                            codex_auth.get_valid_token().await
-                        }
-                    };
-
-                    match token_result {
-                        Ok(token) => {
-                            auth = AuthInfo::new(token, AuthStrategy::CodexOAuth);
-                            should_send_codex_oauth_session_headers = true;
-                            // 解析使用的 account_id（用于注入 ChatGPT-Account-Id header）
-                            codex_oauth_account_id = match account_id {
-                                Some(id) => Some(id),
-                                None => codex_auth.default_account_id().await,
-                            };
-                            log::debug!(
-                                "[CodexOAuth] 成功获取 access_token (account={})",
-                                codex_oauth_account_id.as_deref().unwrap_or("default")
-                            );
-                        }
-                        Err(e) => {
-                            log::error!("[CodexOAuth] 获取 access_token 失败: {e}");
-                            return Err(ProxyError::AuthError(format!(
-                                "Codex OAuth 认证失败: {e}"
-                            )));
-                        }
-                    }
-                } else {
-                    log::error!("[CodexOAuth] AppHandle 不可用");
-                    return Err(ProxyError::AuthError(
-                        "Codex OAuth 认证不可用（无 AppHandle）".to_string(),
-                    ));
-                }
+                let account_id = provider
+                    .meta
+                    .as_ref()
+                    .and_then(|m| m.managed_account_id_for("codex_oauth"));
+                let (token, resolved_account_id) =
+                    self.codex_oauth_access(account_id.as_deref()).await?;
+                auth = AuthInfo::new(token, AuthStrategy::CodexOAuth);
+                should_send_codex_oauth_session_headers = true;
+                codex_oauth_account_id = resolved_account_id;
+                log::debug!(
+                    "[CodexOAuth] 成功获取 access_token (account={})",
+                    codex_oauth_account_id.as_deref().unwrap_or("default")
+                );
             }
 
             // xAI OAuth: resolve a managed account token immediately before
             // sending the request. Invalid refresh credentials are persisted as
             // requiring re-authentication by the manager.
             if auth.strategy == AuthStrategy::XaiOAuth {
-                if let Some(app_handle) = &self.app_handle {
-                    let xai_state = app_handle.state::<XaiOAuthState>();
-                    let xai_auth: tokio::sync::RwLockReadGuard<'_, XaiOAuthManager> =
-                        xai_state.0.read().await;
-                    let account_id = provider
-                        .meta
-                        .as_ref()
-                        .and_then(|meta| meta.managed_account_id_for("xai_oauth"));
-                    let token_result = match &account_id {
-                        Some(id) => xai_auth.get_valid_token_for_account(id).await,
-                        None => xai_auth.get_valid_token().await,
-                    };
-                    match token_result {
-                        Ok(token) => {
-                            auth = AuthInfo::new(token, AuthStrategy::XaiOAuth);
-                            log::debug!(
-                                "[XaiOAuth] 成功获取 access_token (account={})",
-                                account_id.as_deref().unwrap_or("default")
-                            );
-                        }
-                        Err(error) => {
-                            log::error!("[XaiOAuth] 获取 access_token 失败: {error}");
-                            return Err(ProxyError::AuthError(format!(
-                                "xAI OAuth 认证失败: {error}"
-                            )));
-                        }
-                    }
-                } else {
-                    return Err(ProxyError::AuthError(
-                        "xAI OAuth 认证不可用（无 AppHandle）".to_string(),
-                    ));
-                }
+                let account_id = provider
+                    .meta
+                    .as_ref()
+                    .and_then(|meta| meta.managed_account_id_for("xai_oauth"));
+                let token = self
+                    .xai_oauth_access_token(account_id.as_deref())
+                    .await?;
+                auth = AuthInfo::new(token, AuthStrategy::XaiOAuth);
+                log::debug!(
+                    "[XaiOAuth] 成功获取 access_token (account={})",
+                    account_id.as_deref().unwrap_or("default")
+                );
             }
 
             for secret in std::iter::once(&auth.api_key).chain(auth.access_token.iter()) {
@@ -2563,19 +2578,26 @@ impl RequestForwarder {
         };
         let model_id = model_id.to_string();
 
-        let Some(app_handle) = &self.app_handle else {
-            return;
-        };
-        let copilot_state = app_handle.state::<CopilotAuthState>();
-        let copilot_auth = copilot_state.0.read().await;
         let account_id = provider
             .meta
             .as_ref()
             .and_then(|m| m.managed_account_id_for("github_copilot"));
 
-        let models_result = match account_id.as_deref() {
-            Some(id) => copilot_auth.fetch_models_for_account(id).await,
-            None => copilot_auth.fetch_models().await,
+        let models_result = if let Some(managers) = &self.auth_managers {
+            let manager = managers.copilot.read().await;
+            match account_id.as_deref() {
+                Some(id) => manager.fetch_models_for_account(id).await,
+                None => manager.fetch_models().await,
+            }
+        } else if let Some(app_handle) = &self.app_handle {
+            let state = app_handle.state::<CopilotAuthState>();
+            let manager = state.0.read().await;
+            match account_id.as_deref() {
+                Some(id) => manager.fetch_models_for_account(id).await,
+                None => manager.fetch_models().await,
+            }
+        } else {
+            return;
         };
 
         let models = match models_result {
@@ -2595,25 +2617,27 @@ impl RequestForwarder {
     }
 
     async fn is_copilot_openai_vendor_model(&self, provider: &Provider, model_id: &str) -> bool {
-        let Some(app_handle) = &self.app_handle else {
-            log::debug!("[Copilot] AppHandle unavailable, fallback to chat/completions");
-            return false;
-        };
-
-        let copilot_state = app_handle.state::<CopilotAuthState>();
-        let copilot_auth = copilot_state.0.read().await;
         let account_id = provider
             .meta
             .as_ref()
             .and_then(|m| m.managed_account_id_for("github_copilot"));
 
-        let vendor_result = match account_id.as_deref() {
-            Some(id) => {
-                copilot_auth
-                    .get_model_vendor_for_account(id, model_id)
-                    .await
+        let vendor_result = if let Some(managers) = &self.auth_managers {
+            let manager = managers.copilot.read().await;
+            match account_id.as_deref() {
+                Some(id) => manager.get_model_vendor_for_account(id, model_id).await,
+                None => manager.get_model_vendor(model_id).await,
             }
-            None => copilot_auth.get_model_vendor(model_id).await,
+        } else if let Some(app_handle) = &self.app_handle {
+            let state = app_handle.state::<CopilotAuthState>();
+            let manager = state.0.read().await;
+            match account_id.as_deref() {
+                Some(id) => manager.get_model_vendor_for_account(id, model_id).await,
+                None => manager.get_model_vendor(model_id).await,
+            }
+        } else {
+            log::debug!("[Copilot] 认证管理器不可用，回退到 chat/completions");
+            return false;
         };
 
         match vendor_result {
@@ -3612,6 +3636,7 @@ mod tests {
             codex_chat_history: Arc::new(CodexChatHistoryStore::default()),
             failover_manager: Arc::new(FailoverSwitchManager::new(db)),
             app_handle: None,
+            auth_managers: None,
             current_provider_id_at_start: String::new(),
             session_id: String::new(),
             session_client_provided: false,

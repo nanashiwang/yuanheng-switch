@@ -1,6 +1,6 @@
 #![allow(non_snake_case)]
 
-use tauri::{AppHandle, Emitter};
+use tauri::{AppHandle, Emitter, Manager};
 use tauri_plugin_updater::UpdaterExt;
 
 /// 应用更新下载进度（通过 `update-download-progress` 事件发给前端）。
@@ -178,12 +178,17 @@ pub async fn restart_app(app: AppHandle) -> Result<bool, String> {
     // 在后台延迟重启，让函数有时间返回响应
     tauri::async_runtime::spawn(async move {
         tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
-        // app.restart() 走 RESTART_EXIT_CODE 路径，ExitRequested 处理器会直接
-        // 放行给 Tauri 默认 re-exec，不执行代理/Live 清理。但本命令用于
-        // app_config_dir 变更后的重启：新实例会切到新数据库，拿不到旧库里的
-        // Live 备份，无法恢复被接管的 Live 配置。因此必须趁旧实例的事件循环
-        // 仍存活，在这里同步完成恢复（保留代理状态，新实例启动时自动重新接管）。
-        crate::cleanup_before_exit(&app).await;
+        // app_config_dir 变更时需要恢复旧目录对应的 Live，并卸载旧 Core 服务；
+        // 新实例会按新目录重新安装 Core。普通退出/更新不会走这条清理路径。
+        if let Some(state) = app.try_state::<crate::store::AppState>() {
+            if let Err(error) = state
+                .proxy_service
+                .prepare_for_config_dir_change()
+                .await
+            {
+                log::error!("切换 app_config_dir 前清理旧 Core 失败: {error}");
+            }
+        }
         app.restart();
     });
     Ok(true)

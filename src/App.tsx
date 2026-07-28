@@ -22,7 +22,7 @@ import {
 import { toast } from "sonner";
 
 import type { AppId } from "@/lib/api";
-import { settingsApi, yuanhengApi } from "@/lib/api";
+import { settingsApi } from "@/lib/api";
 import { useSettingsQuery } from "@/lib/query";
 import { checkAllEnvConflicts } from "@/lib/api/env";
 import type { EnvConflict } from "@/types/env";
@@ -75,6 +75,7 @@ import { CapabilityCenter } from "@/components/desktop/CapabilityCenter";
 import { UsageCenter } from "@/components/desktop/UsageCenter";
 import { ConnectionCenter } from "@/components/desktop/ConnectionCenter";
 import { OnboardingWizard } from "@/components/desktop/OnboardingWizard";
+import { YuanhengAccessScreen } from "@/components/desktop/YuanhengAccessScreen";
 import type { DesktopView } from "@/components/desktop/types";
 import { useYuanhengConnection } from "@/lib/query/yuanheng";
 import { APP_ICON_MAP } from "@/config/appConfig";
@@ -114,7 +115,7 @@ const TOP_LEVEL_VIEWS: DesktopView[] = [
 
 const VIEW_LABELS: Record<DesktopView, string> = {
   home: "工作台",
-  tools: "AI 工具",
+  tools: "工具管理",
   capabilities: "能力中心",
   skills: "Skills",
   skillsDiscovery: "发现 Skills",
@@ -217,7 +218,8 @@ function App() {
   const unifiedSkillsPanelRef = useRef<any>(null);
 
   const { data: settingsData } = useSettingsQuery();
-  const { data: yuanhengConnection } = useYuanhengConnection();
+  const { data: yuanhengConnection, isLoading: isYuanhengConnectionLoading } =
+    useYuanhengConnection();
   const { data: unmanagedSkills } = useScanUnmanagedSkills();
   const hasUnmanagedSkills = (unmanagedSkills?.length ?? 0) > 0;
   const { isRunning: isProxyRunning } = useProxyStatus();
@@ -254,16 +256,6 @@ function App() {
       ALL_APPS.find((app) => visibleApps[app] !== false) ?? "claude";
     persistActiveApp(fallback);
   }, [activeApp, visibleApps]);
-
-  const handleLaunchTool = async (tool: AppId) => {
-    persistActiveApp(tool);
-    try {
-      await yuanhengApi.launchTool(tool);
-      toast.success(`${APP_ICON_MAP[tool].label} 已启动`);
-    } catch (error) {
-      toast.error(extractErrorMessage(error) || "工具启动失败");
-    }
-  };
 
   const saveSettingsPatch = async (updates: Record<string, unknown>) => {
     if (!settingsData) return false;
@@ -406,10 +398,7 @@ function App() {
     switch (view) {
       case "home":
         return (
-          <WorkspaceDashboard
-            onNavigate={navigate}
-            onLaunch={(tool) => void handleLaunchTool(tool)}
-          />
+          <WorkspaceDashboard focusApp={activeApp} onNavigate={navigate} />
         );
       case "tools":
         return (
@@ -604,8 +593,9 @@ function App() {
     import.meta.env.DEV &&
     new URLSearchParams(window.location.search).has("onboarding");
   const onboardingOpen =
-    forceOnboardingPreview ||
-    Boolean(settingsData && settingsData.firstRunNoticeConfirmed !== true);
+    Boolean(yuanhengConnection?.connected) &&
+    (forceOnboardingPreview ||
+      Boolean(settingsData && settingsData.firstRunNoticeConfirmed !== true));
 
   return (
     <div
@@ -667,128 +657,136 @@ function App() {
         </div>
       )}
 
-      <div className="flex h-full min-h-0">
-        <DesktopSidebar
-          view={view}
-          onNavigate={navigate}
-          connected={Boolean(yuanhengConnection?.connected)}
-          proxyRunning={isProxyRunning}
-        />
-        <section className="flex min-w-0 flex-1 flex-col overflow-hidden bg-[radial-gradient(circle_at_92%_5%,hsl(var(--primary)/0.055),transparent_34%)]">
-          <header
-            className="flex h-[54px] shrink-0 items-center gap-3 border-b bg-background/85 px-5 backdrop-blur-md"
-            {...DRAG_REGION_ATTR}
-            style={{ ...DRAG_REGION_STYLE } as React.CSSProperties}
-          >
-            <div
-              className="flex min-w-0 flex-1 items-center gap-1.5 px-1 text-[12px]"
-              style={{ WebkitAppRegion: "no-drag" } as React.CSSProperties}
+      {isYuanhengConnectionLoading || !yuanhengConnection?.connected ? (
+        <YuanhengAccessScreen loading={isYuanhengConnectionLoading} />
+      ) : (
+        <div className="flex h-full min-h-0">
+          <DesktopSidebar
+            view={view}
+            onNavigate={navigate}
+            connection={yuanhengConnection}
+            proxyRunning={isProxyRunning}
+          />
+          <section className="flex min-w-0 flex-1 flex-col overflow-hidden bg-[radial-gradient(circle_at_92%_5%,hsl(var(--primary)/0.055),transparent_34%)]">
+            <header
+              className="flex h-[54px] shrink-0 items-center gap-3 border-b bg-background/85 px-5 backdrop-blur-md"
+              {...DRAG_REGION_ATTR}
+              style={{ ...DRAG_REGION_STYLE } as React.CSSProperties}
             >
-              {VIEW_PARENTS[view] && (
-                <>
-                  <button
-                    type="button"
-                    onClick={() => navigate(VIEW_PARENTS[view]!)}
-                    className="shrink-0 font-medium text-muted-foreground transition-colors hover:text-foreground"
-                  >
-                    {VIEW_LABELS[VIEW_PARENTS[view]!]}
-                  </button>
-                  <ChevronRight className="h-3 w-3 shrink-0 text-muted-foreground/50" />
-                </>
-              )}
-              <span className="truncate font-semibold">
-                {VIEW_LABELS[view]}
-              </span>
-            </div>
-            <div
-              className="flex items-center gap-1.5"
-              style={{ WebkitAppRegion: "no-drag" } as React.CSSProperties}
-            >
-              <DropdownMenu>
-                <DropdownMenuTrigger asChild>
-                  <button
-                    type="button"
-                    className="mr-1 hidden h-8 items-center gap-2 rounded-lg bg-muted/60 px-2.5 text-[11px] text-muted-foreground transition-colors hover:bg-muted hover:text-foreground sm:flex"
-                    aria-label="切换当前工具"
-                  >
-                    <ProviderIcon
-                      icon={appProviderIcon(activeApp)}
-                      name={APP_ICON_MAP[activeApp].label}
-                      size={14}
-                    />
-                    {APP_ICON_MAP[activeApp].label}
-                    <ChevronDown className="h-3 w-3 opacity-60" />
-                  </button>
-                </DropdownMenuTrigger>
-                <DropdownMenuContent align="end" className="w-44">
-                  {ALL_APPS.filter((app) => visibleApps[app] !== false).map(
-                    (app) => (
-                      <DropdownMenuItem
-                        key={app}
-                        onClick={() => persistActiveApp(app)}
-                        className="gap-2 text-[12px]"
-                      >
-                        <ProviderIcon
-                          icon={appProviderIcon(app)}
-                          name={APP_ICON_MAP[app].label}
-                          size={14}
-                        />
-                        <span className="flex-1">
-                          {APP_ICON_MAP[app].label}
-                        </span>
-                        {app === activeApp && (
-                          <Check className="h-3.5 w-3.5 text-primary" />
-                        )}
-                      </DropdownMenuItem>
-                    ),
-                  )}
-                </DropdownMenuContent>
-              </DropdownMenu>
-              <ModeToggle />
-              <Button
-                variant="outline"
-                size="icon"
-                onClick={() => {
-                  setSettingsDefaultTab("general");
-                  navigate("settings");
-                }}
-                title="设置"
+              <div
+                className="flex min-w-0 flex-1 items-center gap-1.5 px-1 text-[12px]"
+                style={{ WebkitAppRegion: "no-drag" } as React.CSSProperties}
               >
-                <Settings className="h-4 w-4" />
-              </Button>
-              <UpdateBadge
-                onClick={() => {
-                  setSettingsDefaultTab("about");
-                  navigate("settings");
+                {VIEW_PARENTS[view] && (
+                  <>
+                    <button
+                      type="button"
+                      onClick={() => navigate(VIEW_PARENTS[view]!)}
+                      className="shrink-0 font-medium text-muted-foreground transition-colors hover:text-foreground"
+                    >
+                      {VIEW_LABELS[VIEW_PARENTS[view]!]}
+                    </button>
+                    <ChevronRight className="h-3 w-3 shrink-0 text-muted-foreground/50" />
+                  </>
+                )}
+                <span className="truncate font-semibold">
+                  {VIEW_LABELS[view]}
+                </span>
+              </div>
+              <div
+                className="flex items-center gap-1.5"
+                style={{ WebkitAppRegion: "no-drag" } as React.CSSProperties}
+              >
+                <DropdownMenu>
+                  <DropdownMenuTrigger asChild>
+                    <button
+                      type="button"
+                      className="mr-1 hidden h-8 items-center gap-2 rounded-lg bg-muted/60 px-2.5 text-[11px] text-muted-foreground transition-colors hover:bg-muted hover:text-foreground sm:flex"
+                      aria-label="切换当前工具"
+                    >
+                      <ProviderIcon
+                        icon={appProviderIcon(activeApp)}
+                        name={APP_ICON_MAP[activeApp].label}
+                        size={14}
+                      />
+                      {APP_ICON_MAP[activeApp].label}
+                      <ChevronDown className="h-3 w-3 opacity-60" />
+                    </button>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent align="end" className="w-44">
+                    {ALL_APPS.filter((app) => visibleApps[app] !== false).map(
+                      (app) => (
+                        <DropdownMenuItem
+                          key={app}
+                          onClick={() => persistActiveApp(app)}
+                          className="gap-2 text-[12px]"
+                        >
+                          <ProviderIcon
+                            icon={appProviderIcon(app)}
+                            name={APP_ICON_MAP[app].label}
+                            size={14}
+                          />
+                          <span className="flex-1">
+                            {APP_ICON_MAP[app].label}
+                          </span>
+                          {app === activeApp && (
+                            <Check className="h-3.5 w-3.5 text-primary" />
+                          )}
+                        </DropdownMenuItem>
+                      ),
+                    )}
+                  </DropdownMenuContent>
+                </DropdownMenu>
+                <ModeToggle />
+                <Button
+                  variant="outline"
+                  size="icon"
+                  onClick={() => {
+                    setSettingsDefaultTab("general");
+                    navigate("settings");
+                  }}
+                  title="设置"
+                >
+                  <Settings className="h-4 w-4" />
+                </Button>
+                <UpdateBadge
+                  onClick={() => {
+                    setSettingsDefaultTab("about");
+                    navigate("settings");
+                  }}
+                />
+              </div>
+            </header>
+
+            {showEnvBanner && envConflicts.length > 0 && (
+              <EnvWarningBanner
+                conflicts={envConflicts}
+                onDismiss={() => {
+                  setShowEnvBanner(false);
+                  sessionStorage.setItem("env_banner_dismissed", "true");
+                }}
+                onDeleted={async () => {
+                  const all = await checkAllEnvConflicts();
+                  const conflicts = Object.values(all).flat();
+                  setEnvConflicts(conflicts);
+                  if (conflicts.length === 0) setShowEnvBanner(false);
                 }}
               />
-            </div>
-          </header>
+            )}
 
-          {showEnvBanner && envConflicts.length > 0 && (
-            <EnvWarningBanner
-              conflicts={envConflicts}
-              onDismiss={() => {
-                setShowEnvBanner(false);
-                sessionStorage.setItem("env_banner_dismissed", "true");
-              }}
-              onDeleted={async () => {
-                const all = await checkAllEnvConflicts();
-                const conflicts = Object.values(all).flat();
-                setEnvConflicts(conflicts);
-                if (conflicts.length === 0) setShowEnvBanner(false);
-              }}
-            />
-          )}
+            <main className="min-h-0 flex-1 overflow-hidden">
+              {renderContent()}
+            </main>
+          </section>
+        </div>
+      )}
 
-          <main className="min-h-0 flex-1 overflow-hidden">
-            {renderContent()}
-          </main>
-        </section>
-      </div>
-
-      <OnboardingWizard open={onboardingOpen} onFinish={finishOnboarding} />
-      <DeepLinkImportDialog />
+      {yuanhengConnection?.connected && (
+        <>
+          <OnboardingWizard open={onboardingOpen} onFinish={finishOnboarding} />
+          <DeepLinkImportDialog />
+        </>
+      )}
     </div>
   );
 }

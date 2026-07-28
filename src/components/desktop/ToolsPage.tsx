@@ -16,9 +16,9 @@ export function ToolsPage({
   return (
     <div className="mx-auto flex h-full w-full max-w-[1120px] flex-col overflow-hidden px-7 pt-6">
       <PageHeader
-        eyebrow="AI Tool Setup"
-        title="AI 工具"
-        description="选择需要使用的本机工具，一键写入元衡 API、认证和模型配置。"
+        eyebrow="Install & Maintenance"
+        title="工具管理"
+        description="安装、检测和修复本机 AI 工具；日常模型切换请在工作台完成。"
       />
       <div className="min-h-0 flex-1 overflow-y-auto pb-8">
         <ToolSetupGrid

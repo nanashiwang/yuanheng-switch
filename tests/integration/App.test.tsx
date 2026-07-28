@@ -1,6 +1,13 @@
 import { Suspense, type ComponentType } from "react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { render, screen, waitFor, fireEvent } from "@testing-library/react";
+import {
+  render,
+  screen,
+  waitFor,
+  fireEvent,
+  within,
+} from "@testing-library/react";
+import { http, HttpResponse } from "msw";
 import { describe, it, expect, beforeEach, vi } from "vitest";
 import {
   getConfiguredToolCalls,
@@ -14,6 +21,7 @@ import {
   setYuanhengToolStatus,
 } from "../msw/state";
 import { emitTauriEvent } from "../msw/tauriMocks";
+import { server } from "../msw/server";
 
 const toastSuccessMock = vi.fn();
 const toastErrorMock = vi.fn();
@@ -141,9 +149,62 @@ const renderApp = (AppComponent: ComponentType) => {
 describe("App integration with MSW", () => {
   beforeEach(() => {
     resetProviderState();
+    setYuanhengConnection({
+      connected: true,
+      userId: "1024",
+      account: {
+        username: "mock-user",
+        displayName: "Mock User",
+        group: "default",
+        remainingUsd: 102560.36,
+        usedUsd: 99,
+      },
+    });
     localStorage.clear();
     toastSuccessMock.mockReset();
     toastErrorMock.mockReset();
+  });
+
+  it("requires login before showing the workspace", async () => {
+    setSettings({ firstRunNoticeConfirmed: true });
+    setYuanhengConnection({ connected: false });
+
+    const { default: App } = await import("@/App");
+    renderApp(App);
+
+    expect(
+      await screen.findByRole("heading", { name: "登录你的元衡账号" }),
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: "工作台" }),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole("dialog", { name: "首次配置" }),
+    ).not.toBeInTheDocument();
+
+    fireEvent.change(screen.getByLabelText("用户名"), {
+      target: { value: "new-user" },
+    });
+    fireEvent.change(screen.getByLabelText("密码"), {
+      target: { value: "password123" },
+    });
+    const loginButtons = screen.getAllByRole("button", { name: "登录" });
+    fireEvent.click(loginButtons[loginButtons.length - 1]);
+
+    expect(
+      await screen.findByRole("button", { name: "账号与余额" }),
+    ).toHaveTextContent("new-user");
+    expect(
+      screen.getByRole("button", { name: "账号与余额" }),
+    ).toHaveTextContent("$10.00");
+    expect(
+      await screen.findByRole("heading", { name: "工作台" }),
+    ).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "账号与余额" }));
+    expect(
+      await screen.findByRole("heading", { name: "连接与路由" }),
+    ).toBeInTheDocument();
   });
 
   it("renders the tool-first desktop workspace without projects or provider management", async () => {
@@ -163,13 +224,15 @@ describe("App integration with MSW", () => {
 
     expect(
       await screen.findByRole("heading", {
-        name: "让需要的 AI 工具立即可用",
+        name: "工作台",
       }),
     ).toBeInTheDocument();
     expect(
-      await screen.findByRole("heading", { name: "当前不可用" }),
+      await screen.findByRole("heading", { name: "需要完成一项设置" }),
     ).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "AI 工具" })).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: "工具管理" }),
+    ).toBeInTheDocument();
     expect(
       screen.queryByRole("button", { name: "项目" }),
     ).not.toBeInTheDocument();
@@ -249,11 +312,11 @@ describe("App integration with MSW", () => {
 
     expect(
       await screen.findByRole("heading", {
-        name: "让需要的 AI 工具立即可用",
+        name: "工作台",
       }),
     ).toBeInTheDocument();
-    fireEvent.click(screen.getByRole("button", { name: "AI 工具" }));
-    await screen.findByRole("heading", { name: "AI 工具" });
+    fireEvent.click(screen.getByRole("button", { name: "工具管理" }));
+    await screen.findByRole("heading", { name: "工具管理" });
 
     expect(await screen.findByLabelText("Codex 模型选择")).toBeInTheDocument();
     expect(
@@ -268,6 +331,218 @@ describe("App integration with MSW", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "启动 Codex" }));
     await waitFor(() => expect(getLaunchedToolCalls()).toEqual(["codex"]));
+  });
+
+  it("applies a Codex model selection immediately for the next turn", async () => {
+    setSettings({ firstRunNoticeConfirmed: true });
+    setYuanhengConnection({
+      connected: true,
+      userId: "1024",
+      models: ["gpt-5.6", "k3"],
+      reasoningLevels: { k3: ["low", "medium", "high", "xhigh"] },
+    });
+
+    const { default: App } = await import("@/App");
+    renderApp(App);
+    await screen.findByRole("heading", { name: "工作台" });
+    fireEvent.click(screen.getByRole("button", { name: "工具管理" }));
+
+    fireEvent.click(await screen.findByLabelText("Codex 模型选择"));
+    fireEvent.change(screen.getByPlaceholderText("搜索网站可用模型..."), {
+      target: { value: "k3" },
+    });
+    fireEvent.click(await screen.findByText("k3"));
+
+    await waitFor(() => expect(getConfiguredToolCalls()).toEqual([["codex"]]));
+    expect(getConfiguredToolReasoningCalls()).toEqual([{ codex: "auto" }]);
+    expect(toastSuccessMock).toHaveBeenCalledWith(
+      "Codex 已切换到 k3，下一条消息生效",
+    );
+  });
+
+  it("shows when connected Codex terminals are waiting for the next message", async () => {
+    setSettings({ firstRunNoticeConfirmed: true });
+    setYuanhengConnection({
+      connected: true,
+      userId: "1024",
+      models: ["k3"],
+      account: {
+        username: "tester",
+        displayName: "Tester",
+        group: "auto",
+        remainingUsd: 12.47,
+        usedUsd: 7.53,
+      },
+    });
+    setYuanhengToolStatus("codex", {
+      configured: true,
+      model: "k3",
+    });
+    server.use(
+      http.post("http://tauri.local/get_codex_session_bridge_status", () =>
+        HttpResponse.json({
+          running: true,
+          endpoint: "ws://127.0.0.1:63536",
+          connectedTerminals: 1,
+          appliedTerminals: 0,
+          pendingTerminals: 1,
+          model: "k3",
+          reasoningEffort: "high",
+        }),
+      ),
+    );
+
+    const { default: App } = await import("@/App");
+    renderApp(App);
+
+    expect(
+      await screen.findByText("待 1 个终端下一条消息应用"),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByText("直接调整模型、令牌分组和推理等级"),
+    ).toBeInTheDocument();
+    // 首页新模块：焦点工具卡、今日速览统计带、账号用量
+    expect(screen.getByText("当前工具")).toBeInTheDocument();
+    expect(screen.getByText("一键切换")).toBeInTheDocument();
+    expect(screen.getByText("今日请求")).toBeInTheDocument();
+    expect(screen.getByText("缓存命中率")).toBeInTheDocument();
+    expect(screen.getByText("账号用量")).toBeInTheDocument();
+    expect(screen.getByText("128")).toBeInTheDocument();
+    expect(screen.getByText("12.5 万")).toBeInTheDocument();
+    expect(screen.getByText("$3.45")).toBeInTheDocument();
+    expect(screen.getByText("42%")).toBeInTheDocument();
+  });
+
+  it("keeps OpenClaw as the home focus tool", async () => {
+    setSettings({ firstRunNoticeConfirmed: true });
+    localStorage.setItem("yuanheng-switch-last-app", "openclaw");
+    setYuanhengConnection({
+      connected: true,
+      userId: "1024",
+      models: ["gpt-5.6"],
+    });
+
+    const { default: App } = await import("@/App");
+    renderApp(App);
+
+    const currentTool = await screen.findByText("当前工具");
+    expect(currentTool.parentElement).toHaveTextContent("OpenClaw");
+    expect(currentTool.parentElement).not.toHaveTextContent("Claude");
+  });
+
+  it("summarizes HTML announcements instead of rendering CSS source", async () => {
+    setSettings({ firstRunNoticeConfirmed: true });
+    setYuanhengConnection({
+      connected: true,
+      userId: "1024",
+      announcement:
+        "<style>*{box-sizing:border-box}.notice{color:red}</style><div><h1>平台公告</h1><p>内部测试与加群福利。</p></div>",
+    });
+
+    const { default: App } = await import("@/App");
+    renderApp(App);
+
+    expect(
+      await screen.findByText("平台公告 · 内部测试与加群福利。"),
+    ).toBeInTheDocument();
+    expect(screen.queryByText(/box-sizing/)).not.toBeInTheDocument();
+  });
+
+  it("updates token group and reasoning directly from the workspace", async () => {
+    setSettings({ firstRunNoticeConfirmed: true });
+    setYuanhengConnection({
+      connected: true,
+      userId: "1024",
+      models: ["gpt-5.6-sol"],
+      groups: [
+        { id: "svip", description: "SVIP", ratio: 0.5 },
+        { id: "vip", description: "VIP", ratio: 0.8 },
+      ],
+      modelGroups: { "gpt-5.6-sol": ["svip", "vip"] },
+      reasoningLevels: {
+        "gpt-5.6-sol": ["low", "medium", "high"],
+      },
+    });
+    setYuanhengToolStatus("codex", {
+      configured: true,
+      model: "gpt-5.6-sol",
+      group: "svip",
+      reasoning: "medium",
+    });
+
+    const { default: App } = await import("@/App");
+    renderApp(App);
+
+    expect(
+      await screen.findByRole("heading", { name: "快捷控制台" }),
+    ).toBeInTheDocument();
+    const groupPicker = screen.getByLabelText("Codex 快捷令牌分组");
+    const reasoningPicker = screen.getByLabelText("Codex 快捷推理等级");
+
+    fireEvent.change(groupPicker, { target: { value: "vip" } });
+    await waitFor(() =>
+      expect(getConfiguredToolGroupCalls()).toContainEqual({ codex: "vip" }),
+    );
+
+    await waitFor(() => expect(reasoningPicker).toBeEnabled());
+    fireEvent.change(reasoningPicker, { target: { value: "high" } });
+    await waitFor(() =>
+      expect(getConfiguredToolReasoningCalls()).toContainEqual({
+        codex: "high",
+      }),
+    );
+  });
+
+  it("offers the Claude Desktop download when the app is not installed", async () => {
+    setSettings({ firstRunNoticeConfirmed: true });
+    let openedUrl = "";
+    server.use(
+      http.post("http://tauri.local/get_tool_versions", async ({ request }) => {
+        const { tools = [] } = (await request.json()) as { tools?: string[] };
+        return HttpResponse.json(
+          tools
+            .filter((name) => name !== "claude-desktop")
+            .map((name) => ({
+              name,
+              version: "1.0.0",
+              latest_version: "1.0.0",
+              error: null,
+              installed_but_broken: false,
+              env_type: "macos",
+              wsl_distro: null,
+            })),
+        );
+      }),
+      http.post("http://tauri.local/open_external", async ({ request }) => {
+        const { url } = (await request.json()) as { url: string };
+        openedUrl = url;
+        return HttpResponse.json(true);
+      }),
+    );
+
+    const { default: App } = await import("@/App");
+    renderApp(App);
+    await screen.findByRole("heading", { name: "工作台" });
+    fireEvent.click(screen.getByRole("button", { name: "工具管理" }));
+
+    const title = await screen.findByRole("heading", {
+      name: "Claude Desktop",
+    });
+    const card = title.closest("article");
+    expect(card).not.toBeNull();
+    expect(
+      within(card!).queryByLabelText("Claude Desktop 模型选择"),
+    ).not.toBeInTheDocument();
+
+    fireEvent.click(
+      within(card!).getByRole("button", {
+        name: "打开 Claude Desktop 官方下载页",
+      }),
+    );
+    await waitFor(() => expect(openedUrl).toBe("https://claude.ai/download"));
+    expect(toastSuccessMock).toHaveBeenCalledWith(
+      "已打开 Claude Desktop 官方下载页，安装完成后请刷新检测",
+    );
   });
 
   it("configures ChatGPT Desktop and WorkBuddy as desktop apps", async () => {
@@ -285,16 +560,18 @@ describe("App integration with MSW", () => {
     const { default: App } = await import("@/App");
     renderApp(App);
     await screen.findByRole("heading", {
-      name: "让需要的 AI 工具立即可用",
+      name: "工作台",
     });
-    fireEvent.click(screen.getByRole("button", { name: "AI 工具" }));
+    fireEvent.click(screen.getByRole("button", { name: "工具管理" }));
 
     fireEvent.click(await screen.findByLabelText("ChatGPT Desktop 模型选择"));
     fireEvent.change(screen.getByPlaceholderText("搜索网站可用模型..."), {
       target: { value: "k3" },
     });
     fireEvent.click(await screen.findByText("k3"));
-    expect(screen.getByLabelText("Codex 模型选择")).toHaveTextContent("k3");
+    expect(screen.getByLabelText("ChatGPT Desktop 模型选择")).toHaveTextContent(
+      "k3",
+    );
 
     fireEvent.click(
       screen.getByRole("button", { name: "配置 ChatGPT Desktop" }),
@@ -330,10 +607,10 @@ describe("App integration with MSW", () => {
     renderApp(App);
 
     await screen.findByRole("heading", {
-      name: "让需要的 AI 工具立即可用",
+      name: "工作台",
     });
-    fireEvent.click(screen.getByRole("button", { name: "AI 工具" }));
-    await screen.findByRole("heading", { name: "AI 工具" });
+    fireEvent.click(screen.getByRole("button", { name: "工具管理" }));
+    await screen.findByRole("heading", { name: "工具管理" });
 
     fireEvent.click(await screen.findByLabelText("Claude 模型选择"));
     fireEvent.change(screen.getByPlaceholderText("搜索网站可用模型..."), {
@@ -366,9 +643,9 @@ describe("App integration with MSW", () => {
     renderApp(App);
 
     await screen.findByRole("heading", {
-      name: "让需要的 AI 工具立即可用",
+      name: "工作台",
     });
-    fireEvent.click(screen.getByRole("button", { name: "AI 工具" }));
+    fireEvent.click(screen.getByRole("button", { name: "工具管理" }));
     fireEvent.click(await screen.findByLabelText("Claude Desktop 模型选择"));
     fireEvent.change(screen.getByPlaceholderText("搜索网站可用模型..."), {
       target: { value: "k3" },
@@ -426,9 +703,9 @@ describe("App integration with MSW", () => {
     const { default: App } = await import("@/App");
     renderApp(App);
     await screen.findByRole("heading", {
-      name: "让需要的 AI 工具立即可用",
+      name: "工作台",
     });
-    fireEvent.click(screen.getByRole("button", { name: "AI 工具" }));
+    fireEvent.click(screen.getByRole("button", { name: "工具管理" }));
 
     const groupPicker = await screen.findByLabelText("Claude 令牌分组");
     expect(screen.getByLabelText("Claude 模型选择")).toHaveTextContent(
@@ -464,9 +741,9 @@ describe("App integration with MSW", () => {
     renderApp(App);
 
     await screen.findByRole("heading", {
-      name: "让需要的 AI 工具立即可用",
+      name: "工作台",
     });
-    fireEvent.click(screen.getByRole("button", { name: "AI 工具" }));
+    fireEvent.click(screen.getByRole("button", { name: "工具管理" }));
     expect(
       await screen.findByText("Claude 组件下载已停滞"),
     ).toBeInTheDocument();
@@ -485,7 +762,7 @@ describe("App integration with MSW", () => {
     const { default: App } = await import("@/App");
     renderApp(App);
     await screen.findByRole("heading", {
-      name: "让需要的 AI 工具立即可用",
+      name: "工作台",
     });
 
     emitTauriEvent("deeplink-import", {

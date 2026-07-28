@@ -6,8 +6,8 @@
   "build": {
     "frontendDist": "../dist",
     "devUrl": "http://localhost:3000",
-    "beforeDevCommand": "pnpm run dev:renderer",
-    "beforeBuildCommand": "pnpm run build:renderer"
+    "beforeDevCommand": "pnpm run prepare:core:dev && pnpm run dev:renderer",
+    "beforeBuildCommand": "pnpm run prepare:core:release && pnpm run build:renderer"
   },
   "app": {
     "windows": [
@@ -37,6 +37,9 @@
     "active": true,
     "targets": "all",
     "createUpdaterArtifacts": true,
+    "externalBin": [
+      "binaries/yuanheng-core"
+    ],
     "icon": [
       "icons/32x32.png",
       "icons/128x128.png",

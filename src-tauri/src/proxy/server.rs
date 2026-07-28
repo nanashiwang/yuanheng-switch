@@ -17,6 +17,7 @@ use super::{
     types::*,
     ProxyError,
 };
+use crate::core_daemon::{CoreControl, ProxyAuthManagers};
 use crate::database::Database;
 use axum::{
     extract::DefaultBodyLimit,
@@ -46,8 +47,32 @@ pub struct ProxyState {
     pub codex_chat_history: Arc<CodexChatHistoryStore>,
     /// AppHandle，用于发射事件和更新托盘菜单
     pub app_handle: Option<tauri::AppHandle>,
+    /// 独立 Core 的管理通道；GUI 内嵌代理模式下为空。
+    pub core_control: Option<CoreControl>,
+    /// 独立 Core 直接持有认证管理器，避免依赖 Tauri AppHandle。
+    pub auth_managers: Option<ProxyAuthManagers>,
     /// 故障转移切换管理器
     pub failover_manager: Arc<FailoverSwitchManager>,
+}
+
+impl ProxyState {
+    pub async fn snapshot_status(&self) -> ProxyStatus {
+        let mut status = self.status.read().await.clone();
+        if let Some(start) = *self.start_time.read().await {
+            status.uptime_seconds = start.elapsed().as_secs();
+        }
+
+        let current_providers = self.current_providers.read().await;
+        status.active_targets = current_providers
+            .iter()
+            .map(|(app_type, (provider_id, provider_name))| ActiveTarget {
+                app_type: app_type.clone(),
+                provider_id: provider_id.clone(),
+                provider_name: provider_name.clone(),
+            })
+            .collect();
+        status
+    }
 }
 
 /// 代理HTTP服务器
@@ -65,6 +90,31 @@ impl ProxyServer {
         db: Arc<Database>,
         app_handle: Option<tauri::AppHandle>,
     ) -> Self {
+        Self::new_with_runtime(config, db, app_handle, None, None)
+    }
+
+    pub(crate) fn new_headless(
+        config: ProxyConfig,
+        db: Arc<Database>,
+        core_control: CoreControl,
+        auth_managers: ProxyAuthManagers,
+    ) -> Self {
+        Self::new_with_runtime(
+            config,
+            db,
+            None,
+            Some(core_control),
+            Some(auth_managers),
+        )
+    }
+
+    fn new_with_runtime(
+        config: ProxyConfig,
+        db: Arc<Database>,
+        app_handle: Option<tauri::AppHandle>,
+        core_control: Option<CoreControl>,
+        auth_managers: Option<ProxyAuthManagers>,
+    ) -> Self {
         // 创建共享的 ProviderRouter（熔断器状态将跨所有请求保持）
         let provider_router = Arc::new(ProviderRouter::new(db.clone()));
         // 创建故障转移切换管理器
@@ -80,6 +130,8 @@ impl ProxyServer {
             gemini_shadow: Arc::new(GeminiShadowStore::default()),
             codex_chat_history: Arc::new(CodexChatHistoryStore::default()),
             app_handle,
+            core_control,
+            auth_managers,
             failover_manager,
         };
 
@@ -255,25 +307,7 @@ impl ProxyServer {
     }
 
     pub async fn get_status(&self) -> ProxyStatus {
-        let mut status = self.state.status.read().await.clone();
-
-        // 计算运行时间
-        if let Some(start) = *self.state.start_time.read().await {
-            status.uptime_seconds = start.elapsed().as_secs();
-        }
-
-        // 从 current_providers HashMap 获取每个应用类型当前正在使用的 provider
-        let current_providers = self.state.current_providers.read().await;
-        status.active_targets = current_providers
-            .iter()
-            .map(|(app_type, (provider_id, provider_name))| ActiveTarget {
-                app_type: app_type.clone(),
-                provider_id: provider_id.clone(),
-                provider_name: provider_name.clone(),
-            })
-            .collect();
-
-        status
+        self.state.snapshot_status().await
     }
 
     /// 更新某个应用类型当前“目标供应商”（用于 UI 展示 active_targets）
@@ -288,11 +322,39 @@ impl ProxyServer {
         );
     }
 
+    pub async fn replace_active_targets(&self, targets: Vec<(String, String, String)>) {
+        let mut current_providers = self.state.current_providers.write().await;
+        current_providers.clear();
+        current_providers.extend(
+            targets
+                .into_iter()
+                .map(|(app_type, provider_id, provider_name)| {
+                    (app_type, (provider_id, provider_name))
+                }),
+        );
+    }
+
     fn build_router(&self) -> Router {
         Router::new()
             // 健康检查
             .route("/health", get(handlers::health_check))
             .route("/status", get(handlers::get_status))
+            .route(
+                "/__yuanheng/core/info",
+                get(handlers::get_core_info),
+            )
+            .route(
+                "/__yuanheng/core/reload",
+                post(handlers::reload_core),
+            )
+            .route(
+                "/__yuanheng/core/shutdown",
+                post(handlers::shutdown_core),
+            )
+            .route(
+                "/__yuanheng/core/reset-circuit-breaker",
+                post(handlers::reset_core_circuit_breaker),
+            )
             // Claude API (支持带前缀和不带前缀两种格式)
             .route("/v1/messages", post(handlers::handle_messages))
             .route("/claude/v1/messages", post(handlers::handle_messages))

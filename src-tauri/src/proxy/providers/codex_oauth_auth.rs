@@ -860,6 +860,11 @@ impl CodexOAuthManager {
         Ok(())
     }
 
+    /// 独立 Core 用于感知 Desktop 进程写入的账号变更。
+    pub fn reload_from_disk(&self) -> Result<(), CodexOAuthError> {
+        self.load_from_disk_sync()
+    }
+
     async fn save_to_disk(&self) -> Result<(), CodexOAuthError> {
         let accounts = self.accounts.read().await.clone();
         let default = self.resolve_default_account_id().await;
