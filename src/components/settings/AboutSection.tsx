@@ -16,6 +16,7 @@ import {
   Stethoscope,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { Switch } from "@/components/ui/switch";
 import {
   Select,
   SelectContent,
@@ -221,7 +222,6 @@ export function AboutSection({ isPortable }: AboutSectionProps) {
   const [isLoadingVersion, setIsLoadingVersion] = useState(
     () => appVersionCache === null,
   );
-  const [isDownloading, setIsDownloading] = useState(false);
   const [toolVersions, setToolVersions] = useState<ToolVersion[]>(
     () => toolVersionsCache?.data ?? [],
   );
@@ -238,8 +238,19 @@ export function AboutSection({ isPortable }: AboutSectionProps) {
   );
   const [showInstallCommands, setShowInstallCommands] = useState(false);
 
-  const { hasUpdate, updateInfo, checkUpdate, resetDismiss, isChecking } =
-    useUpdate();
+  const {
+    hasUpdate,
+    updateInfo,
+    checkUpdate,
+    resetDismiss,
+    isChecking,
+    isUpdating,
+    phase: updatePhase,
+    progress: updateProgress,
+    openUpdatePrompt,
+    autoCheckEnabled,
+    setAutoCheckEnabled,
+  } = useUpdate();
 
   const [wslShellByTool, setWslShellByTool] = useState<
     Record<string, WslShellPreference>
@@ -453,39 +464,8 @@ export function AboutSection({ isPortable }: AboutSectionProps) {
 
   const handleCheckUpdate = useCallback(async () => {
     if (hasUpdate) {
-      if (isPortable) {
-        try {
-          await settingsApi.checkUpdates();
-        } catch (error) {
-          console.error("[AboutSection] Portable update failed", error);
-        }
-        return;
-      }
-
-      setIsDownloading(true);
-      try {
-        resetDismiss();
-        const installed = await settingsApi.installUpdateAndRestart();
-        if (!installed) {
-          toast.success(t("settings.upToDate"), { closeButton: true });
-        }
-      } catch (error) {
-        console.error("[AboutSection] Update failed", error);
-        toast.error(t("settings.updateFailed"), {
-          description: extractErrorMessage(error) || undefined,
-          closeButton: true,
-        });
-        try {
-          await settingsApi.checkUpdates();
-        } catch (fallbackError) {
-          console.error(
-            "[AboutSection] Failed to open fallback updater",
-            fallbackError,
-          );
-        }
-      } finally {
-        setIsDownloading(false);
-      }
+      resetDismiss();
+      openUpdatePrompt();
       return;
     }
 
@@ -498,7 +478,7 @@ export function AboutSection({ isPortable }: AboutSectionProps) {
       console.error("[AboutSection] Check update failed", error);
       toast.error(t("settings.checkUpdateFailed"));
     }
-  }, [checkUpdate, hasUpdate, isPortable, resetDismiss, t]);
+  }, [checkUpdate, hasUpdate, openUpdatePrompt, resetDismiss, t]);
 
   const handleCopyInstallCommands = useCallback(async () => {
     try {
@@ -802,6 +782,13 @@ export function AboutSection({ isPortable }: AboutSectionProps) {
   const handleCancelUpgrade = useCallback(() => setPendingUpgrade(null), []);
 
   const displayVersion = version ?? t("common.unknown");
+  const updateProgressPercent =
+    updateProgress?.total && updateProgress.total > 0
+      ? Math.min(
+          100,
+          Math.round((updateProgress.downloaded / updateProgress.total) * 100),
+        )
+      : null;
 
   // 任一安装/升级进行中（批量或单工具）即视为忙碌：用于禁用所有操作按钮，
   // 避免并发触发多个 npm/pip 全局写入造成冲突。
@@ -905,10 +892,10 @@ export function AboutSection({ isPortable }: AboutSectionProps) {
               type="button"
               size="sm"
               onClick={handleCheckUpdate}
-              disabled={isChecking || isDownloading}
+              disabled={isChecking || isUpdating}
               className="h-8 gap-1.5 text-xs"
             >
-              {isDownloading ? (
+              {isUpdating ? (
                 <>
                   <Loader2 className="h-3.5 w-3.5 animate-spin" />
                   {t("settings.updating")}
@@ -953,6 +940,54 @@ export function AboutSection({ isPortable }: AboutSectionProps) {
             )}
           </motion.div>
         )}
+
+        {isUpdating && (
+          <div className="space-y-2 rounded-lg border border-emerald-500/20 bg-emerald-500/[0.05] px-4 py-3">
+            <div className="flex items-center justify-between text-xs">
+              <span className="flex items-center gap-2 font-medium">
+                <Loader2 className="h-3.5 w-3.5 animate-spin text-emerald-600" />
+                {updatePhase === "installing"
+                  ? t("settings.installingUpdate")
+                  : t("settings.downloadingUpdate")}
+              </span>
+              {updateProgressPercent !== null && (
+                <span className="tabular-nums text-muted-foreground">
+                  {updateProgressPercent}%
+                </span>
+              )}
+            </div>
+            <div className="h-1.5 overflow-hidden rounded-full bg-muted">
+              <div
+                className={
+                  updateProgressPercent === null
+                    ? "h-full w-1/3 animate-pulse rounded-full bg-emerald-500"
+                    : "h-full rounded-full bg-emerald-500 transition-[width] duration-200"
+                }
+                style={
+                  updateProgressPercent === null
+                    ? undefined
+                    : { width: `${updateProgressPercent}%` }
+                }
+              />
+            </div>
+          </div>
+        )}
+
+        <div className="flex items-center justify-between gap-4 border-t pt-4">
+          <div>
+            <p className="text-xs font-medium">
+              {t("settings.autoCheckUpdates")}
+            </p>
+            <p className="mt-0.5 text-[10px] text-muted-foreground">
+              {t("settings.autoCheckUpdatesHint")}
+            </p>
+          </div>
+          <Switch
+            checked={autoCheckEnabled}
+            onCheckedChange={setAutoCheckEnabled}
+            aria-label={t("settings.autoCheckUpdates")}
+          />
+        </div>
       </motion.div>
 
       <div className="space-y-3">

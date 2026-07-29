@@ -749,12 +749,7 @@ function App() {
                 >
                   <Settings className="h-4 w-4" />
                 </Button>
-                <UpdateBadge
-                  onClick={() => {
-                    setSettingsDefaultTab("about");
-                    navigate("settings");
-                  }}
-                />
+                <UpdateBadge />
               </div>
             </header>
 

@@ -1,5 +1,11 @@
 import { execFileSync } from "node:child_process";
-import { closeSync, copyFileSync, existsSync, mkdirSync, openSync } from "node:fs";
+import {
+  closeSync,
+  copyFileSync,
+  existsSync,
+  mkdirSync,
+  openSync,
+} from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -7,15 +13,20 @@ const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const cargoDir = join(root, "src-tauri");
 const profile = process.argv[2] === "release" ? "release" : "debug";
 const rustcInfo = execFileSync("rustc", ["-vV"], { encoding: "utf8" });
-const target = rustcInfo.match(/^host:\s*(.+)$/m)?.[1]?.trim();
+const hostTarget = rustcInfo.match(/^host:\s*(.+)$/m)?.[1]?.trim();
+const requestedTarget = process.env.YUANHENG_BUILD_TARGET?.trim();
+const target = requestedTarget || hostTarget;
 
 if (!target) {
   throw new Error("无法从 rustc -vV 获取目标三元组");
 }
 
-const executable = process.platform === "win32" ? "yuanheng-core.exe" : "yuanheng-core";
-const source = join(cargoDir, "target", profile, executable);
-const suffix = process.platform === "win32" ? ".exe" : "";
+const isWindowsTarget = target.includes("windows");
+const executable = isWindowsTarget ? "yuanheng-core.exe" : "yuanheng-core";
+const source = requestedTarget
+  ? join(cargoDir, "target", target, profile, executable)
+  : join(cargoDir, "target", profile, executable);
+const suffix = isWindowsTarget ? ".exe" : "";
 const destination = join(
   cargoDir,
   "binaries",
@@ -31,6 +42,9 @@ if (!existsSync(destination)) {
 const cargoArgs = ["build", "--bin", "yuanheng-core"];
 if (profile === "release") {
   cargoArgs.push("--release");
+}
+if (requestedTarget) {
+  cargoArgs.push("--target", target);
 }
 
 execFileSync("cargo", cargoArgs, {

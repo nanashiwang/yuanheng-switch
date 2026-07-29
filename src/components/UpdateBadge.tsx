@@ -9,9 +9,10 @@ interface UpdateBadgeProps {
 }
 
 export function UpdateBadge({ className = "", onClick }: UpdateBadgeProps) {
-  const { hasUpdate, updateInfo } = useUpdate();
+  const { hasUpdate, updateInfo, isDismissed, isUpdating, openUpdatePrompt } =
+    useUpdate();
   const { t } = useTranslation();
-  const isActive = hasUpdate && updateInfo;
+  const isActive = hasUpdate && updateInfo && !isDismissed;
   const title = isActive
     ? t("settings.updateAvailable", {
         version: updateInfo?.availableVersion ?? "",
@@ -29,14 +30,17 @@ export function UpdateBadge({ className = "", onClick }: UpdateBadgeProps) {
       size="icon"
       title={title}
       aria-label={title}
-      onClick={onClick}
+      disabled={isUpdating}
+      onClick={onClick ?? openUpdatePrompt}
       className={`
         relative h-8 w-8 rounded-full
         ${isActive ? "text-green-600 dark:text-green-400 hover:bg-green-50 dark:hover:bg-green-500/10" : "text-muted-foreground hover:bg-muted/60"}
         ${className}
       `}
     >
-      <ArrowUpCircle className="h-5 w-5" />
+      <ArrowUpCircle
+        className={`h-5 w-5 ${isUpdating ? "animate-pulse" : ""}`}
+      />
     </Button>
   );
 }
