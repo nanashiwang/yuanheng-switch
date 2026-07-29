@@ -146,6 +146,10 @@ export const yuanhengApi = {
     return invoke("disconnect_yuanheng");
   },
 
+  openTopup(): Promise<boolean> {
+    return invoke("open_yuanheng_topup");
+  },
+
   getToolStatuses(): Promise<YuanhengToolStatus[]> {
     return invoke("get_yuanheng_tool_statuses");
   },

@@ -4,10 +4,12 @@ import {
   Bot,
   Boxes,
   ChevronRight,
+  CreditCard,
   ExternalLink,
   Gauge,
   Globe,
   Network,
+  LoaderCircle,
   Settings,
   UserRound,
   WalletCards,
@@ -15,6 +17,7 @@ import {
 } from "lucide-react";
 import appIcon from "@/assets/icons/app-icon.png";
 import { YUANHENG_WEBSITE_URL } from "@/config/yuanhengBrand";
+import { useYuanhengTopup } from "@/hooks/useYuanhengTopup";
 import { settingsApi } from "@/lib/api";
 import type { YuanhengConnectionStatus } from "@/lib/api/yuanheng";
 import { cn } from "@/lib/utils";
@@ -53,6 +56,7 @@ export function DesktopSidebar({
     connection?.account?.username ||
     (connection?.userId ? `用户 ${connection.userId}` : "元衡用户");
   const balance = connection?.account?.remainingUsd ?? 0;
+  const { isOpening, openTopup } = useYuanhengTopup();
 
   const handleOpenWebsite = () => {
     void settingsApi.openExternal(YUANHENG_WEBSITE_URL).catch((error) => {
@@ -119,36 +123,52 @@ export function DesktopSidebar({
       </nav>
 
       <div className="mt-auto space-y-2">
-        <button
-          type="button"
-          onClick={() => onNavigate("network")}
-          className="group w-full rounded-xl border border-white/[0.09] bg-white/[0.055] p-3 text-left transition-colors hover:bg-white/[0.09]"
-          aria-label="账号与余额"
-        >
-          <div className="flex items-center gap-2.5">
-            <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-[#d69554]/15 text-[#e3aa70]">
-              <UserRound className="h-4 w-4" />
-            </span>
-            <span className="min-w-0 flex-1">
-              <span className="block truncate text-[11px] font-semibold text-slate-200">
-                {accountName}
+        <div className="relative w-full rounded-xl border border-white/[0.09] bg-white/[0.055] text-left transition-colors hover:bg-white/[0.075]">
+          <button
+            type="button"
+            onClick={() => onNavigate("network")}
+            className="group w-full p-3 text-left"
+            aria-label="账号与余额"
+          >
+            <span className="flex items-center gap-2.5">
+              <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-[#d69554]/15 text-[#e3aa70]">
+                <UserRound className="h-4 w-4" />
               </span>
-              <span className="mt-0.5 flex items-center gap-1.5 text-[9px] text-emerald-400/80">
-                <span className="h-1.5 w-1.5 rounded-full bg-emerald-400" />
-                已登录
+              <span className="min-w-0 flex-1">
+                <span className="block truncate text-[11px] font-semibold text-slate-200">
+                  {accountName}
+                </span>
+                <span className="mt-0.5 flex items-center gap-1.5 text-[9px] text-emerald-400/80">
+                  <span className="h-1.5 w-1.5 rounded-full bg-emerald-400" />
+                  已登录
+                </span>
               </span>
+              <ChevronRight className="h-3.5 w-3.5 text-slate-600 transition-colors group-hover:text-slate-300" />
             </span>
-            <ChevronRight className="h-3.5 w-3.5 text-slate-600 transition-colors group-hover:text-slate-300" />
-          </div>
-          <div className="mt-3 border-t border-white/[0.07] pt-2.5">
-            <span className="flex items-center gap-1.5 text-[9px] text-slate-500">
-              <WalletCards className="h-3 w-3" /> 可用余额
+            <span className="mt-3 block border-t border-white/[0.07] pt-2.5">
+              <span className="flex items-center gap-1.5 text-[9px] text-slate-500">
+                <WalletCards className="h-3 w-3" /> 可用余额
+              </span>
+              <strong className="mt-0.5 block pr-16 font-display text-[17px] font-semibold tracking-[-0.02em] text-white">
+                ${balance.toFixed(2)}
+              </strong>
             </span>
-            <strong className="mt-0.5 block font-display text-[17px] font-semibold tracking-[-0.02em] text-white">
-              ${balance.toFixed(2)}
-            </strong>
-          </div>
-        </button>
+          </button>
+          <button
+            type="button"
+            onClick={() => void openTopup()}
+            disabled={isOpening || !connection?.connected}
+            className="absolute bottom-3 right-3 inline-flex h-7 items-center gap-1 rounded-md bg-[#d69554] px-2.5 text-[10px] font-semibold text-[#19120b] transition-colors hover:bg-[#e3aa70] disabled:cursor-wait disabled:opacity-50"
+            aria-label="充值"
+          >
+            {isOpening ? (
+              <LoaderCircle className="h-3 w-3 animate-spin" />
+            ) : (
+              <CreditCard className="h-3 w-3" />
+            )}
+            充值
+          </button>
+        </div>
 
         <button
           type="button"

@@ -129,6 +129,7 @@ export const handlers = [
       warnings: [],
     });
   }),
+  http.post(`${TAURI_ENDPOINT}/open_yuanheng_topup`, () => success(true)),
   http.post(`${TAURI_ENDPOINT}/get_yuanheng_tool_statuses`, () =>
     success(getYuanhengToolStatuses()),
   ),

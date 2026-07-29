@@ -4,7 +4,9 @@ use std::time::{Duration, SystemTime, UNIX_EPOCH};
 use reqwest::header::{HeaderMap, COOKIE, SET_COOKIE};
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Map, Value};
-use tauri::State;
+use tauri::webview::{Cookie, NewWindowResponse};
+use tauri::{AppHandle, Emitter, Manager, State, WebviewUrl, WebviewWindowBuilder, WindowEvent};
+use tauri_plugin_opener::OpenerExt;
 use toml_edit::DocumentMut;
 
 use crate::app_config::AppType;
@@ -16,6 +18,9 @@ use crate::store::AppState;
 
 const BASE_URL: &str = "https://cn.meta-api.vip";
 const OPENAI_BASE_URL: &str = "https://cn.meta-api.vip/v1";
+const TOPUP_URL: &str = "https://cn.meta-api.vip/console/topup";
+const TOPUP_WINDOW_LABEL: &str = "yuanheng-topup";
+const TOPUP_CLOSED_EVENT: &str = "yuanheng-topup-closed";
 pub(crate) const MANAGED_PROVIDER_ID: &str = "yuanheng-managed";
 const TOKEN_KEY: &str = "yuanheng_access_token";
 const USER_ID_KEY: &str = "yuanheng_user_id";
@@ -441,6 +446,23 @@ fn extract_cookie(headers: &HeaderMap, cookie_name: &str) -> Option<String> {
             (name == cookie_name && !value.is_empty()).then(|| format!("{name}={value}"))
         })
         .last()
+}
+
+fn session_cookie_for_webview(raw: &str) -> Result<Cookie<'static>, String> {
+    let (name, value) = raw
+        .trim()
+        .split_once('=')
+        .ok_or_else(|| "元衡登录 Cookie 格式无效，请重新登录".to_string())?;
+    if name != "session" || value.is_empty() {
+        return Err("元衡登录状态无效，请重新登录".to_string());
+    }
+
+    let mut cookie = Cookie::new(name.to_string(), value.to_string());
+    cookie.set_domain("cn.meta-api.vip");
+    cookie.set_path("/");
+    cookie.set_secure(true);
+    cookie.set_http_only(true);
+    Ok(cookie)
 }
 
 fn parse_auth_response(value: &Value) -> Result<(bool, Option<String>), String> {
@@ -2966,7 +2988,123 @@ pub async fn rotate_yuanheng_device_token(
 }
 
 #[tauri::command]
-pub fn disconnect_yuanheng(state: State<'_, AppState>) -> Result<YuanhengDisconnectResult, String> {
+pub async fn open_yuanheng_topup(
+    app: AppHandle,
+    state: State<'_, AppState>,
+) -> Result<bool, String> {
+    let connection = read_cached_status(&state)?;
+    if !connection.connected {
+        return Err("请先登录元衡账号".to_string());
+    }
+
+    let session_cookie = state
+        .db
+        .get_setting(SESSION_COOKIE_KEY)
+        .map_err(|e| e.to_string())?
+        .unwrap_or_default();
+    let user_id = state
+        .db
+        .get_setting(USER_ID_KEY)
+        .map_err(|e| e.to_string())?
+        .unwrap_or_default();
+    if session_cookie.is_empty() || user_id.is_empty() {
+        return Err("元衡登录状态不完整，请重新登录".to_string());
+    }
+
+    // 打开钱包前先验证会话，并只把页面启动所需的最小用户信息写入隔离 WebView。
+    let user_value = fetch_json(
+        &yuanheng_client()?,
+        &format!("{BASE_URL}/api/user/self"),
+        Some(&session_cookie),
+        Some(&user_id),
+    )
+    .await?;
+    ensure_api_success(&user_value, "元衡登录状态已失效")?;
+    let user_data = user_value
+        .get("data")
+        .and_then(Value::as_object)
+        .ok_or_else(|| "元衡账号信息不完整".to_string())?;
+    let user_seed = json!({
+        "id": user_data.get("id").cloned().unwrap_or_else(|| json!(user_id)),
+        "username": user_data
+            .get("username")
+            .cloned()
+            .unwrap_or_else(|| json!(connection.account.as_ref().map(|item| item.username.clone()).unwrap_or_default())),
+        "role": user_data.get("role").cloned().unwrap_or_else(|| json!(1)),
+    });
+    let user_seed_json = serde_json::to_string(&user_seed).map_err(|e| e.to_string())?;
+    let user_seed_literal = serde_json::to_string(&user_seed_json).map_err(|e| e.to_string())?;
+    let init_script = format!(
+        r#"if (window.location.origin === {base_origin}) {{
+          window.localStorage.setItem("user", {user_seed});
+        }}"#,
+        base_origin = serde_json::to_string(BASE_URL).map_err(|e| e.to_string())?,
+        user_seed = user_seed_literal,
+    );
+    let cookie = session_cookie_for_webview(&session_cookie)?;
+    let topup_url = TOPUP_URL
+        .parse()
+        .map_err(|e| format!("充值地址无效: {e}"))?;
+
+    if let Some(window) = app.get_webview_window(TOPUP_WINDOW_LABEL) {
+        window.set_cookie(cookie).map_err(|e| e.to_string())?;
+        window.navigate(topup_url).map_err(|e| e.to_string())?;
+        window.show().map_err(|e| e.to_string())?;
+        window.set_focus().map_err(|e| e.to_string())?;
+        return Ok(true);
+    }
+
+    let opener_app = app.clone();
+    let window = WebviewWindowBuilder::new(
+        &app,
+        TOPUP_WINDOW_LABEL,
+        WebviewUrl::External(
+            "about:blank"
+                .parse()
+                .map_err(|e| format!("初始化充值窗口失败: {e}"))?,
+        ),
+    )
+    .title("元衡充值")
+    .inner_size(1080.0, 760.0)
+    .min_inner_size(860.0, 620.0)
+    .center()
+    .resizable(true)
+    .visible(false)
+    .incognito(true)
+    .initialization_script(init_script)
+    .on_new_window(move |url, _| {
+        if matches!(url.scheme(), "http" | "https") {
+            if let Err(error) = opener_app.opener().open_url(url.as_str(), None::<String>) {
+                log::error!("打开支付页面失败: {error}");
+            }
+        }
+        NewWindowResponse::Deny
+    })
+    .build()
+    .map_err(|e| format!("创建充值窗口失败: {e}"))?;
+
+    window.set_cookie(cookie).map_err(|e| e.to_string())?;
+    window.navigate(topup_url).map_err(|e| e.to_string())?;
+
+    let event_app = app.clone();
+    window.on_window_event(move |event| {
+        if matches!(event, WindowEvent::Destroyed) {
+            let _ = event_app.emit(TOPUP_CLOSED_EVENT, ());
+        }
+    });
+    window.show().map_err(|e| e.to_string())?;
+    window.set_focus().map_err(|e| e.to_string())?;
+    Ok(true)
+}
+
+#[tauri::command]
+pub fn disconnect_yuanheng(
+    app: AppHandle,
+    state: State<'_, AppState>,
+) -> Result<YuanhengDisconnectResult, String> {
+    if let Some(window) = app.get_webview_window(TOPUP_WINDOW_LABEL) {
+        let _ = window.close();
+    }
     disconnect_yuanheng_inner(&state)
 }
 
@@ -2976,6 +3114,25 @@ mod tests {
     use crate::database::Database;
     use serial_test::serial;
     use std::sync::Arc;
+
+    #[test]
+    fn creates_session_cookie_for_isolated_webview() {
+        let cookie = session_cookie_for_webview("session=abc123").unwrap();
+
+        assert_eq!(cookie.name(), "session");
+        assert_eq!(cookie.value(), "abc123");
+        assert_eq!(cookie.domain(), Some("cn.meta-api.vip"));
+        assert_eq!(cookie.path(), Some("/"));
+        assert_eq!(cookie.secure(), Some(true));
+        assert_eq!(cookie.http_only(), Some(true));
+    }
+
+    #[test]
+    fn rejects_invalid_session_cookie_for_webview() {
+        assert!(session_cookie_for_webview("").is_err());
+        assert!(session_cookie_for_webview("token=abc123").is_err());
+        assert!(session_cookie_for_webview("session=").is_err());
+    }
 
     struct TestHome {
         _dir: tempfile::TempDir,

@@ -1,5 +1,11 @@
 import { useState } from "react";
-import { Activity, History, WalletCards } from "lucide-react";
+import {
+  Activity,
+  CreditCard,
+  History,
+  LoaderCircle,
+  WalletCards,
+} from "lucide-react";
 import type { AppId } from "@/lib/api";
 import { APP_ICON_MAP } from "@/config/appConfig";
 import { UsageDashboard } from "@/components/usage/UsageDashboard";
@@ -13,6 +19,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { useYuanhengConnection } from "@/lib/query/yuanheng";
+import { useYuanhengTopup } from "@/hooks/useYuanhengTopup";
 import { PageHeader } from "./PageHeader";
 
 interface UsageCenterProps {
@@ -40,6 +47,7 @@ export function UsageCenter({
 }: UsageCenterProps) {
   const [tab, setTab] = useState("usage");
   const { data: connection } = useYuanhengConnection();
+  const { isOpening, openTopup } = useYuanhengTopup();
   const sessionApp = SESSION_APPS.includes(activeApp) ? activeApp : "claude";
 
   return (
@@ -51,12 +59,25 @@ export function UsageCenter({
           description="本地请求、会话历史和元衡余额集中在同一处查看。"
           actions={
             connection?.connected ? (
-              <div className="flex h-9 items-center gap-2 rounded-lg border bg-card px-3 text-[11px]">
+              <div className="flex h-9 items-center gap-2 rounded-lg border bg-card pl-3 pr-1 text-[11px]">
                 <WalletCards className="h-3.5 w-3.5 text-primary" />
                 元衡余额
                 <strong>
                   ${connection.account?.remainingUsd.toFixed(2) ?? "0.00"}
                 </strong>
+                <button
+                  type="button"
+                  onClick={() => void openTopup()}
+                  disabled={isOpening}
+                  className="ml-1 inline-flex h-7 items-center gap-1 rounded-md bg-primary px-2.5 font-semibold text-primary-foreground transition-colors hover:bg-primary/90 disabled:cursor-wait disabled:opacity-70"
+                >
+                  {isOpening ? (
+                    <LoaderCircle className="h-3 w-3 animate-spin" />
+                  ) : (
+                    <CreditCard className="h-3 w-3" />
+                  )}
+                  充值
+                </button>
               </div>
             ) : undefined
           }

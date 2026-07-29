@@ -295,6 +295,12 @@ function App() {
     },
   );
 
+  useTauriEvent<null | undefined>("yuanheng-topup-closed", async () => {
+    await queryClient.invalidateQueries({
+      queryKey: ["yuanheng", "connection"],
+    });
+  });
+
   useEffect(() => {
     const checkEnvironment = async () => {
       try {
