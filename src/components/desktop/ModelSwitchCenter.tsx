@@ -1,8 +1,10 @@
 import {
+  AlertTriangle,
   ArrowRight,
   CheckCircle2,
   Loader2,
   Play,
+  RefreshCw,
   Settings2,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -29,6 +31,9 @@ export function ModelSwitchCenter({
 }: ModelSwitchCenterProps) {
   const {
     connection,
+    bootstrapPhase,
+    bootstrapRefreshing,
+    retryBootstrap,
     rows,
     models,
     groups,
@@ -58,6 +63,68 @@ export function ModelSwitchCenter({
     );
   }
 
+  if (bootstrapPhase === "loading") {
+    return (
+      <section
+        className="flex min-h-40 flex-col rounded-2xl border bg-card p-4 shadow-sm"
+        aria-label="正在检测本机工具"
+        aria-busy="true"
+      >
+        <div className="flex items-center justify-between px-1 pb-3">
+          <div>
+            <h2 className="font-display text-base font-semibold">快捷控制台</h2>
+            <p className="mt-0.5 text-[11px] text-muted-foreground">
+              正在读取本机工具与配置状态
+            </p>
+          </div>
+          <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
+        </div>
+        <div className="space-y-2" aria-hidden>
+          {[0, 1].map((item) => (
+            <div
+              key={item}
+              className="animate-pulse rounded-xl border bg-background/60 p-3"
+            >
+              <div className="flex items-center gap-2.5">
+                <span className="h-8 w-8 rounded-lg bg-muted" />
+                <div className="space-y-1.5">
+                  <div className="h-2.5 w-20 rounded-full bg-muted" />
+                  <div className="h-2 w-28 rounded-full bg-muted/70" />
+                </div>
+              </div>
+              <div className="mt-2.5 grid gap-2 sm:grid-cols-3">
+                <div className="h-8 rounded-md bg-muted/70" />
+                <div className="h-8 rounded-md bg-muted/70" />
+                <div className="h-8 rounded-md bg-muted/70" />
+              </div>
+            </div>
+          ))}
+        </div>
+      </section>
+    );
+  }
+
+  if (bootstrapPhase === "error") {
+    return (
+      <section className="flex min-h-40 flex-col items-center justify-center gap-2 rounded-2xl border bg-card p-6 text-center shadow-sm">
+        <AlertTriangle className="h-5 w-5 text-amber-500" />
+        <p className="text-[13px] font-medium">本机工具检测失败</p>
+        <p className="text-[11px] text-muted-foreground">
+          检测失败不会再显示成“未安装”，请重新检测。
+        </p>
+        <Button
+          variant="outline"
+          size="sm"
+          className="mt-1"
+          onClick={() => void retryBootstrap()}
+        >
+          <RefreshCw className="h-3.5 w-3.5" />
+          重新检测
+        </Button>
+      </section>
+    );
+  }
+
   return (
     <section className="flex flex-col rounded-2xl border bg-card p-4 shadow-sm">
       <div className="flex items-center justify-between px-1 pb-3">
@@ -67,12 +134,18 @@ export function ModelSwitchCenter({
             直接调整模型、令牌分组和推理等级
           </p>
         </div>
+        {bootstrapRefreshing && (
+          <Loader2
+            className="ml-auto h-3.5 w-3.5 animate-spin text-muted-foreground"
+            aria-label="正在核验工具状态"
+          />
+        )}
         <Button variant="ghost" size="sm" onClick={onOpenTools}>
           安装与维护 <ArrowRight className="h-3.5 w-3.5" />
         </Button>
       </div>
 
-      {rows.length === 0 ? (
+      {bootstrapPhase === "empty" || rows.length === 0 ? (
         <div className="flex min-h-32 flex-col items-center justify-center gap-3 rounded-xl border border-dashed text-center">
           <p className="text-[12px] text-muted-foreground">
             未检测到已安装的 AI 工具

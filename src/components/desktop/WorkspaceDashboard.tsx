@@ -100,7 +100,11 @@ export function WorkspaceDashboard({
       )}
 
       <div className="grid animate-rise-in items-start gap-4 lg:grid-cols-[1.58fr_1fr]">
-        <FocusToolCard switcher={switcher} focusApp={focusApp} />
+        <FocusToolCard
+          switcher={switcher}
+          focusApp={focusApp}
+          onOpenTools={() => onNavigate("tools")}
+        />
         <AccountUsageCard onOpenUsage={() => onNavigate("usage")} />
       </div>
 

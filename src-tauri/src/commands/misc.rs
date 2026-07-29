@@ -194,6 +194,43 @@ pub async fn get_tool_versions(
     Ok(futures::future::join_all(tasks).await)
 }
 
+/// 仅探测本机工具，不访问 npm、GitHub 或 PyPI。
+///
+/// 首页只需要确认工具是否已经安装；将远程版本查询拆开后，断网或上游响应慢时
+/// 也不会阻塞首屏工具卡片。
+#[tauri::command]
+pub async fn get_installed_tool_versions(
+    tools: Option<Vec<String>>,
+    wsl_shell_by_tool: Option<HashMap<String, WslShellPreferenceInput>>,
+) -> Result<Vec<ToolVersion>, String> {
+    let requested: Vec<&str> = if let Some(tools) = tools.as_ref() {
+        let set: std::collections::HashSet<&str> = tools.iter().map(|s| s.as_str()).collect();
+        VALID_VERSION_TOOLS
+            .iter()
+            .copied()
+            .filter(|t| set.contains(t))
+            .collect()
+    } else {
+        VALID_VERSION_TOOLS.to_vec()
+    };
+
+    tokio::task::spawn_blocking(move || {
+        requested
+            .into_iter()
+            .map(|tool| {
+                let pref = wsl_shell_by_tool.as_ref().and_then(|m| m.get(tool));
+                get_single_local_tool_version_impl(
+                    tool,
+                    pref.and_then(|p| p.wsl_shell.as_deref()),
+                    pref.and_then(|p| p.wsl_shell_flag.as_deref()),
+                )
+            })
+            .collect()
+    })
+    .await
+    .map_err(|e| format!("local tool probe task join error: {e}"))
+}
+
 #[tauri::command]
 pub async fn run_tool_lifecycle_action(
     tools: Vec<String>,
@@ -819,8 +856,8 @@ fn desktop_app_version(tool: &str) -> ToolVersion {
     }
 }
 
-/// 获取单个工具的版本信息（内部实现）
-async fn get_single_tool_version_impl(
+/// 获取单个工具的本地版本信息，不访问远程版本源。
+fn get_single_local_tool_version_impl(
     tool: &str,
     wsl_shell: Option<&str>,
     wsl_shell_flag: Option<&str>,
@@ -837,10 +874,6 @@ async fn get_single_tool_version_impl(
     // 判断该工具的运行环境 & WSL distro（如有）
     let (env_type, wsl_distro) = tool_env_type_and_wsl_distro(tool);
 
-    // 使用全局 HTTP 客户端（已包含代理配置）
-    let client = crate::proxy::http_client::get();
-
-    // 1. 获取本地版本
     let probe = if let Some(distro) = wsl_distro.as_deref() {
         try_get_version_wsl(tool, distro, wsl_shell, wsl_shell_flag)
     } else {
@@ -866,10 +899,35 @@ async fn get_single_tool_version_impl(
         ShellProbe::NotFound(e) => (None, Some(e), false),
     };
 
-    // 2. 获取远程最新版本（npm 工具在本地领先 latest 时会按预发布通道补查，见
+    ToolVersion {
+        name: tool.to_string(),
+        version: local_version,
+        latest_version: None,
+        error: local_error,
+        installed_but_broken,
+        env_type,
+        wsl_distro,
+    }
+}
+
+/// 获取单个工具的完整版本信息（本地版本 + 远程最新版）。
+async fn get_single_tool_version_impl(
+    tool: &str,
+    wsl_shell: Option<&str>,
+    wsl_shell_flag: Option<&str>,
+) -> ToolVersion {
+    let mut result = get_single_local_tool_version_impl(tool, wsl_shell, wsl_shell_flag);
+    if matches!(tool, "claude-desktop" | "chatgpt-desktop" | "workbuddy") {
+        return result;
+    }
+
+    // 使用全局 HTTP 客户端（已包含代理配置）
+    let client = crate::proxy::http_client::get();
+
+    // 获取远程最新版本（npm 工具在本地领先 latest 时会按预发布通道补查，见
     //    fetch_npm_latest_for_tool / npm_prerelease_tags）
-    let local = local_version.as_deref();
-    let latest_version = match tool {
+    let local = result.version.as_deref();
+    result.latest_version = match tool {
         "claude" => {
             fetch_npm_latest_for_tool(&client, "@anthropic-ai/claude-code", tool, local).await
         }
@@ -889,16 +947,7 @@ async fn get_single_tool_version_impl(
         "hermes" => fetch_pypi_latest_version(&client, "hermes-agent").await,
         _ => None,
     };
-
-    ToolVersion {
-        name: tool.to_string(),
-        version: local_version,
-        latest_version,
-        error: local_error,
-        installed_but_broken,
-        env_type,
-        wsl_distro,
-    }
+    result
 }
 
 /// 该工具在 npm 上的预发布通道 tag(靠前者优先)。仅当本地版本已**严格领先**

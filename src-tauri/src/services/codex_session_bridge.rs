@@ -751,10 +751,13 @@ experimental_bearer_token = "secret"
                     .to_string(),
                 r#"model_providers.yuanheng.wire_api="responses""#.to_string(),
                 format!(
-                    r#"model_catalog_json="{}""#,
-                    temp.path()
-                        .join("yuanheng-terminal-model-catalog.json")
-                        .display()
+                    "model_catalog_json={}",
+                    toml::Value::String(
+                        temp.path()
+                            .join("yuanheng-terminal-model-catalog.json")
+                            .to_string_lossy()
+                            .into_owned()
+                    )
                 )
             ]
         );

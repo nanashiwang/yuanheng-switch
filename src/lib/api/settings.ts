@@ -30,6 +30,16 @@ export interface WebDavSyncResult {
   status: string;
 }
 
+export interface ToolVersionInfo {
+  name: string;
+  version: string | null;
+  latest_version: string | null;
+  error: string | null;
+  installed_but_broken: boolean;
+  env_type: "windows" | "wsl" | "macos" | "linux" | "unknown";
+  wsl_distro: string | null;
+}
+
 export const settingsApi = {
   async get(): Promise<Settings> {
     return await invoke("get_settings");
@@ -239,18 +249,22 @@ export const settingsApi = {
       string,
       { wslShell?: string | null; wslShellFlag?: string | null }
     >,
-  ): Promise<
-    Array<{
-      name: string;
-      version: string | null;
-      latest_version: string | null;
-      error: string | null;
-      installed_but_broken: boolean;
-      env_type: "windows" | "wsl" | "macos" | "linux" | "unknown";
-      wsl_distro: string | null;
-    }>
-  > {
+  ): Promise<ToolVersionInfo[]> {
     return await invoke("get_tool_versions", { tools, wslShellByTool });
+  },
+
+  /** 仅检测本机工具，不等待远程版本源。 */
+  async getInstalledToolVersions(
+    tools?: string[],
+    wslShellByTool?: Record<
+      string,
+      { wslShell?: string | null; wslShellFlag?: string | null }
+    >,
+  ): Promise<ToolVersionInfo[]> {
+    return await invoke("get_installed_tool_versions", {
+      tools,
+      wslShellByTool,
+    });
   },
 
   async runToolLifecycleAction(

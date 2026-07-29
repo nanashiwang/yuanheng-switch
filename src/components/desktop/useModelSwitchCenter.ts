@@ -26,6 +26,8 @@ export const providerIconOf = (app: YuanhengToolId) =>
       ? "claude"
       : app;
 
+export type ModelSwitchBootstrapPhase = "loading" | "ready" | "empty" | "error";
+
 /**
  * 首页模型切换的共享状态：焦点卡与全部工具列表共用一份选择/提交逻辑，
  * 保证两处切换模型后显示一致。
@@ -37,10 +39,12 @@ export function useModelSwitchCenter() {
   const statuses = useYuanhengToolStatuses();
   const configure = useConfigureYuanhengTools();
   const codexBridge = useCodexSessionBridgeStatus();
-  const versions = useQuery({
-    queryKey: ["desktop", "tool-versions"],
+  const inventory = useQuery({
+    queryKey: ["desktop", "tool-inventory"],
     queryFn: () =>
-      settingsApi.getToolVersions(Object.values(TOOL_VERSION_TARGETS)),
+      settingsApi.getInstalledToolVersions(Object.values(TOOL_VERSION_TARGETS)),
+    retry: false,
+    refetchOnWindowFocus: true,
   });
   const [models, setModels] = useState<Partial<Record<YuanhengToolId, string>>>(
     {},
@@ -58,8 +62,8 @@ export function useModelSwitchCenter() {
   const operationSequence = useRef(0);
 
   const versionMap = useMemo(
-    () => new Map((versions.data ?? []).map((item) => [item.name, item])),
-    [versions.data],
+    () => new Map((inventory.data ?? []).map((item) => [item.name, item])),
+    [inventory.data],
   );
   const statusMap = useMemo(
     () => new Map((statuses.data ?? []).map((item) => [item.app, item])),
@@ -121,6 +125,22 @@ export function useModelSwitchCenter() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [statusMap, versionMap],
   );
+
+  const hasInventory = inventory.data !== undefined;
+  const hasStatuses = statuses.data !== undefined;
+  const bootstrapPhase: ModelSwitchBootstrapPhase =
+    !hasInventory || !hasStatuses
+      ? (!hasInventory && inventory.isError) ||
+        (!hasStatuses && statuses.isError)
+        ? "error"
+        : "loading"
+      : rows.length > 0
+        ? "ready"
+        : "empty";
+
+  const retryBootstrap = async () => {
+    await Promise.all([inventory.refetch(), statuses.refetch()]);
+  };
 
   const refreshModels = () => {
     if (!connection?.connected || refreshConnection.isPending) return;
@@ -347,6 +367,9 @@ export function useModelSwitchCenter() {
 
   return {
     connection,
+    bootstrapPhase,
+    bootstrapRefreshing: inventory.isFetching || statuses.isFetching,
+    retryBootstrap,
     rows,
     models,
     groups,

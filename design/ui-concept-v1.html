@@ -1,0 +1,1729 @@
+<!doctype html>
+<html lang="zh-CN" data-theme="light">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>元衡 Switch — UI 概念原型</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Noto+Serif+SC:wght@500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap"
+      rel="stylesheet"
+    />
+    <style>
+      /* ============================================================
+   元衡 Switch · 设计概念原型
+   方向：现代简约 · 东方计量感 · Linear/Raycast 级精度
+   ============================================================ */
+
+      :root {
+        /* —— 浅色模式 · 宣纸白 —— */
+        --bg-app: #f6f5f0;
+        --bg-surface: #ffffff;
+        --bg-sunken: #eeece4;
+        --bg-sidebar: #101816;
+        --bg-hover: rgba(15, 107, 92, 0.06);
+
+        --text-primary: #131d1a;
+        --text-secondary: #5a6b66;
+        --text-tertiary: #8a9893;
+        --text-on-dark: #e8eeec;
+        --text-on-dark-dim: #7e8f8a;
+
+        --brand: #0f6b5c;
+        --brand-strong: #0a4f44;
+        --brand-soft: #e2efea;
+        --amber: #d9932c;
+        --amber-soft: #f7ebd7;
+        --danger: #c0452f;
+
+        --border: #e3e1d8;
+        --border-strong: #cfcdbf;
+        --ring: rgba(15, 107, 92, 0.35);
+
+        --shadow-sm: 0 1px 2px rgba(19, 29, 26, 0.05);
+        --shadow-md:
+          0 4px 14px -4px rgba(19, 29, 26, 0.1),
+          0 2px 4px -2px rgba(19, 29, 26, 0.04);
+        --shadow-lg: 0 18px 40px -12px rgba(19, 29, 26, 0.18);
+
+        --font-ui:
+          "Inter", -apple-system, "PingFang SC", "Microsoft YaHei", sans-serif;
+        --font-serif: "Noto Serif SC", "Songti SC", Georgia, serif;
+        --font-mono:
+          "JetBrains Mono", ui-monospace, "SF Mono", Menlo, monospace;
+
+        --radius-sm: 7px;
+        --radius-md: 10px;
+        --radius-lg: 14px;
+
+        --ease: cubic-bezier(0.22, 1, 0.36, 1);
+      }
+
+      [data-theme="dark"] {
+        /* —— 深色模式 · 松烟墨 —— */
+        --bg-app: #0c1210;
+        --bg-surface: #131b18;
+        --bg-sunken: #080d0b;
+        --bg-sidebar: #080d0b;
+        --bg-hover: rgba(120, 200, 180, 0.07);
+
+        --text-primary: #e9f0ed;
+        --text-secondary: #93a59e;
+        --text-tertiary: #5e716b;
+        --text-on-dark: #e8eeec;
+        --text-on-dark-dim: #7e8f8a;
+
+        --brand: #3fa98f;
+        --brand-strong: #63c2a9;
+        --brand-soft: rgba(63, 169, 143, 0.13);
+        --amber: #e3a44a;
+        --amber-soft: rgba(227, 164, 74, 0.14);
+        --danger: #e06a52;
+
+        --border: #1f2a26;
+        --border-strong: #2e3d37;
+        --ring: rgba(99, 194, 169, 0.4);
+
+        --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.4);
+        --shadow-md: 0 4px 14px -4px rgba(0, 0, 0, 0.5);
+        --shadow-lg: 0 18px 40px -12px rgba(0, 0, 0, 0.6);
+      }
+
+      * {
+        margin: 0;
+        padding: 0;
+        box-sizing: border-box;
+      }
+
+      html,
+      body {
+        height: 100%;
+      }
+
+      body {
+        font-family: var(--font-ui);
+        background: var(--bg-app);
+        color: var(--text-primary);
+        font-size: 13.5px;
+        line-height: 1.55;
+        -webkit-font-smoothing: antialiased;
+        transition:
+          background 0.35s var(--ease),
+          color 0.35s var(--ease);
+        overflow: hidden;
+      }
+
+      ::selection {
+        background: var(--brand);
+        color: #fff;
+      }
+
+      /* ============ 顶部原型说明条（不属于正式 UI） ============ */
+      .prototype-banner {
+        position: fixed;
+        top: 14px;
+        right: 16px;
+        z-index: 100;
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        background: var(--bg-surface);
+        border: 1px solid var(--border);
+        border-radius: 999px;
+        padding: 6px 8px 6px 14px;
+        box-shadow: var(--shadow-md);
+        font-size: 12px;
+      }
+      .prototype-banner .dot {
+        width: 7px;
+        height: 7px;
+        border-radius: 50%;
+        background: var(--amber);
+        box-shadow: 0 0 0 3px var(--amber-soft);
+      }
+      .prototype-banner span {
+        color: var(--text-secondary);
+      }
+
+      /* —— 主题切换开关 —— */
+      .theme-toggle {
+        display: flex;
+        background: var(--bg-sunken);
+        border-radius: 999px;
+        padding: 3px;
+        gap: 2px;
+      }
+      .theme-toggle button {
+        border: 0;
+        cursor: pointer;
+        font-family: var(--font-ui);
+        font-size: 11.5px;
+        font-weight: 600;
+        padding: 4px 12px;
+        border-radius: 999px;
+        background: transparent;
+        color: var(--text-tertiary);
+        transition: all 0.2s var(--ease);
+      }
+      .theme-toggle button.active {
+        background: var(--bg-surface);
+        color: var(--text-primary);
+        box-shadow: var(--shadow-sm);
+      }
+
+      /* ============ 应用骨架 ============ */
+      .app {
+        display: grid;
+        grid-template-columns: 232px 1fr 296px;
+        height: 100vh;
+      }
+
+      /* ============ 左侧导航 ============ */
+      .sidebar {
+        background: var(--bg-sidebar);
+        color: var(--text-on-dark);
+        display: flex;
+        flex-direction: column;
+        padding: 18px 12px 12px;
+        position: relative;
+      }
+
+      /* 品牌区 —— “衡”字印章 */
+      .brand {
+        display: flex;
+        align-items: center;
+        gap: 11px;
+        padding: 0 8px 18px;
+      }
+      .seal {
+        width: 34px;
+        height: 34px;
+        border-radius: 9px;
+        background: linear-gradient(140deg, #e3a44a 0%, #c77f1d 100%);
+        color: #fff6e8;
+        font-family: var(--font-serif);
+        font-weight: 700;
+        font-size: 18px;
+        display: grid;
+        place-items: center;
+        box-shadow:
+          inset 0 0 0 1.5px rgba(255, 246, 232, 0.28),
+          0 2px 6px rgba(0, 0, 0, 0.3);
+        position: relative;
+        flex-shrink: 0;
+      }
+      .seal::after {
+        content: "";
+        position: absolute;
+        inset: 2.5px;
+        border: 1px solid rgba(255, 246, 232, 0.35);
+        border-radius: 6px;
+        pointer-events: none;
+      }
+      .brand-name {
+        font-family: var(--font-serif);
+        font-size: 15.5px;
+        font-weight: 600;
+        letter-spacing: 0.5px;
+      }
+      .brand-sub {
+        font-size: 10.5px;
+        color: var(--text-on-dark-dim);
+        letter-spacing: 1.5px;
+        text-transform: uppercase;
+        margin-top: -1px;
+      }
+
+      /* 导航分组 */
+      .nav-section {
+        margin-top: 18px;
+      }
+      .nav-label {
+        font-size: 10px;
+        font-weight: 600;
+        letter-spacing: 1.8px;
+        color: var(--text-on-dark-dim);
+        text-transform: uppercase;
+        padding: 0 10px 6px;
+      }
+      .nav-item {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        width: 100%;
+        padding: 7px 10px;
+        margin-bottom: 1px;
+        border: 0;
+        border-radius: var(--radius-sm);
+        background: transparent;
+        color: var(--text-on-dark-dim);
+        font-family: var(--font-ui);
+        font-size: 13px;
+        font-weight: 500;
+        cursor: pointer;
+        position: relative;
+        transition: all 0.16s var(--ease);
+        text-align: left;
+      }
+      .nav-item:hover {
+        background: rgba(255, 255, 255, 0.055);
+        color: var(--text-on-dark);
+      }
+      .nav-item.active {
+        background: rgba(255, 255, 255, 0.09);
+        color: #fff;
+      }
+      /* 签名：左侧琥珀刻度线 */
+      .nav-item.active::before {
+        content: "";
+        position: absolute;
+        left: -12px;
+        top: 20%;
+        height: 60%;
+        width: 2.5px;
+        border-radius: 0 2px 2px 0;
+        background: var(--amber);
+      }
+      .nav-item .icon {
+        width: 16px;
+        height: 16px;
+        flex-shrink: 0;
+        opacity: 0.9;
+      }
+      .nav-item .badge {
+        margin-left: auto;
+        font-family: var(--font-mono);
+        font-size: 10px;
+        font-weight: 600;
+        background: var(--amber);
+        color: #2a1a05;
+        border-radius: 999px;
+        padding: 1px 6px;
+      }
+
+      /* 侧边栏底部账户卡 */
+      .sidebar-account {
+        margin-top: auto;
+        padding: 12px;
+        border-radius: var(--radius-md);
+        background: rgba(255, 255, 255, 0.05);
+        border: 1px solid rgba(255, 255, 255, 0.06);
+      }
+      .sidebar-account .row {
+        display: flex;
+        align-items: center;
+        gap: 9px;
+      }
+      .avatar {
+        width: 28px;
+        height: 28px;
+        border-radius: 50%;
+        background: linear-gradient(135deg, #3fa98f, #0f6b5c);
+        display: grid;
+        place-items: center;
+        font-size: 11px;
+        font-weight: 700;
+        color: #fff;
+        flex-shrink: 0;
+      }
+      .sidebar-account .name {
+        font-size: 12.5px;
+        font-weight: 600;
+        color: var(--text-on-dark);
+      }
+      .sidebar-account .plan {
+        font-size: 10.5px;
+        color: var(--text-on-dark-dim);
+      }
+      .balance {
+        margin-top: 10px;
+        padding-top: 10px;
+        border-top: 1px solid rgba(255, 255, 255, 0.07);
+        display: flex;
+        align-items: baseline;
+        justify-content: space-between;
+      }
+      .balance .label {
+        font-size: 10.5px;
+        color: var(--text-on-dark-dim);
+      }
+      .balance .amount {
+        font-family: var(--font-mono);
+        font-size: 15px;
+        font-weight: 600;
+        color: var(--amber);
+      }
+      .topup-btn {
+        margin-top: 10px;
+        width: 100%;
+        padding: 6px 0;
+        border: 0;
+        border-radius: var(--radius-sm);
+        background: var(--amber);
+        color: #2a1a05;
+        font-family: var(--font-ui);
+        font-size: 12px;
+        font-weight: 700;
+        cursor: pointer;
+        transition: filter 0.15s;
+      }
+      .topup-btn:hover {
+        filter: brightness(1.07);
+      }
+
+      /* ============ 主内容区 ============ */
+      .main {
+        overflow-y: auto;
+        padding: 26px 34px 60px;
+        background: var(--bg-app);
+        transition: background 0.35s var(--ease);
+      }
+      .main::-webkit-scrollbar {
+        width: 10px;
+      }
+      .main::-webkit-scrollbar-thumb {
+        background: var(--border-strong);
+        border-radius: 5px;
+        border: 2px solid var(--bg-app);
+      }
+
+      /* 页面头 */
+      .page-head {
+        display: flex;
+        align-items: flex-end;
+        justify-content: space-between;
+        margin-bottom: 22px;
+      }
+      .page-title {
+        font-family: var(--font-serif);
+        font-size: 25px;
+        font-weight: 600;
+        letter-spacing: 0.3px;
+        line-height: 1.2;
+      }
+      .page-sub {
+        color: var(--text-secondary);
+        font-size: 12.5px;
+        margin-top: 4px;
+      }
+      .page-actions {
+        display: flex;
+        gap: 8px;
+      }
+
+      .btn {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        font-family: var(--font-ui);
+        font-size: 12.5px;
+        font-weight: 600;
+        padding: 7px 13px;
+        border-radius: var(--radius-sm);
+        cursor: pointer;
+        border: 1px solid var(--border-strong);
+        background: var(--bg-surface);
+        color: var(--text-primary);
+        transition: all 0.15s var(--ease);
+      }
+      .btn:hover {
+        border-color: var(--text-tertiary);
+      }
+      .btn.primary {
+        background: var(--brand);
+        border-color: var(--brand);
+        color: #fff;
+      }
+      .btn.primary:hover {
+        background: var(--brand-strong);
+        border-color: var(--brand-strong);
+      }
+
+      /* 公告条 */
+      .notice {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        padding: 9px 14px;
+        border-radius: var(--radius-md);
+        background: var(--amber-soft);
+        border: 1px solid color-mix(in srgb, var(--amber) 30%, transparent);
+        color: var(--text-primary);
+        font-size: 12.5px;
+        margin-bottom: 18px;
+      }
+      [data-theme="dark"] .notice {
+        color: var(--amber);
+      }
+      .notice .meg {
+        color: var(--amber);
+        flex-shrink: 0;
+      }
+      .notice button {
+        margin-left: auto;
+        border: 0;
+        background: none;
+        cursor: pointer;
+        color: var(--text-tertiary);
+        display: grid;
+        place-items: center;
+        padding: 3px;
+        border-radius: 5px;
+      }
+      .notice button:hover {
+        background: rgba(0, 0, 0, 0.06);
+        color: var(--text-primary);
+      }
+
+      /* ============ 卡片通用 ============ */
+      .card {
+        background: var(--bg-surface);
+        border: 1px solid var(--border);
+        border-radius: var(--radius-lg);
+        box-shadow: var(--shadow-sm);
+        transition:
+          background 0.35s var(--ease),
+          border-color 0.35s var(--ease);
+      }
+      .card-head {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        padding: 14px 18px 0;
+      }
+      .card-title {
+        font-size: 11px;
+        font-weight: 700;
+        letter-spacing: 1.4px;
+        text-transform: uppercase;
+        color: var(--text-tertiary);
+      }
+      .card-link {
+        font-size: 11.5px;
+        font-weight: 600;
+        color: var(--brand);
+        text-decoration: none;
+        display: inline-flex;
+        align-items: center;
+        gap: 3px;
+        cursor: pointer;
+      }
+      .card-link:hover {
+        text-decoration: underline;
+      }
+
+      /* ============ 焦点工具卡（Hero） ============ */
+      .hero-grid {
+        display: grid;
+        grid-template-columns: 1.62fr 1fr;
+        gap: 16px;
+        margin-bottom: 16px;
+      }
+      .focus-card {
+        padding: 22px 22px 18px;
+        position: relative;
+        overflow: hidden;
+      }
+      .focus-card::before {
+        /* 背景装饰：淡淡的“衡”水印 */
+        content: "衡";
+        position: absolute;
+        right: -28px;
+        top: -46px;
+        font-family: var(--font-serif);
+        font-size: 190px;
+        font-weight: 700;
+        color: var(--brand);
+        opacity: 0.045;
+        pointer-events: none;
+        line-height: 1;
+      }
+      .focus-eyebrow {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        font-size: 10.5px;
+        font-weight: 700;
+        letter-spacing: 1.6px;
+        text-transform: uppercase;
+        color: var(--brand);
+        background: var(--brand-soft);
+        padding: 3px 9px;
+        border-radius: 999px;
+        margin-bottom: 14px;
+      }
+      .focus-eyebrow .pulse {
+        width: 6px;
+        height: 6px;
+        border-radius: 50%;
+        background: var(--brand);
+        animation: pulse 2s infinite;
+      }
+      @keyframes pulse {
+        0%,
+        100% {
+          box-shadow: 0 0 0 0 var(--ring);
+        }
+        55% {
+          box-shadow: 0 0 0 5px transparent;
+        }
+      }
+      .focus-name {
+        font-family: var(--font-serif);
+        font-size: 21px;
+        font-weight: 700;
+        display: flex;
+        align-items: center;
+        gap: 10px;
+      }
+      .focus-name .tool-icon {
+        width: 30px;
+        height: 30px;
+        border-radius: 8px;
+        background: #2d7ff9;
+        display: grid;
+        place-items: center;
+        color: #fff;
+        font-size: 13px;
+        font-weight: 700;
+        font-family: var(--font-ui);
+      }
+      .focus-desc {
+        color: var(--text-secondary);
+        font-size: 12.5px;
+        margin-top: 5px;
+      }
+
+      /* 当前 Provider 行 */
+      .provider-row {
+        margin-top: 16px;
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        padding: 12px 14px;
+        background: var(--bg-sunken);
+        border-radius: var(--radius-md);
+        border: 1px solid var(--border);
+      }
+      .provider-logo {
+        width: 32px;
+        height: 32px;
+        border-radius: 8px;
+        background: linear-gradient(135deg, #ff7a59, #e14e1b);
+        display: grid;
+        place-items: center;
+        color: #fff;
+        font-weight: 700;
+        font-size: 14px;
+        flex-shrink: 0;
+      }
+      .provider-meta {
+        flex: 1;
+        min-width: 0;
+      }
+      .provider-name {
+        font-size: 13px;
+        font-weight: 600;
+        display: flex;
+        align-items: center;
+        gap: 7px;
+      }
+      .tag {
+        font-size: 9.5px;
+        font-weight: 700;
+        letter-spacing: 0.6px;
+        padding: 1.5px 6px;
+        border-radius: 4px;
+        text-transform: uppercase;
+      }
+      .tag.live {
+        background: var(--brand-soft);
+        color: var(--brand);
+      }
+      .tag.failover {
+        background: var(--amber-soft);
+        color: var(--amber);
+      }
+      .provider-endpoint {
+        font-family: var(--font-mono);
+        font-size: 10.5px;
+        color: var(--text-tertiary);
+        margin-top: 1px;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+      }
+      .switch-btn {
+        flex-shrink: 0;
+        border: 1px solid var(--border-strong);
+        background: var(--bg-surface);
+        color: var(--text-primary);
+        font-size: 11.5px;
+        font-weight: 600;
+        padding: 6px 12px;
+        border-radius: var(--radius-sm);
+        cursor: pointer;
+        transition: all 0.15s;
+      }
+      .switch-btn:hover {
+        border-color: var(--brand);
+        color: var(--brand);
+      }
+
+      /* 账户用量卡 */
+      .account-card {
+        padding: 18px;
+        display: flex;
+        flex-direction: column;
+      }
+      .account-top {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+      }
+      .account-label {
+        font-size: 11px;
+        font-weight: 700;
+        letter-spacing: 1.4px;
+        text-transform: uppercase;
+        color: var(--text-tertiary);
+      }
+      .account-balance {
+        font-family: var(--font-mono);
+        font-size: 30px;
+        font-weight: 600;
+        letter-spacing: -0.5px;
+        margin-top: 6px;
+      }
+      .account-balance small {
+        font-size: 13px;
+        color: var(--text-tertiary);
+        font-weight: 500;
+      }
+      .usage-bar {
+        margin-top: 14px;
+      }
+      .usage-bar .track {
+        height: 6px;
+        border-radius: 3px;
+        background: var(--bg-sunken);
+        overflow: hidden;
+      }
+      .usage-bar .fill {
+        height: 100%;
+        width: 62%;
+        border-radius: 3px;
+        background: linear-gradient(90deg, var(--brand), var(--amber));
+      }
+      .usage-bar .meta {
+        display: flex;
+        justify-content: space-between;
+        font-size: 10.5px;
+        color: var(--text-tertiary);
+        margin-top: 6px;
+        font-family: var(--font-mono);
+      }
+      .account-foot {
+        margin-top: 14px;
+        padding-top: 12px;
+        border-top: 1px solid var(--border);
+        display: flex;
+        gap: 8px;
+      }
+      .account-foot .btn {
+        flex: 1;
+        justify-content: center;
+      }
+
+      /* ============ 今日统计带 ============ */
+      .stats-band {
+        display: grid;
+        grid-template-columns: repeat(4, 1fr);
+        gap: 0;
+        margin-bottom: 16px;
+        overflow: hidden;
+      }
+      .stat-cell {
+        padding: 15px 18px;
+        border-right: 1px solid var(--border);
+      }
+      .stat-cell:last-child {
+        border-right: 0;
+      }
+      .stat-label {
+        font-size: 10.5px;
+        font-weight: 600;
+        letter-spacing: 1px;
+        text-transform: uppercase;
+        color: var(--text-tertiary);
+        display: flex;
+        align-items: center;
+        gap: 5px;
+      }
+      .stat-value {
+        font-family: var(--font-mono);
+        font-size: 21px;
+        font-weight: 600;
+        letter-spacing: -0.5px;
+        margin-top: 4px;
+      }
+      .stat-value .unit {
+        font-size: 11px;
+        color: var(--text-tertiary);
+        font-weight: 500;
+        margin-left: 2px;
+      }
+      .stat-trend {
+        font-size: 10.5px;
+        font-weight: 600;
+        margin-top: 2px;
+      }
+      .stat-trend.up {
+        color: var(--brand);
+      }
+      .stat-trend.down {
+        color: var(--danger);
+      }
+
+      /* ============ 模型切换中心 + 右侧栏 ============ */
+      .bottom-grid {
+        display: grid;
+        grid-template-columns: 1.62fr 1fr;
+        gap: 16px;
+      }
+      .model-card {
+        padding-bottom: 8px;
+      }
+      .model-row {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        padding: 11px 18px;
+        border-bottom: 1px solid var(--border);
+        cursor: pointer;
+        transition: background 0.13s;
+      }
+      .model-row:last-child {
+        border-bottom: 0;
+      }
+      .model-row:hover {
+        background: var(--bg-hover);
+      }
+      .model-row.active {
+        background: var(--brand-soft);
+      }
+      [data-theme="dark"] .model-row.active {
+        background: var(--brand-soft);
+      }
+      .model-radio {
+        width: 15px;
+        height: 15px;
+        border-radius: 50%;
+        border: 1.5px solid var(--border-strong);
+        flex-shrink: 0;
+        position: relative;
+        transition: border-color 0.15s;
+      }
+      .model-row.active .model-radio {
+        border-color: var(--brand);
+      }
+      .model-row.active .model-radio::after {
+        content: "";
+        position: absolute;
+        inset: 3px;
+        border-radius: 50%;
+        background: var(--brand);
+      }
+      .model-icon {
+        width: 26px;
+        height: 26px;
+        border-radius: 7px;
+        display: grid;
+        place-items: center;
+        color: #fff;
+        font-size: 11px;
+        font-weight: 700;
+        flex-shrink: 0;
+      }
+      .model-name {
+        font-size: 12.5px;
+        font-weight: 600;
+      }
+      .model-desc {
+        font-size: 10.5px;
+        color: var(--text-tertiary);
+      }
+      .model-meta {
+        margin-left: auto;
+        text-align: right;
+        font-family: var(--font-mono);
+        font-size: 10.5px;
+        color: var(--text-tertiary);
+      }
+      .model-meta .latency {
+        color: var(--brand);
+        font-weight: 600;
+      }
+
+      /* 右侧栏（上下文面板） */
+      .context-panel {
+        background: var(--bg-app);
+        border-left: 1px solid var(--border);
+        padding: 24px 20px;
+        overflow-y: auto;
+        transition:
+          background 0.35s var(--ease),
+          border-color 0.35s var(--ease);
+      }
+      .context-section {
+        margin-bottom: 22px;
+      }
+      .context-title {
+        font-size: 10.5px;
+        font-weight: 700;
+        letter-spacing: 1.6px;
+        text-transform: uppercase;
+        color: var(--text-tertiary);
+        margin-bottom: 10px;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+      }
+
+      /* 健康状态 */
+      .health-item {
+        display: flex;
+        align-items: center;
+        gap: 9px;
+        padding: 8px 10px;
+        border-radius: var(--radius-sm);
+        font-size: 12px;
+        margin-bottom: 2px;
+      }
+      .health-item:hover {
+        background: var(--bg-hover);
+      }
+      .health-dot {
+        width: 7px;
+        height: 7px;
+        border-radius: 50%;
+        flex-shrink: 0;
+      }
+      .health-dot.ok {
+        background: var(--brand);
+        box-shadow: 0 0 0 2.5px var(--brand-soft);
+      }
+      .health-dot.warn {
+        background: var(--amber);
+        box-shadow: 0 0 0 2.5px var(--amber-soft);
+      }
+      .health-item .name {
+        font-weight: 500;
+      }
+      .health-item .val {
+        margin-left: auto;
+        font-family: var(--font-mono);
+        font-size: 10.5px;
+        color: var(--text-tertiary);
+      }
+
+      /* 快捷入口 */
+      .quick-grid {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 8px;
+      }
+      .quick-item {
+        border: 1px solid var(--border);
+        background: var(--bg-surface);
+        border-radius: var(--radius-md);
+        padding: 11px 12px;
+        cursor: pointer;
+        transition: all 0.15s var(--ease);
+        text-align: left;
+      }
+      .quick-item:hover {
+        border-color: var(--brand);
+        transform: translateY(-1px);
+        box-shadow: var(--shadow-sm);
+      }
+      .quick-item .q-icon {
+        width: 24px;
+        height: 24px;
+        border-radius: 6px;
+        background: var(--brand-soft);
+        color: var(--brand);
+        display: grid;
+        place-items: center;
+        margin-bottom: 7px;
+      }
+      .quick-item .q-name {
+        font-size: 11.5px;
+        font-weight: 600;
+      }
+      .quick-item .q-val {
+        font-size: 10px;
+        color: var(--text-tertiary);
+        margin-top: 1px;
+      }
+
+      /* 最近活动 */
+      .activity-item {
+        display: flex;
+        gap: 10px;
+        padding: 7px 0;
+        font-size: 12px;
+        border-bottom: 1px dashed var(--border);
+      }
+      .activity-item:last-child {
+        border-bottom: 0;
+      }
+      .activity-item .time {
+        font-family: var(--font-mono);
+        font-size: 10px;
+        color: var(--text-tertiary);
+        flex-shrink: 0;
+        width: 38px;
+        padding-top: 2px;
+      }
+      .activity-item .what {
+        color: var(--text-secondary);
+        line-height: 1.45;
+      }
+      .activity-item .what b {
+        color: var(--text-primary);
+        font-weight: 600;
+      }
+
+      /* 主题切换时的过渡 */
+      .card,
+      .sidebar,
+      .context-panel,
+      .nav-item,
+      .stat-cell,
+      .model-row {
+        transition-property: background, border-color, color;
+        transition-duration: 0.3s;
+      }
+
+      /* 顶栏窗口控制（桌面感） */
+      .titlebar {
+        position: absolute;
+        top: 0;
+        left: 0;
+        right: 0;
+        height: 0;
+        pointer-events: none;
+      }
+
+      @media (max-width: 1180px) {
+        .app {
+          grid-template-columns: 232px 1fr;
+        }
+        .context-panel {
+          display: none;
+        }
+      }
+      @media (max-width: 860px) {
+        .app {
+          grid-template-columns: 64px 1fr;
+        }
+        .sidebar {
+          padding: 14px 8px;
+          align-items: center;
+        }
+        .brand-name,
+        .brand-sub,
+        .nav-label,
+        .nav-item span,
+        .sidebar-account {
+          display: none;
+        }
+        .nav-item {
+          justify-content: center;
+          padding: 9px;
+        }
+        .nav-item .badge {
+          display: none;
+        }
+        .hero-grid,
+        .bottom-grid {
+          grid-template-columns: 1fr;
+        }
+        .stats-band {
+          grid-template-columns: 1fr 1fr;
+        }
+        .stat-cell:nth-child(2) {
+          border-right: 0;
+        }
+        .stat-cell:nth-child(1),
+        .stat-cell:nth-child(2) {
+          border-bottom: 1px solid var(--border);
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <!-- 原型控制条（非正式 UI 部分） -->
+    <div class="prototype-banner">
+      <span class="dot"></span>
+      <span>元衡 Switch · UI 概念原型 v1</span>
+      <div class="theme-toggle">
+        <button id="btnLight" class="active" onclick="setTheme('light')">
+          浅色
+        </button>
+        <button id="btnDark" onclick="setTheme('dark')">深色</button>
+      </div>
+    </div>
+
+    <div class="app">
+      <!-- ================= 左侧导航 ================= -->
+      <aside class="sidebar">
+        <div class="brand">
+          <div class="seal">衡</div>
+          <div>
+            <div class="brand-name">元衡</div>
+            <div class="brand-sub">Switch</div>
+          </div>
+        </div>
+
+        <nav>
+          <div class="nav-section">
+            <div class="nav-label">日常</div>
+            <button class="nav-item active">
+              <svg
+                class="icon"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="1.8"
+              >
+                <circle cx="12" cy="12" r="9" />
+                <path d="M12 7v5l3 3" />
+              </svg>
+              <span>工作台</span>
+            </button>
+            <button class="nav-item">
+              <svg
+                class="icon"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="1.8"
+              >
+                <rect x="4" y="4" width="16" height="16" rx="3" />
+                <path d="M9 12h6M12 9v6" />
+              </svg>
+              <span>工具管理</span>
+            </button>
+            <button class="nav-item">
+              <svg
+                class="icon"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="1.8"
+              >
+                <path
+                  d="M12 3l2.5 5.5L20 9.8l-4 4 1 5.7-5-2.8-5 2.8 1-5.7-4-4 5.5-.3z"
+                />
+              </svg>
+              <span>能力中心</span>
+              <span class="badge">12</span>
+            </button>
+            <button class="nav-item">
+              <svg
+                class="icon"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="1.8"
+              >
+                <path d="M3 17l5-6 4 4 6-8 3 4" />
+              </svg>
+              <span>会话与用量</span>
+            </button>
+          </div>
+
+          <div class="nav-section">
+            <div class="nav-label">专业</div>
+            <button class="nav-item">
+              <svg
+                class="icon"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="1.8"
+              >
+                <circle cx="6" cy="6" r="2.5" />
+                <circle cx="18" cy="6" r="2.5" />
+                <circle cx="12" cy="18" r="2.5" />
+                <path d="M7.5 8l3 7.5M16.5 8l-3 7.5M8.5 6h7" />
+              </svg>
+              <span>连接与路由</span>
+            </button>
+            <button class="nav-item">
+              <svg
+                class="icon"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="1.8"
+              >
+                <circle cx="12" cy="12" r="3" />
+                <path
+                  d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"
+                />
+              </svg>
+              <span>设置</span>
+            </button>
+          </div>
+        </nav>
+
+        <div class="sidebar-account">
+          <div class="row">
+            <div class="avatar">N</div>
+            <div>
+              <div class="name">nanashi</div>
+              <div class="plan">Pro · 按量计费</div>
+            </div>
+          </div>
+          <div class="balance">
+            <span class="label">账户余额</span>
+            <span class="amount">$24.68</span>
+          </div>
+          <button class="topup-btn">充值</button>
+        </div>
+      </aside>
+
+      <!-- ================= 主内容 ================= -->
+      <main class="main">
+        <div class="page-head">
+          <div>
+            <h1 class="page-title">工作台</h1>
+            <p class="page-sub">7 月 30 日 星期四 · 今天也是高效的一天</p>
+          </div>
+          <div class="page-actions">
+            <button class="btn">
+              <svg
+                width="13"
+                height="13"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="2"
+              >
+                <path d="M21 12a9 9 0 1 1-9-9" />
+                <path d="M21 3v6h-6" />
+              </svg>
+              检查更新
+            </button>
+            <button class="btn primary">
+              <svg
+                width="13"
+                height="13"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="2.2"
+              >
+                <path d="M12 5v14M5 12h14" />
+              </svg>
+              添加工具
+            </button>
+          </div>
+        </div>
+
+        <div class="notice">
+          <svg
+            class="meg"
+            width="14"
+            height="14"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="2"
+          >
+            <path d="M3 11l18-7-7 18-2.5-7.5z" />
+          </svg>
+          <span>
+            Claude Opus 4.6 已上线，可在「模型切换」中一键启用 · 新用户首充立减
+            20%</span
+          >
+          <button aria-label="关闭">
+            <svg
+              width="12"
+              height="12"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="2.2"
+            >
+              <path d="M18 6L6 18M6 6l12 12" />
+            </svg>
+          </button>
+        </div>
+
+        <!-- Hero：焦点工具 + 账户用量 -->
+        <div class="hero-grid">
+          <section class="card focus-card">
+            <div class="focus-eyebrow">
+              <span class="pulse"></span>当前焦点工具
+            </div>
+            <div class="focus-name">
+              <span class="tool-icon">C</span>
+              Claude Code
+            </div>
+            <p class="focus-desc">
+              正在通过「元衡 API」代理访问 · 已自动配置故障转移
+            </p>
+
+            <div class="provider-row">
+              <div class="provider-logo">元</div>
+              <div class="provider-meta">
+                <div class="provider-name">
+                  元衡官方 API
+                  <span class="tag live">Live</span>
+                  <span class="tag failover">Failover ×2</span>
+                </div>
+                <div class="provider-endpoint">
+                  https://api.yuanheng.ai/v1 · claude-opus-4-6
+                </div>
+              </div>
+              <button class="switch-btn">切换服务</button>
+            </div>
+          </section>
+
+          <section class="card account-card">
+            <div class="account-top">
+              <span class="account-label">账户余额</span>
+              <a class="card-link">明细 →</a>
+            </div>
+            <div class="account-balance">$24.68<small> / $40.00</small></div>
+            <div class="usage-bar">
+              <div class="track"><div class="fill"></div></div>
+              <div class="meta">
+                <span>本月已用 62%</span><span>剩余 $15.32</span>
+              </div>
+            </div>
+            <div class="account-foot">
+              <button class="btn primary" style="flex: 1.4">立即充值</button>
+              <button class="btn" style="flex: 1">订阅</button>
+            </div>
+          </section>
+        </div>
+
+        <!-- 今日统计 -->
+        <section class="card stats-band">
+          <div class="stat-cell">
+            <div class="stat-label">今日会话</div>
+            <div class="stat-value">47</div>
+            <div class="stat-trend up">↑ 较昨日 +12%</div>
+          </div>
+          <div class="stat-cell">
+            <div class="stat-label">Token 消耗</div>
+            <div class="stat-value">1.24<span class="unit">M</span></div>
+            <div class="stat-trend up">↑ 较昨日 +8%</div>
+          </div>
+          <div class="stat-cell">
+            <div class="stat-label">今日花费</div>
+            <div class="stat-value">$3.82</div>
+            <div class="stat-trend down">↓ 较昨日 −5%</div>
+          </div>
+          <div class="stat-cell">
+            <div class="stat-label">活跃工具</div>
+            <div class="stat-value">5<span class="unit">/ 8</span></div>
+            <div class="stat-trend up">Claude · Codex · Gemini…</div>
+          </div>
+        </section>
+
+        <!-- 底部：模型切换 + 健康 -->
+        <div class="bottom-grid">
+          <section class="card model-card">
+            <div class="card-head">
+              <span class="card-title">模型切换 · Claude Code</span>
+              <a class="card-link">管理全部 →</a>
+            </div>
+            <div style="height: 10px"></div>
+
+            <div class="model-row active">
+              <span class="model-radio"></span>
+              <span
+                class="model-icon"
+                style="background: linear-gradient(135deg, #ff7a59, #e14e1b)"
+                >元</span
+              >
+              <div>
+                <div class="model-name">元衡官方 · Claude Opus 4.6</div>
+                <div class="model-desc">
+                  推荐 · 支持 1M 上下文 · 自动故障转移
+                </div>
+              </div>
+              <div class="model-meta">
+                <div class="latency">● 89ms</div>
+                <div>$15 / M tokens</div>
+              </div>
+            </div>
+
+            <div class="model-row">
+              <span class="model-radio"></span>
+              <span
+                class="model-icon"
+                style="background: linear-gradient(135deg, #d9932c, #b06f14)"
+                >官</span
+              >
+              <div>
+                <div class="model-name">Anthropic 官方直连</div>
+                <div class="model-desc">需要自备 API Key · 海外网络</div>
+              </div>
+              <div class="model-meta">
+                <div class="latency" style="color: var(--amber)">● 312ms</div>
+                <div>$15 / M tokens</div>
+              </div>
+            </div>
+
+            <div class="model-row">
+              <span class="model-radio"></span>
+              <span
+                class="model-icon"
+                style="background: linear-gradient(135deg, #5b8def, #2d5bbe)"
+                >D</span
+              >
+              <div>
+                <div class="model-name">DeepSeek V4 · 备用线路</div>
+                <div class="model-desc">成本优先 · 适合长任务批处理</div>
+              </div>
+              <div class="model-meta">
+                <div class="latency">● 64ms</div>
+                <div>$2 / M tokens</div>
+              </div>
+            </div>
+
+            <div class="model-row">
+              <span class="model-radio"></span>
+              <span
+                class="model-icon"
+                style="background: linear-gradient(135deg, #8b5cf6, #6d3fd4)"
+                >K</span
+              >
+              <div>
+                <div class="model-name">Kimi K2.5 · 备用线路</div>
+                <div class="model-desc">长文档理解 · 中文优化</div>
+              </div>
+              <div class="model-meta">
+                <div class="latency">● 102ms</div>
+                <div>$4 / M tokens</div>
+              </div>
+            </div>
+          </section>
+
+          <!-- 右列小卡 -->
+          <div style="display: flex; flex-direction: column; gap: 16px">
+            <section class="card" style="padding: 16px 18px">
+              <div class="card-title" style="margin-bottom: 10px">服务健康</div>
+              <div class="health-item">
+                <span class="health-dot ok"></span
+                ><span class="name">元衡 API 网关</span
+                ><span class="val">99.98%</span>
+              </div>
+              <div class="health-item">
+                <span class="health-dot ok"></span
+                ><span class="name">本地代理 :15721</span
+                ><span class="val">运行中</span>
+              </div>
+              <div class="health-item">
+                <span class="health-dot warn"></span
+                ><span class="name">Anthropic 直连</span
+                ><span class="val">延迟偏高</span>
+              </div>
+            </section>
+
+            <section class="card" style="padding: 16px 18px">
+              <div class="card-title" style="margin-bottom: 10px">快捷入口</div>
+              <div class="quick-grid">
+                <button class="quick-item">
+                  <div class="q-icon">
+                    <svg
+                      width="12"
+                      height="12"
+                      viewBox="0 0 24 24"
+                      fill="none"
+                      stroke="currentColor"
+                      stroke-width="2"
+                    >
+                      <path
+                        d="M12 3l2.5 5.5L20 9.8l-4 4 1 5.7-5-2.8-5 2.8 1-5.7-4-4 5.5-.3z"
+                      />
+                    </svg>
+                  </div>
+                  <div class="q-name">能力中心</div>
+                  <div class="q-val">12 Skills</div>
+                </button>
+                <button class="quick-item">
+                  <div class="q-icon">
+                    <svg
+                      width="12"
+                      height="12"
+                      viewBox="0 0 24 24"
+                      fill="none"
+                      stroke="currentColor"
+                      stroke-width="2"
+                    >
+                      <rect x="4" y="4" width="16" height="16" rx="3" />
+                      <path d="M9 12h6M12 9v6" />
+                    </svg>
+                  </div>
+                  <div class="q-name">MCP 服务</div>
+                  <div class="q-val">8 已启用</div>
+                </button>
+                <button class="quick-item">
+                  <div class="q-icon">
+                    <svg
+                      width="12"
+                      height="12"
+                      viewBox="0 0 24 24"
+                      fill="none"
+                      stroke="currentColor"
+                      stroke-width="2"
+                    >
+                      <path
+                        d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"
+                      />
+                    </svg>
+                  </div>
+                  <div class="q-name">提示词库</div>
+                  <div class="q-val">23 条</div>
+                </button>
+                <button class="quick-item">
+                  <div class="q-icon">
+                    <svg
+                      width="12"
+                      height="12"
+                      viewBox="0 0 24 24"
+                      fill="none"
+                      stroke="currentColor"
+                      stroke-width="2"
+                    >
+                      <circle cx="12" cy="12" r="9" />
+                      <path d="M12 7v5l3 3" />
+                    </svg>
+                  </div>
+                  <div class="q-name">会话历史</div>
+                  <div class="q-val">查看全部</div>
+                </button>
+              </div>
+            </section>
+          </div>
+        </div>
+      </main>
+
+      <!-- ================= 右侧上下文栏 ================= -->
+      <aside class="context-panel">
+        <div class="context-section">
+          <div class="context-title">今日概览</div>
+          <div
+            style="
+              font-family: var(--font-serif);
+              font-size: 17px;
+              font-weight: 600;
+              line-height: 1.4;
+            "
+          >
+            已节省<br />约 <span style="color: var(--brand)">$12.40</span> API
+            费用
+          </div>
+          <p
+            style="
+              font-size: 11.5px;
+              color: var(--text-tertiary);
+              margin-top: 5px;
+              line-height: 1.5;
+            "
+          >
+            相比直连官方定价，通过元衡智能路由与缓存。
+          </p>
+        </div>
+
+        <div class="context-section">
+          <div class="context-title">最近活动</div>
+          <div class="activity-item">
+            <span class="time">14:32</span
+            ><span class="what">切换到 <b>Claude Opus 4.6</b></span>
+          </div>
+          <div class="activity-item">
+            <span class="time">13:58</span
+            ><span class="what">安装 Skill <b>frontend-design</b></span>
+          </div>
+          <div class="activity-item">
+            <span class="time">11:20</span
+            ><span class="what">触发故障转移至 <b>DeepSeek</b></span>
+          </div>
+          <div class="activity-item">
+            <span class="time">09:47</span
+            ><span class="what">充值 <b>$20.00</b> 到账</span>
+          </div>
+          <div class="activity-item">
+            <span class="time">09:12</span
+            ><span class="what">更新 MCP <b>filesystem</b> 配置</span>
+          </div>
+        </div>
+
+        <div class="context-section">
+          <div class="context-title">本周花费</div>
+          <svg viewBox="0 0 240 90" style="width: 100%; display: block">
+            <defs>
+              <linearGradient id="barGrad" x1="0" y1="0" x2="0" y2="1">
+                <stop
+                  offset="0%"
+                  stop-color="var(--brand)"
+                  stop-opacity="0.9"
+                />
+                <stop
+                  offset="100%"
+                  stop-color="var(--brand)"
+                  stop-opacity="0.55"
+                />
+              </linearGradient>
+            </defs>
+            <!-- 7 天柱状图 -->
+            <g
+              font-family="JetBrains Mono"
+              font-size="8"
+              fill="var(--text-tertiary)"
+            >
+              <rect
+                x="6"
+                y="42"
+                width="22"
+                height="38"
+                rx="3"
+                fill="url(#barGrad)"
+              />
+              <rect
+                x="38"
+                y="30"
+                width="22"
+                height="50"
+                rx="3"
+                fill="url(#barGrad)"
+              />
+              <rect
+                x="70"
+                y="50"
+                width="22"
+                height="30"
+                rx="3"
+                fill="url(#barGrad)"
+              />
+              <rect
+                x="102"
+                y="24"
+                width="22"
+                height="56"
+                rx="3"
+                fill="url(#barGrad)"
+              />
+              <rect
+                x="134"
+                y="38"
+                width="22"
+                height="42"
+                rx="3"
+                fill="url(#barGrad)"
+              />
+              <rect
+                x="166"
+                y="18"
+                width="22"
+                height="62"
+                rx="3"
+                fill="url(#barGrad)"
+              />
+              <rect
+                x="198"
+                y="34"
+                width="22"
+                height="46"
+                rx="3"
+                fill="var(--amber)"
+                opacity="0.9"
+              />
+              <text x="17" y="88" text-anchor="middle">四</text>
+              <text x="49" y="88" text-anchor="middle">五</text>
+              <text x="81" y="88" text-anchor="middle">六</text>
+              <text x="113" y="88" text-anchor="middle">日</text>
+              <text x="145" y="88" text-anchor="middle">一</text>
+              <text x="177" y="88" text-anchor="middle">二</text>
+              <text
+                x="209"
+                y="88"
+                text-anchor="middle"
+                fill="var(--amber)"
+                font-weight="700"
+              >
+                今
+              </text>
+            </g>
+          </svg>
+          <div
+            style="
+              display: flex;
+              justify-content: space-between;
+              font-size: 10.5px;
+              color: var(--text-tertiary);
+              margin-top: 6px;
+            "
+          >
+            <span>本周合计</span>
+            <span
+              style="
+                font-family: var(--font-mono);
+                font-weight: 600;
+                color: var(--text-primary);
+              "
+              >$21.47</span
+            >
+          </div>
+        </div>
+
+        <div class="context-section">
+          <div class="context-title">小贴士</div>
+          <div
+            style="
+              background: var(--brand-soft);
+              border-radius: 10px;
+              padding: 12px 13px;
+              font-size: 11.5px;
+              line-height: 1.6;
+              color: var(--text-primary);
+            "
+          >
+            在
+            <b>设置 → 故障转移</b>
+            中开启「智能路由」，可在主线路超时时自动切换到成本更低的备用模型。
+          </div>
+        </div>
+      </aside>
+    </div>
+
+    <script>
+      function setTheme(mode) {
+        document.documentElement.setAttribute("data-theme", mode);
+        document
+          .getElementById("btnLight")
+          .classList.toggle("active", mode === "light");
+        document
+          .getElementById("btnDark")
+          .classList.toggle("active", mode === "dark");
+      }
+      // 检测系统偏好
+      if (
+        window.matchMedia &&
+        window.matchMedia("(prefers-color-scheme: dark)").matches
+      ) {
+        setTheme("dark");
+      }
+    </script>
+  </body>
+</html>

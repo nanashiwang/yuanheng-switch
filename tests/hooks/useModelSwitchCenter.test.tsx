@@ -86,7 +86,7 @@ describe("useModelSwitchCenter", () => {
         if (command === "get_yuanheng_tool_statuses") {
           return Promise.resolve(statuses);
         }
-        if (command === "get_tool_versions") {
+        if (command === "get_installed_tool_versions") {
           const tools = (payload.tools as string[] | undefined) ?? [];
           return Promise.resolve(
             tools.map((name) => ({
@@ -132,6 +132,57 @@ describe("useModelSwitchCenter", () => {
         return Promise.resolve(true);
       },
     );
+  });
+
+  it("keeps the dashboard in loading state until local inventory resolves", async () => {
+    const defaultImplementation = invokeMock.getMockImplementation();
+    let resolveInventory!: (value: unknown[]) => void;
+    const inventory = new Promise<unknown[]>((resolve) => {
+      resolveInventory = resolve;
+    });
+    invokeMock.mockImplementation(
+      (command: string, payload: Record<string, unknown> = {}) => {
+        if (command === "get_installed_tool_versions") return inventory;
+        return defaultImplementation?.(command, payload);
+      },
+    );
+
+    const { wrapper } = createWrapper();
+    const { result } = renderHook(() => useModelSwitchCenter(), { wrapper });
+
+    await waitFor(() => {
+      expect(result.current.bootstrapPhase).toBe("loading");
+      expect(result.current.rows).toEqual([]);
+    });
+
+    await act(async () => {
+      resolveInventory([]);
+      await inventory;
+    });
+
+    await waitFor(() => {
+      expect(result.current.bootstrapPhase).toBe("empty");
+    });
+  });
+
+  it("reports a detection error instead of an empty inventory", async () => {
+    const defaultImplementation = invokeMock.getMockImplementation();
+    invokeMock.mockImplementation(
+      (command: string, payload: Record<string, unknown> = {}) => {
+        if (command === "get_installed_tool_versions") {
+          return Promise.reject(new Error("probe failed"));
+        }
+        return defaultImplementation?.(command, payload);
+      },
+    );
+
+    const { wrapper } = createWrapper();
+    const { result } = renderHook(() => useModelSwitchCenter(), { wrapper });
+
+    await waitFor(() => {
+      expect(result.current.bootstrapPhase).toBe("error");
+      expect(result.current.rows).toEqual([]);
+    });
   });
 
   it("drops a stale model after the catalog refreshes", async () => {

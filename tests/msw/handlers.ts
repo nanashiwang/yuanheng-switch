@@ -247,6 +247,23 @@ export const handlers = [
       })),
     );
   }),
+  http.post(
+    `${TAURI_ENDPOINT}/get_installed_tool_versions`,
+    async ({ request }) => {
+      const { tools = [] } = await withJson<{ tools?: string[] }>(request);
+      return success(
+        tools.map((name) => ({
+          name,
+          version: "1.0.0",
+          latest_version: null,
+          error: null,
+          installed_but_broken: false,
+          env_type: "macos",
+          wsl_distro: null,
+        })),
+      );
+    },
+  ),
   http.post(`${TAURI_ENDPOINT}/get_skills_migration_result`, () =>
     success(null),
   ),

@@ -1,5 +1,13 @@
 import { useMemo, useState } from "react";
-import { CheckCircle2, ChevronDown, Loader2, Play } from "lucide-react";
+import {
+  AlertTriangle,
+  CheckCircle2,
+  ChevronDown,
+  Loader2,
+  Play,
+  RefreshCw,
+  Wrench,
+} from "lucide-react";
 import type { YuanhengToolId } from "@/lib/api";
 import { ProviderIcon } from "@/components/ProviderIcon";
 import { ModelPicker } from "./ModelPicker";
@@ -13,15 +21,128 @@ import { groupModelsByVendor, modelVendorOf } from "./modelVendors";
 interface FocusToolCardProps {
   switcher: ModelSwitchCenterState;
   focusApp?: YuanhengToolId;
+  onOpenTools: () => void;
+}
+
+const focusCardShell =
+  "relative min-h-[246px] overflow-hidden rounded-2xl bg-gradient-to-br from-[#0f2a26] to-[#173f3a] p-5 text-[#eef5f2] shadow-[0_18px_40px_-22px_rgba(15,42,38,0.55)]";
+
+function FocusToolDecoration() {
+  return (
+    <>
+      <div
+        aria-hidden
+        className="pointer-events-none absolute -right-14 -top-20 h-52 w-52 rounded-full border border-white/[0.07]"
+      />
+      <div
+        aria-hidden
+        className="pointer-events-none absolute -top-9 right-3 h-32 w-32 rounded-full border border-white/[0.07]"
+      />
+    </>
+  );
+}
+
+function FocusToolLoadingCard() {
+  return (
+    <section
+      className={focusCardShell}
+      aria-label="正在检测本机工具"
+      aria-busy="true"
+    >
+      <FocusToolDecoration />
+      <div className="relative animate-pulse">
+        <div className="flex items-center gap-3">
+          <span className="h-[42px] w-[42px] rounded-xl bg-white/10" />
+          <div className="space-y-2">
+            <div className="h-2 w-16 rounded-full bg-white/10" />
+            <div className="h-4 w-24 rounded-full bg-white/15" />
+          </div>
+          <div className="ml-auto h-[34px] w-20 rounded-[10px] bg-white/10" />
+        </div>
+        <div className="mt-5 flex items-center gap-3">
+          <div className="h-2.5 w-14 rounded-full bg-white/10" />
+          <div className="h-7 w-40 rounded-full bg-white/15" />
+        </div>
+        <div className="mt-5 rounded-xl border border-white/10 bg-black/10 p-3">
+          <div className="mb-3 h-2.5 w-20 rounded-full bg-white/10" />
+          <div className="grid gap-2 sm:grid-cols-3">
+            {[0, 1, 2].map((item) => (
+              <div key={item} className="space-y-1.5">
+                <div className="h-2 w-14 rounded-full bg-white/10" />
+                <div className="h-8 rounded-md bg-white/10" />
+              </div>
+            ))}
+          </div>
+        </div>
+      </div>
+      <p className="sr-only">正在读取本机工具与配置状态</p>
+    </section>
+  );
+}
+
+function FocusToolStateCard({
+  error,
+  onOpenTools,
+  onRetry,
+}: {
+  error?: boolean;
+  onOpenTools: () => void;
+  onRetry: () => Promise<void>;
+}) {
+  const Icon = error ? AlertTriangle : Wrench;
+  return (
+    <section className={focusCardShell}>
+      <FocusToolDecoration />
+      <div className="relative flex min-h-[206px] flex-col items-center justify-center text-center">
+        <span className="flex h-11 w-11 items-center justify-center rounded-xl border border-white/10 bg-white/10">
+          <Icon className="h-5 w-5 text-[#e9b67c]" />
+        </span>
+        <h2 className="mt-3 font-display text-[16px] font-semibold">
+          {error ? "本机工具检测失败" : "尚未检测到已安装的 AI 工具"}
+        </h2>
+        <p className="mt-1 max-w-sm text-[10.5px] text-white/55">
+          {error
+            ? "没有将检测失败误判为未安装，你可以重新检测或进入工具管理。"
+            : "安装或配置工具后，这里会显示当前工具、模型和令牌分组。"}
+        </p>
+        <div className="mt-4 flex items-center gap-2">
+          {error && (
+            <button
+              type="button"
+              onClick={() => void onRetry()}
+              className="inline-flex h-8 items-center gap-1.5 rounded-lg border border-white/15 bg-white/[0.08] px-3 text-[11px] font-semibold transition-colors hover:bg-white/[0.13]"
+            >
+              <RefreshCw className="h-3.5 w-3.5" />
+              重新检测
+            </button>
+          )}
+          <button
+            type="button"
+            onClick={onOpenTools}
+            className="inline-flex h-8 items-center gap-1.5 rounded-lg bg-[#e9b67c] px-3 text-[11px] font-semibold text-[#163a36] transition-colors hover:bg-[#f3c995]"
+          >
+            <Wrench className="h-3.5 w-3.5" />
+            {error ? "打开工具管理" : "安装与配置"}
+          </button>
+        </div>
+      </div>
+    </section>
+  );
 }
 
 /**
  * 首页焦点工具卡：当前工具的大字模型展示 + 供应商 / 模型 / 分组切换。
  * 切换逻辑与下方「全部工具」列表共享同一份状态。
  */
-export function FocusToolCard({ switcher, focusApp }: FocusToolCardProps) {
+export function FocusToolCard({
+  switcher,
+  focusApp,
+  onOpenTools,
+}: FocusToolCardProps) {
   const {
     connection,
+    bootstrapPhase,
+    retryBootstrap,
     rows,
     models,
     groups,
@@ -51,7 +172,23 @@ export function FocusToolCard({ switcher, focusApp }: FocusToolCardProps) {
     Partial<Record<YuanhengToolId, string>>
   >({});
 
-  if (!connection?.connected || !app) return null;
+  if (bootstrapPhase === "loading" || !connection?.connected) {
+    return <FocusToolLoadingCard />;
+  }
+  if (bootstrapPhase === "error") {
+    return (
+      <FocusToolStateCard
+        error
+        onOpenTools={onOpenTools}
+        onRetry={retryBootstrap}
+      />
+    );
+  }
+  if (bootstrapPhase === "empty" || !app) {
+    return (
+      <FocusToolStateCard onOpenTools={onOpenTools} onRetry={retryBootstrap} />
+    );
+  }
 
   const pending = pendingApps.has(app);
   const configured = Boolean(status?.configured);
@@ -79,15 +216,8 @@ export function FocusToolCard({ switcher, focusApp }: FocusToolCardProps) {
   const groupMap = new Map(connection.groups.map((group) => [group.id, group]));
 
   return (
-    <section className="relative overflow-hidden rounded-2xl bg-gradient-to-br from-[#0f2a26] to-[#173f3a] p-5 text-[#eef5f2] shadow-[0_18px_40px_-22px_rgba(15,42,38,0.55)]">
-      <div
-        aria-hidden
-        className="pointer-events-none absolute -right-14 -top-20 h-52 w-52 rounded-full border border-white/[0.07]"
-      />
-      <div
-        aria-hidden
-        className="pointer-events-none absolute -top-9 right-3 h-32 w-32 rounded-full border border-white/[0.07]"
-      />
+    <section className={focusCardShell}>
+      <FocusToolDecoration />
 
       <div className="relative flex items-center gap-3">
         <span className="flex h-[42px] w-[42px] items-center justify-center rounded-xl border border-white/10 bg-white/10">
