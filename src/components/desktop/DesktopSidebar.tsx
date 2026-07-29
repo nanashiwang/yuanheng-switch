@@ -94,9 +94,9 @@ export function DesktopSidebar({
   return (
     <aside className="flex h-full w-[212px] shrink-0 flex-col border-r border-white/[0.06] bg-[#11191b] px-3 pb-3 pt-4 text-white">
       <div className="flex items-center gap-2.5 px-2 pb-5">
-        <div className="relative flex h-9 w-9 items-center justify-center overflow-hidden rounded-xl bg-white/10 ring-1 ring-white/10">
-          <img src={appIcon} alt="" className="h-8 w-8 object-contain" />
-          <span className="absolute bottom-0.5 right-0.5 h-2 w-2 rounded-full border-2 border-[#11191b] bg-[#d69554]" />
+        <div className="relative h-9 w-9 shrink-0">
+          <img src={appIcon} alt="" className="h-9 w-9 object-contain" />
+          <span className="absolute bottom-0 right-0 h-2 w-2 rounded-full border-2 border-[#11191b] bg-[#d69554]" />
         </div>
         <div className="min-w-0">
           <p className="font-display text-[15px] font-semibold tracking-wide">
