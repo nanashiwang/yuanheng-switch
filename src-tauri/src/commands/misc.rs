@@ -784,14 +784,14 @@ fn desktop_app_candidates(tool: &str) -> Vec<PathBuf> {
         let local_app_data = std::env::var_os("LOCALAPPDATA")
             .map(PathBuf::from)
             .unwrap_or_default();
-        return match tool {
+        match tool {
             "chatgpt-desktop" => vec![
                 local_app_data.join("Programs/ChatGPT/ChatGPT.exe"),
                 local_app_data.join("Programs/Codex/Codex.exe"),
             ],
             "workbuddy" => vec![local_app_data.join("Programs/WorkBuddy/WorkBuddy.exe")],
             _ => Vec::new(),
-        };
+        }
     }
 
     #[cfg(not(any(target_os = "macos", target_os = "windows")))]
