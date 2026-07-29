@@ -403,7 +403,9 @@ describe("App integration with MSW", () => {
     ).toBeInTheDocument();
     // 首页新模块：焦点工具卡、今日速览统计带、账号用量
     expect(screen.getByText("当前工具")).toBeInTheDocument();
-    expect(screen.getByText("一键切换")).toBeInTheDocument();
+    expect(screen.getByText("快捷切换")).toBeInTheDocument();
+    expect(screen.getByLabelText(/模型供应商$/)).toBeInTheDocument();
+    expect(screen.getByLabelText(/当前工具令牌分组$/)).toBeInTheDocument();
     expect(screen.getByText("今日请求")).toBeInTheDocument();
     expect(screen.getByText("缓存命中率")).toBeInTheDocument();
     expect(screen.getByText("账号用量")).toBeInTheDocument();
@@ -490,6 +492,51 @@ describe("App integration with MSW", () => {
       expect(getConfiguredToolReasoningCalls()).toContainEqual({
         codex: "high",
       }),
+    );
+  });
+
+  it("filters the current tool models by provider before switching", async () => {
+    setSettings({ firstRunNoticeConfirmed: true });
+    localStorage.setItem("yuanheng-switch-last-app", "codex");
+    setYuanhengConnection({
+      connected: true,
+      userId: "1024",
+      models: ["claude-sonnet-5", "gpt-5.6"],
+      groups: [
+        { id: "svip", description: "SVIP", ratio: 0.5 },
+        { id: "vip", description: "VIP", ratio: 0.8 },
+      ],
+      modelGroups: {
+        "claude-sonnet-5": ["svip", "vip"],
+        "gpt-5.6": ["svip", "vip"],
+      },
+    });
+    setYuanhengToolStatus("codex", {
+      configured: true,
+      model: "gpt-5.6",
+      group: "svip",
+    });
+
+    const { default: App } = await import("@/App");
+    renderApp(App);
+
+    const vendorPicker = await screen.findByLabelText("Codex 模型供应商");
+    expect(vendorPicker).toHaveValue("openai");
+    fireEvent.change(vendorPicker, { target: { value: "anthropic" } });
+
+    const modelPicker = await screen.findByLabelText("Codex Anthropic模型");
+    fireEvent.click(modelPicker);
+    fireEvent.click(
+      await screen.findByRole("option", { name: /claude-sonnet-5/ }),
+    );
+
+    await waitFor(() =>
+      expect(getConfiguredToolCalls()).toContainEqual(["codex"]),
+    );
+    const groupPicker = await screen.findByLabelText("Codex 当前工具令牌分组");
+    fireEvent.change(groupPicker, { target: { value: "vip" } });
+    await waitFor(() =>
+      expect(getConfiguredToolGroupCalls()).toContainEqual({ codex: "vip" }),
     );
   });
 
