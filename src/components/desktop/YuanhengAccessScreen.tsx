@@ -1,11 +1,16 @@
 import {
   ArrowRight,
+  ExternalLink,
+  Globe,
   Layers3,
   Loader2,
   ShieldCheck,
   Sparkles,
 } from "lucide-react";
+import { toast } from "sonner";
 import appIcon from "@/assets/icons/app-icon.png";
+import { YUANHENG_WEBSITE_URL } from "@/config/yuanhengBrand";
+import { settingsApi } from "@/lib/api";
 import { YuanhengConnectionPanel } from "./YuanhengConnectionPanel";
 
 interface YuanhengAccessScreenProps {
@@ -15,6 +20,13 @@ interface YuanhengAccessScreenProps {
 export function YuanhengAccessScreen({
   loading = false,
 }: YuanhengAccessScreenProps) {
+  const handleOpenWebsite = () => {
+    void settingsApi.openExternal(YUANHENG_WEBSITE_URL).catch((error) => {
+      console.error("[YuanhengAccessScreen] Failed to open website", error);
+      toast.error("打开官网失败，请稍后重试");
+    });
+  };
+
   return (
     <main className="relative flex h-full min-h-0 overflow-y-auto bg-[#10191a] text-white">
       <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_15%_18%,rgba(57,143,125,0.28),transparent_32%),radial-gradient(circle_at_84%_78%,rgba(214,149,84,0.18),transparent_30%)]" />
@@ -64,6 +76,17 @@ export function YuanhengAccessScreen({
               </div>
             ))}
           </div>
+
+          <button
+            type="button"
+            onClick={handleOpenWebsite}
+            className="group mt-5 inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/[0.045] px-3.5 py-2 text-[11px] font-medium text-slate-300 transition-colors hover:border-white/20 hover:bg-white/[0.08] hover:text-white"
+            aria-label="访问元衡官网"
+          >
+            <Globe className="h-3.5 w-3.5 text-[#e2ae75]" />
+            访问元衡官网
+            <ExternalLink className="h-3 w-3 text-slate-600 transition-colors group-hover:text-slate-300" />
+          </button>
         </section>
 
         <section className="animate-rise-in stagger-1 w-full lg:justify-self-end">

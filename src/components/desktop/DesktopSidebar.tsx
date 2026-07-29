@@ -4,7 +4,9 @@ import {
   Bot,
   Boxes,
   ChevronRight,
+  ExternalLink,
   Gauge,
+  Globe,
   Network,
   Settings,
   UserRound,
@@ -12,8 +14,11 @@ import {
   Wrench,
 } from "lucide-react";
 import appIcon from "@/assets/icons/app-icon.png";
+import { YUANHENG_WEBSITE_URL } from "@/config/yuanhengBrand";
+import { settingsApi } from "@/lib/api";
 import type { YuanhengConnectionStatus } from "@/lib/api/yuanheng";
 import { cn } from "@/lib/utils";
+import { toast } from "sonner";
 import type { DesktopView } from "./types";
 import { desktopSection } from "./types";
 
@@ -48,6 +53,13 @@ export function DesktopSidebar({
     connection?.account?.username ||
     (connection?.userId ? `用户 ${connection.userId}` : "元衡用户");
   const balance = connection?.account?.remainingUsd ?? 0;
+
+  const handleOpenWebsite = () => {
+    void settingsApi.openExternal(YUANHENG_WEBSITE_URL).catch((error) => {
+      console.error("[DesktopSidebar] Failed to open website", error);
+      toast.error("打开官网失败，请稍后重试");
+    });
+  };
 
   const renderItem = ({
     id,
@@ -136,6 +148,17 @@ export function DesktopSidebar({
               ${balance.toFixed(2)}
             </strong>
           </div>
+        </button>
+
+        <button
+          type="button"
+          onClick={handleOpenWebsite}
+          className="group flex h-9 w-full items-center gap-2.5 rounded-lg px-3 text-left text-[11px] font-medium text-slate-500 transition-colors hover:bg-white/[0.07] hover:text-slate-200"
+          aria-label="访问元衡官网"
+        >
+          <Globe className="h-3.5 w-3.5 shrink-0" strokeWidth={1.8} />
+          <span className="flex-1">访问官网</span>
+          <ExternalLink className="h-3 w-3 text-slate-700 transition-colors group-hover:text-slate-400" />
         </button>
 
         <div className="flex items-center gap-2 px-2 text-[10px] text-slate-600">
