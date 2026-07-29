@@ -510,7 +510,7 @@ impl Default for AppSettings {
             use_app_window_controls: false,
             enable_claude_plugin_integration: false,
             skip_claude_onboarding: false,
-            launch_on_startup: false,
+            launch_on_startup: true,
             silent_startup: false,
             enable_local_proxy: false,
             proxy_confirmed: None,
@@ -1147,6 +1147,19 @@ pub fn update_s3_sync_status(status: WebDavSyncStatus) -> Result<(), AppError> {
 mod tests {
     use super::*;
     use crate::app_config::AppType;
+
+    #[test]
+    fn new_install_defaults_to_launch_on_startup() {
+        assert!(AppSettings::default().launch_on_startup);
+    }
+
+    #[test]
+    fn legacy_settings_without_launch_preference_stay_disabled() {
+        let settings: AppSettings =
+            serde_json::from_value(serde_json::json!({})).expect("legacy settings");
+
+        assert!(!settings.launch_on_startup);
+    }
 
     #[test]
     fn visible_apps_old_settings_default_claude_desktop_visible() {

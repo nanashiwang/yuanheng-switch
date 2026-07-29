@@ -68,6 +68,41 @@ pub fn is_auto_launch_enabled() -> Result<bool, AppError> {
         .map_err(|e| AppError::Message(format!("检查开机自启状态失败: {e}")))
 }
 
+/// 根据默认设置补齐系统开机启动项。
+///
+/// 开发构建及从 macOS DMG 直接运行时跳过，避免注册临时可执行文件路径。
+pub fn ensure_default_auto_launch_enabled() -> Result<bool, AppError> {
+    #[cfg(debug_assertions)]
+    {
+        log::debug!("开发构建跳过默认开机自启注册");
+        return Ok(false);
+    }
+
+    #[cfg(not(debug_assertions))]
+    {
+        #[cfg(target_os = "macos")]
+        {
+            let exe_path = std::env::current_exe()
+                .map_err(|e| AppError::Message(format!("无法获取应用路径: {e}")))?;
+            let Some(app_path) = get_macos_app_bundle_path(&exe_path) else {
+                log::warn!("当前不在 macOS App Bundle 中，跳过默认开机自启注册");
+                return Ok(false);
+            };
+            if app_path.starts_with("/Volumes") {
+                log::info!("应用正在 DMG 中运行，安装到 Applications 后再启用开机自启");
+                return Ok(false);
+            }
+        }
+
+        if is_auto_launch_enabled()? {
+            return Ok(true);
+        }
+
+        enable_auto_launch()?;
+        Ok(true)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     #[allow(unused_imports)]

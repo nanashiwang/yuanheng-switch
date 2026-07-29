@@ -490,6 +490,16 @@ pub fn run() {
             // 放在日志系统初始化之后，确保 init 的日志能正常输出。
             usage_events::init(app.handle().clone());
 
+            // 新安装默认开启开机自启；已有用户仍以其持久化设置为准。
+            // 每次启动都做一次轻量补齐，系统启动项被外部清理后也能自动恢复。
+            if crate::settings::get_settings().launch_on_startup {
+                match crate::auto_launch::ensure_default_auto_launch_enabled() {
+                    Ok(true) => log::info!("✓ 开机自启已启用"),
+                    Ok(false) => log::debug!("○ 当前环境跳过开机自启注册"),
+                    Err(error) => log::warn!("✗ 默认开机自启注册失败: {error}"),
+                }
+            }
+
             // 初始化数据库
             let app_config_dir = crate::config::get_app_config_dir();
             let db_path = app_config_dir.join("yuanheng-switch.db");
