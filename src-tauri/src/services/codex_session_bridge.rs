@@ -1,6 +1,5 @@
 use std::borrow::Cow;
 use std::collections::HashMap;
-use std::ffi::OsString;
 use std::path::{Path, PathBuf};
 use std::process::Stdio;
 use std::sync::atomic::{AtomicUsize, Ordering};
@@ -386,7 +385,7 @@ async fn handle_terminal(
         let mut paths = vec![parent];
         paths.extend(std::env::split_paths(&current_path));
         if let Ok(path) = std::env::join_paths(paths) {
-            command.env("PATH", OsString::from(path));
+            command.env("PATH", path);
         }
     }
     log::info!(

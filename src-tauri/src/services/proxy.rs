@@ -115,9 +115,7 @@ impl ProxyService {
 
         let supervisor = self.core_supervisor();
         match supervisor.status(&self.db).await {
-            Ok(info)
-                if info.protocol_version == crate::core_daemon::CORE_PROTOCOL_VERSION =>
-            {
+            Ok(info) if info.protocol_version == crate::core_daemon::CORE_PROTOCOL_VERSION => {
                 Ok(())
             }
             Ok(info) if info.status.active_connections > 0 => Ok(()),

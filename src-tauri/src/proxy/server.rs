@@ -99,13 +99,7 @@ impl ProxyServer {
         core_control: CoreControl,
         auth_managers: ProxyAuthManagers,
     ) -> Self {
-        Self::new_with_runtime(
-            config,
-            db,
-            None,
-            Some(core_control),
-            Some(auth_managers),
-        )
+        Self::new_with_runtime(config, db, None, Some(core_control), Some(auth_managers))
     }
 
     fn new_with_runtime(
@@ -325,13 +319,9 @@ impl ProxyServer {
     pub async fn replace_active_targets(&self, targets: Vec<(String, String, String)>) {
         let mut current_providers = self.state.current_providers.write().await;
         current_providers.clear();
-        current_providers.extend(
-            targets
-                .into_iter()
-                .map(|(app_type, provider_id, provider_name)| {
-                    (app_type, (provider_id, provider_name))
-                }),
-        );
+        current_providers.extend(targets.into_iter().map(
+            |(app_type, provider_id, provider_name)| (app_type, (provider_id, provider_name)),
+        ));
     }
 
     fn build_router(&self) -> Router {
@@ -339,18 +329,9 @@ impl ProxyServer {
             // 健康检查
             .route("/health", get(handlers::health_check))
             .route("/status", get(handlers::get_status))
-            .route(
-                "/__yuanheng/core/info",
-                get(handlers::get_core_info),
-            )
-            .route(
-                "/__yuanheng/core/reload",
-                post(handlers::reload_core),
-            )
-            .route(
-                "/__yuanheng/core/shutdown",
-                post(handlers::shutdown_core),
-            )
+            .route("/__yuanheng/core/info", get(handlers::get_core_info))
+            .route("/__yuanheng/core/reload", post(handlers::reload_core))
+            .route("/__yuanheng/core/shutdown", post(handlers::shutdown_core))
             .route(
                 "/__yuanheng/core/reset-circuit-breaker",
                 post(handlers::reset_core_circuit_breaker),

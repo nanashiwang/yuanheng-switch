@@ -22,7 +22,8 @@ use base64::{engine::general_purpose::URL_SAFE_NO_PAD, Engine as _};
 use serde_json::{json, Value};
 use std::collections::{BTreeMap, HashSet};
 
-pub(crate) const ANTHROPIC_THINKING_ENCRYPTED_PREFIX: &str = "yuanhengswitch-anthropic-thinking-v1:";
+pub(crate) const ANTHROPIC_THINKING_ENCRYPTED_PREFIX: &str =
+    "yuanhengswitch-anthropic-thinking-v1:";
 const TOOL_SEARCH_PROXY_NAME: &str = "tool_search";
 
 /// Maps Codex's reasoning.effort to the token budget for Anthropic thinking.

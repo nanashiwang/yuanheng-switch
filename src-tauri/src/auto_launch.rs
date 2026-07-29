@@ -75,7 +75,7 @@ pub fn ensure_default_auto_launch_enabled() -> Result<bool, AppError> {
     #[cfg(debug_assertions)]
     {
         log::debug!("开发构建跳过默认开机自启注册");
-        return Ok(false);
+        Ok(false)
     }
 
     #[cfg(not(debug_assertions))]
@@ -111,19 +111,24 @@ mod tests {
     #[cfg(target_os = "macos")]
     #[test]
     fn test_get_macos_app_bundle_path_valid() {
-        let exe_path = std::path::Path::new("/Applications/YuanHeng Switch.app/Contents/MacOS/YuanHeng Switch");
+        let exe_path = std::path::Path::new(
+            "/Applications/YuanHeng Switch.app/Contents/MacOS/YuanHeng Switch",
+        );
         let result = get_macos_app_bundle_path(exe_path);
         assert_eq!(
             result,
-            Some(std::path::PathBuf::from("/Applications/YuanHeng Switch.app"))
+            Some(std::path::PathBuf::from(
+                "/Applications/YuanHeng Switch.app"
+            ))
         );
     }
 
     #[cfg(target_os = "macos")]
     #[test]
     fn test_get_macos_app_bundle_path_with_spaces() {
-        let exe_path =
-            std::path::Path::new("/Users/test/My Apps/YuanHeng Switch.app/Contents/MacOS/YuanHeng Switch");
+        let exe_path = std::path::Path::new(
+            "/Users/test/My Apps/YuanHeng Switch.app/Contents/MacOS/YuanHeng Switch",
+        );
         let result = get_macos_app_bundle_path(exe_path);
         assert_eq!(
             result,

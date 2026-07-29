@@ -776,7 +776,7 @@ fn desktop_app_candidates(tool: &str) -> Vec<PathBuf> {
                     .join(name),
             );
         }
-        return paths;
+        paths
     }
 
     #[cfg(target_os = "windows")]

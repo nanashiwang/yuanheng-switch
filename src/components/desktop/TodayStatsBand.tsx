@@ -15,11 +15,9 @@ import {
 export function TodayStatsBand() {
   const { i18n } = useTranslation();
   const lang = getResolvedLang(i18n);
-  const { data: summary } = useUsageSummary(
-    { preset: "today" },
-    undefined,
-    { refetchInterval: 60_000 },
-  );
+  const { data: summary } = useUsageSummary({ preset: "today" }, undefined, {
+    refetchInterval: 60_000,
+  });
 
   const cells = [
     {

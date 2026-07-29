@@ -445,7 +445,7 @@ fn extract_cookie(headers: &HeaderMap, cookie_name: &str) -> Option<String> {
             let (name, value) = pair.trim().split_once('=')?;
             (name == cookie_name && !value.is_empty()).then(|| format!("{name}={value}"))
         })
-        .last()
+        .next_back()
 }
 
 fn parse_announcement_response(value: &Value) -> Option<String> {

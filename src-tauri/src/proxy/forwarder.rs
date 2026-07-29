@@ -174,9 +174,10 @@ impl RequestForwarder {
             }
             .map_err(|error| ProxyError::AuthError(format!("GitHub Copilot 认证失败: {error}")));
         }
-        let app_handle = self.app_handle.as_ref().ok_or_else(|| {
-            ProxyError::AuthError("GitHub Copilot 认证管理器不可用".to_string())
-        })?;
+        let app_handle = self
+            .app_handle
+            .as_ref()
+            .ok_or_else(|| ProxyError::AuthError("GitHub Copilot 认证管理器不可用".to_string()))?;
         let state = app_handle.state::<CopilotAuthState>();
         let manager = state.0.read().await;
         match account_id {
@@ -221,10 +222,7 @@ impl RequestForwarder {
         Ok((token, resolved))
     }
 
-    async fn xai_oauth_access_token(
-        &self,
-        account_id: Option<&str>,
-    ) -> Result<String, ProxyError> {
+    async fn xai_oauth_access_token(&self, account_id: Option<&str>) -> Result<String, ProxyError> {
         if let Some(managers) = &self.auth_managers {
             let manager = managers.xai.read().await;
             return match account_id {
@@ -1400,9 +1398,7 @@ impl RequestForwarder {
                 .meta
                 .as_ref()
                 .and_then(|m| m.managed_account_id_for("github_copilot"));
-            if let Some(dynamic_endpoint) =
-                self.copilot_api_endpoint(account_id.as_deref()).await
-            {
+            if let Some(dynamic_endpoint) = self.copilot_api_endpoint(account_id.as_deref()).await {
                 // 只在动态 endpoint 与当前 base_url 不同时替换
                 if dynamic_endpoint != base_url {
                     log::debug!(
@@ -1724,9 +1720,7 @@ impl RequestForwarder {
                     .meta
                     .as_ref()
                     .and_then(|m| m.managed_account_id_for("github_copilot"));
-                let token = self
-                    .copilot_access_token(account_id.as_deref())
-                    .await?;
+                let token = self.copilot_access_token(account_id.as_deref()).await?;
                 auth = AuthInfo::new(token, AuthStrategy::GitHubCopilot);
                 log::debug!(
                     "[Copilot] 成功获取 Copilot token (account={})",
@@ -1759,9 +1753,7 @@ impl RequestForwarder {
                     .meta
                     .as_ref()
                     .and_then(|meta| meta.managed_account_id_for("xai_oauth"));
-                let token = self
-                    .xai_oauth_access_token(account_id.as_deref())
-                    .await?;
+                let token = self.xai_oauth_access_token(account_id.as_deref()).await?;
                 auth = AuthInfo::new(token, AuthStrategy::XaiOAuth);
                 log::debug!(
                     "[XaiOAuth] 成功获取 access_token (account={})",

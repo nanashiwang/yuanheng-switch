@@ -91,9 +91,18 @@ jobs:
           key: ${{ runner.os }}-cargo-${{ hashFiles('src-tauri/Cargo.lock') }}
           restore-keys: ${{ runner.os }}-cargo-
 
-      - name: Create frontend dist placeholder
+      - name: Create Tauri build placeholders
         shell: bash
-        run: mkdir -p dist
+        run: |
+          mkdir -p dist src-tauri/binaries
+          HOST_TARGET="$(rustc -vV | sed -n 's/^host: //p' | tr -d '\r')"
+          test -n "$HOST_TARGET"
+          if [[ "$HOST_TARGET" == *windows* ]]; then
+            SIDECAR_SUFFIX=".exe"
+          else
+            SIDECAR_SUFFIX=""
+          fi
+          : > "src-tauri/binaries/yuanheng-core-${HOST_TARGET}${SIDECAR_SUFFIX}"
 
       - name: Check Rust formatting
         run: cargo fmt --check --manifest-path src-tauri/Cargo.toml

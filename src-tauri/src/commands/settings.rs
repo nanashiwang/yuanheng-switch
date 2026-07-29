@@ -181,11 +181,7 @@ pub async fn restart_app(app: AppHandle) -> Result<bool, String> {
         // app_config_dir 变更时需要恢复旧目录对应的 Live，并卸载旧 Core 服务；
         // 新实例会按新目录重新安装 Core。普通退出/更新不会走这条清理路径。
         if let Some(state) = app.try_state::<crate::store::AppState>() {
-            if let Err(error) = state
-                .proxy_service
-                .prepare_for_config_dir_change()
-                .await
-            {
+            if let Err(error) = state.proxy_service.prepare_for_config_dir_change().await {
                 log::error!("切换 app_config_dir 前清理旧 Core 失败: {error}");
             }
         }
