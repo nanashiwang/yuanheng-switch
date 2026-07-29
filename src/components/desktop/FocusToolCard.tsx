@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 import { CheckCircle2, ChevronDown, Loader2, Play } from "lucide-react";
 import type { YuanhengToolId } from "@/lib/api";
 import { ProviderIcon } from "@/components/ProviderIcon";
@@ -47,27 +47,17 @@ export function FocusToolCard({ switcher, focusApp }: FocusToolCardProps) {
     [connection?.models],
   );
   const currentVendorId = current ? modelVendorOf(current).id : undefined;
-  const vendorIds = vendorGroups.map((vendor) => vendor.id).join("|");
-  const [selectedVendorId, setSelectedVendorId] = useState("");
-
-  useEffect(() => {
-    setSelectedVendorId(currentVendorId ?? "");
-  }, [app, currentVendorId]);
-
-  useEffect(() => {
-    setSelectedVendorId((selected) =>
-      selected && vendorGroups.some((vendor) => vendor.id === selected)
-        ? selected
-        : (currentVendorId ?? vendorGroups[0]?.id ?? ""),
-    );
-  }, [currentVendorId, vendorGroups, vendorIds]);
+  const [selectedVendors, setSelectedVendors] = useState<
+    Partial<Record<YuanhengToolId, string>>
+  >({});
 
   if (!connection?.connected || !app) return null;
 
   const pending = pendingApps.has(app);
   const configured = Boolean(status?.configured);
   const selectedVendor =
-    vendorGroups.find((vendor) => vendor.id === selectedVendorId) ??
+    vendorGroups.find((vendor) => vendor.id === selectedVendors[app]) ??
+    vendorGroups.find((vendor) => vendor.id === currentVendorId) ??
     vendorGroups[0];
   const visibleModel =
     selectedVendor?.id === currentVendorId ? current : undefined;
@@ -179,7 +169,12 @@ export function FocusToolCard({ switcher, focusApp }: FocusToolCardProps) {
                 value={selectedVendor?.id ?? ""}
                 disabled={pending || vendorGroups.length === 0}
                 className="h-8 w-full min-w-0 appearance-none rounded-md border border-white/15 bg-white/[0.08] pl-8 pr-7 text-[10.5px] text-white shadow-sm outline-none [color-scheme:dark] transition-colors hover:bg-white/[0.12] focus:border-[#e9b67c]/70 disabled:cursor-not-allowed disabled:opacity-60"
-                onChange={(event) => setSelectedVendorId(event.target.value)}
+                onChange={(event) =>
+                  setSelectedVendors((currentSelections) => ({
+                    ...currentSelections,
+                    [app]: event.target.value,
+                  }))
+                }
               >
                 {vendorGroups.map((vendor) => (
                   <option key={vendor.id} value={vendor.id}>
