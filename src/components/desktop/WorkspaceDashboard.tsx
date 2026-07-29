@@ -3,6 +3,7 @@ import { ArrowRight, Blocks, Megaphone, ServerCog, X } from "lucide-react";
 import { useInstalledSkills } from "@/hooks/useSkills";
 import { useAllMcpServers } from "@/hooks/useMcp";
 import {
+  useYuanhengAnnouncement,
   useYuanhengConnection,
   useYuanhengToolStatuses,
 } from "@/lib/query/yuanheng";
@@ -53,12 +54,17 @@ export function WorkspaceDashboard({
 }: WorkspaceDashboardProps) {
   const switcher = useModelSwitchCenter();
   const { data: connection } = useYuanhengConnection();
+  const announcementQuery = useYuanhengAnnouncement(connection?.connected);
   const { data: toolStatuses = [] } = useYuanhengToolStatuses();
   const { data: skills = [] } = useInstalledSkills();
   const { data: mcpServers = {} } = useAllMcpServers();
   const configuredTools = toolStatuses.filter((item) => item.configured);
 
-  const announcement = connection?.connected ? connection.announcement : null;
+  const announcement = connection?.connected
+    ? announcementQuery.isSuccess
+      ? announcementQuery.data
+      : connection.announcement
+    : null;
   const announcementSummary = announcement
     ? summarizeAnnouncement(announcement)
     : "";

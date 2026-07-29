@@ -1577,6 +1577,7 @@ pub fn run() {
             commands::launch_tool,
             commands::get_codex_session_bridge_status,
             commands::get_yuanheng_connection,
+            commands::get_yuanheng_announcement,
             commands::get_yuanheng_tool_statuses,
             commands::get_yuanheng_diagnostics,
             commands::export_yuanheng_diagnostics,

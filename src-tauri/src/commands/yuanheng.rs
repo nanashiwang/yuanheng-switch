@@ -448,6 +448,20 @@ fn extract_cookie(headers: &HeaderMap, cookie_name: &str) -> Option<String> {
         .last()
 }
 
+fn parse_announcement_response(value: &Value) -> Option<String> {
+    value
+        .get("data")
+        .and_then(Value::as_str)
+        .map(str::trim)
+        .filter(|notice| !notice.is_empty())
+        .map(str::to_string)
+}
+
+async fn fetch_announcement(client: &reqwest::Client) -> Result<Option<String>, String> {
+    let value = fetch_json(client, &format!("{BASE_URL}/api/notice"), None, None).await?;
+    Ok(parse_announcement_response(&value))
+}
+
 fn session_cookie_for_webview(raw: &str) -> Result<Cookie<'static>, String> {
     let (name, value) = raw
         .trim()
@@ -826,16 +840,13 @@ async fn sync_connection(
         groups.dedup();
     }
 
-    let notice = fetch_json(client, &format!("{BASE_URL}/api/notice"), None, None)
-        .await
-        .ok()
-        .and_then(|value| {
-            value
-                .get("data")
-                .and_then(Value::as_str)
-                .map(str::to_string)
-        })
-        .filter(|value| !value.trim().is_empty());
+    let notice = match fetch_announcement(client).await {
+        Ok(notice) => notice,
+        Err(error) => {
+            log::warn!("元衡平台公告同步失败: {error}");
+            None
+        }
+    };
 
     let models: Vec<String> = model_names.into_iter().collect();
     let reasoning_levels = reasoning_levels_for_models(&models);
@@ -2411,6 +2422,11 @@ pub fn get_yuanheng_connection(
 }
 
 #[tauri::command]
+pub async fn get_yuanheng_announcement() -> Result<Option<String>, String> {
+    fetch_announcement(&yuanheng_client()?).await
+}
+
+#[tauri::command]
 pub fn get_yuanheng_tool_statuses(
     state: State<'_, AppState>,
 ) -> Result<Vec<YuanhengToolStatus>, String> {
@@ -3132,6 +3148,16 @@ mod tests {
         assert!(session_cookie_for_webview("").is_err());
         assert!(session_cookie_for_webview("token=abc123").is_err());
         assert!(session_cookie_for_webview("session=").is_err());
+    }
+
+    #[test]
+    fn parses_public_announcement_response() {
+        assert_eq!(
+            parse_announcement_response(&json!({ "data": "  新公告  " })).as_deref(),
+            Some("新公告")
+        );
+        assert_eq!(parse_announcement_response(&json!({ "data": " " })), None);
+        assert_eq!(parse_announcement_response(&json!({ "data": null })), None);
     }
 
     struct TestHome {

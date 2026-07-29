@@ -71,6 +71,9 @@ export const handlers = [
   http.post(`${TAURI_ENDPOINT}/get_yuanheng_connection`, () =>
     success(getYuanhengConnection()),
   ),
+  http.post(`${TAURI_ENDPOINT}/get_yuanheng_announcement`, () =>
+    success(getYuanhengConnection().announcement),
+  ),
   http.post(`${TAURI_ENDPOINT}/get_codex_session_bridge_status`, () =>
     success({
       running: false,

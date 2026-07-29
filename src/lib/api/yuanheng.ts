@@ -122,6 +122,10 @@ export const yuanhengApi = {
     return invoke("get_yuanheng_connection");
   },
 
+  getAnnouncement(): Promise<string | null> {
+    return invoke("get_yuanheng_announcement");
+  },
+
   login(username: string, password: string): Promise<YuanhengAuthResult> {
     return invoke("login_yuanheng", { username, password });
   },
