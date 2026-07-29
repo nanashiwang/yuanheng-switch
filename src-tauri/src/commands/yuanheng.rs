@@ -1,5 +1,7 @@
 use std::collections::{BTreeSet, HashMap};
-use std::time::{Duration, SystemTime, UNIX_EPOCH};
+use std::time::Duration;
+#[cfg(target_os = "macos")]
+use std::time::{SystemTime, UNIX_EPOCH};
 
 use reqwest::header::{HeaderMap, COOKIE, SET_COOKIE};
 use serde::{Deserialize, Serialize};

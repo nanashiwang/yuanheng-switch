@@ -1064,6 +1064,7 @@ fn spawn_detached_core(config_dir: &Path) -> Result<(), String> {
         .map_err(|error| format!("启动 YuanHeng Core 失败: {error}"))
 }
 
+#[cfg(target_os = "macos")]
 fn command_success(program: &str, args: &[&str]) -> bool {
     Command::new(program)
         .args(args)
@@ -1087,6 +1088,7 @@ fn command_checked(program: &str, args: &[&str]) -> Result<(), String> {
     }
 }
 
+#[cfg(target_os = "macos")]
 fn xml_escape(value: &str) -> String {
     value
         .replace('&', "&amp;")
@@ -1129,7 +1131,9 @@ fn init_core_logger() {
 
 #[cfg(test)]
 mod tests {
-    use super::{proxy_origin, xml_escape};
+    use super::proxy_origin;
+    #[cfg(target_os = "macos")]
+    use super::xml_escape;
 
     #[test]
     fn proxy_origin_normalizes_bind_all_addresses() {
@@ -1137,6 +1141,7 @@ mod tests {
         assert_eq!(proxy_origin("::", 15721), "http://[::1]:15721");
     }
 
+    #[cfg(target_os = "macos")]
     #[test]
     fn launchd_values_are_xml_escaped() {
         assert_eq!(xml_escape("a&<b>\"'"), "a&amp;&lt;b&gt;&quot;&apos;");
