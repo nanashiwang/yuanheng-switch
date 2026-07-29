@@ -150,6 +150,165 @@ const VENDOR_BY_ALIAS = new Map(
 const VENDOR_ORDER = new Map(
   MODEL_VENDOR_DEFINITIONS.map((vendor, index) => [vendor.id, index]),
 );
+const MODEL_NAME_COLLATOR = new Intl.Collator("en", {
+  numeric: true,
+  sensitivity: "base",
+});
+
+const MODEL_SERIES_PATTERNS: Record<string, RegExp[]> = {
+  openai: [
+    /^(?:gpt|chatgpt)(?:[-_.]|$)/,
+    /^o\d+(?:[-_.]|$)/,
+    /^codex(?:[-_.]|$)/,
+  ],
+  qwen: [/^qwen(?:\d|[-_.]|$)/, /^qwq(?:[-_.]|$)/, /^qvq(?:[-_.]|$)/],
+  kimi: [/^kimi(?:[-_.]|$)/, /^moonshot(?:[-_.]|$)/, /^k\d+(?:[-_.]|$)/],
+};
+
+const MODEL_TIER_PATTERNS: Array<[RegExp, number]> = [
+  [/(?:^|[-_.])(?:ultra|max|opus)(?:[-_.]|$)/, 0],
+  [/(?:^|[-_.])pro(?:[-_.]|$)/, 1],
+  [/(?:^|[-_.])(?:sonnet|plus)(?:[-_.]|$)/, 3],
+  [/(?:^|[-_.])(?:flash|turbo)(?:[-_.]|$)/, 4],
+  [/(?:^|[-_.])(?:mini|haiku|small)(?:[-_.]|$)/, 5],
+  [/(?:^|[-_.])(?:nano|lite|micro)(?:[-_.]|$)/, 6],
+];
+
+function modelIdentifier(model: string): string {
+  const segments = model.trim().toLowerCase().split(/[/:]/).filter(Boolean);
+  return segments.at(-1) ?? model.trim().toLowerCase();
+}
+
+function modelLifecycleRank(model: string): number {
+  if (/(?:^|[-_.])(?:deprecated|legacy|retired|old)(?:[-_.]|$)/.test(model)) {
+    return 3;
+  }
+  if (
+    /(?:^|[-_.])(?:experimental|experiment|alpha|canary|nightly|exp)(?:[-_.]|$)/.test(
+      model,
+    )
+  ) {
+    return 2;
+  }
+  if (/(?:^|[-_.])(?:preview|beta|rc)(?:[-_.]|$)/.test(model)) {
+    return 1;
+  }
+  return 0;
+}
+
+function modelSeriesRank(vendorId: string, model: string): number {
+  const patterns = MODEL_SERIES_PATTERNS[vendorId];
+  if (!patterns) return 0;
+  const index = patterns.findIndex((pattern) => pattern.test(model));
+  return index === -1 ? patterns.length : index;
+}
+
+function modelVersionParts(model: string): number[] {
+  const withoutDates = model
+    .replace(/(?:19|20)\d{2}[-_.]\d{2}[-_.]\d{2}/g, "")
+    .replace(/(?:19|20)\d{6}/g, "");
+  return [...withoutDates.matchAll(/\d+/g)].map((match) =>
+    Number.parseInt(match[0], 10),
+  );
+}
+
+function compareVersionParts(left: number[], right: number[]): number {
+  const length = Math.max(left.length, right.length);
+  for (let index = 0; index < length; index += 1) {
+    const leftPart = left[index] ?? -1;
+    const rightPart = right[index] ?? -1;
+    if (leftPart !== rightPart) return rightPart - leftPart;
+  }
+  return 0;
+}
+
+function modelSnapshot(model: string): number {
+  const compact = [...model.matchAll(/(?:19|20)\d{6}/g)].map((match) =>
+    Number.parseInt(match[0], 10),
+  );
+  const separated = [
+    ...model.matchAll(/((?:19|20)\d{2})[-_.](\d{2})[-_.](\d{2})/g),
+  ].map((match) => Number.parseInt(`${match[1]}${match[2]}${match[3]}`, 10));
+  return Math.max(0, ...compact, ...separated);
+}
+
+function modelTierRank(model: string): number {
+  for (const [pattern, rank] of MODEL_TIER_PATTERNS) {
+    if (pattern.test(model)) return rank;
+  }
+  return 2;
+}
+
+export function compareModelNames(left: string, right: string): number {
+  const leftVendor = modelVendorOf(left);
+  const rightVendor = modelVendorOf(right);
+  const vendorDifference =
+    (VENDOR_ORDER.get(leftVendor.id) ?? Number.POSITIVE_INFINITY) -
+    (VENDOR_ORDER.get(rightVendor.id) ?? Number.POSITIVE_INFINITY);
+  if (vendorDifference !== 0) return vendorDifference;
+
+  const leftModel = modelIdentifier(left);
+  const rightModel = modelIdentifier(right);
+  const lifecycleDifference =
+    modelLifecycleRank(leftModel) - modelLifecycleRank(rightModel);
+  if (lifecycleDifference !== 0) return lifecycleDifference;
+
+  if (leftVendor.id === "other") {
+    return MODEL_NAME_COLLATOR.compare(leftModel, rightModel);
+  }
+
+  const seriesDifference =
+    modelSeriesRank(leftVendor.id, leftModel) -
+    modelSeriesRank(rightVendor.id, rightModel);
+  if (seriesDifference !== 0) return seriesDifference;
+
+  const leftLatest = /(?:^|[-_.])latest(?:[-_.]|$)/.test(leftModel);
+  const rightLatest = /(?:^|[-_.])latest(?:[-_.]|$)/.test(rightModel);
+  if (leftLatest !== rightLatest) return leftLatest ? -1 : 1;
+
+  const versionDifference = compareVersionParts(
+    modelVersionParts(leftModel),
+    modelVersionParts(rightModel),
+  );
+  if (versionDifference !== 0) return versionDifference;
+
+  const tierDifference = modelTierRank(leftModel) - modelTierRank(rightModel);
+  if (tierDifference !== 0) return tierDifference;
+
+  const leftSnapshot = modelSnapshot(leftModel);
+  const rightSnapshot = modelSnapshot(rightModel);
+  if (leftSnapshot !== rightSnapshot) {
+    if (leftSnapshot === 0) return -1;
+    if (rightSnapshot === 0) return 1;
+    return rightSnapshot - leftSnapshot;
+  }
+
+  return (
+    leftModel.length - rightModel.length ||
+    MODEL_NAME_COLLATOR.compare(leftModel, rightModel)
+  );
+}
+
+export function sortModelNames(
+  models: string[],
+  priorityModels: Array<string | null | undefined> = [],
+): string[] {
+  const priority = new Map<string, number>();
+  for (const model of priorityModels) {
+    if (model && !priority.has(model)) priority.set(model, priority.size);
+  }
+
+  return [...models].sort((left, right) => {
+    const leftPriority = priority.get(left);
+    const rightPriority = priority.get(right);
+    if (leftPriority !== undefined || rightPriority !== undefined) {
+      if (leftPriority === undefined) return 1;
+      if (rightPriority === undefined) return -1;
+      return leftPriority - rightPriority;
+    }
+    return compareModelNames(left, right);
+  });
+}
 
 export function modelVendorOf(model: string): Omit<ModelVendorGroup, "models"> {
   const normalized = model.trim().toLowerCase();
@@ -187,9 +346,7 @@ export function groupModelsByVendor(models: string[]): ModelVendorGroup[] {
   return [...grouped.values()]
     .map((group) => ({
       ...group,
-      models: [...group.models].sort((left, right) =>
-        left.localeCompare(right),
-      ),
+      models: sortModelNames(group.models),
     }))
     .sort(
       (left, right) =>

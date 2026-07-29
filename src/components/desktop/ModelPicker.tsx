@@ -14,6 +14,7 @@ import {
   PopoverTrigger,
 } from "@/components/ui/popover";
 import { cn } from "@/lib/utils";
+import { sortModelNames } from "./modelVendors";
 
 export function ModelPicker({
   models,
@@ -37,21 +38,10 @@ export function ModelPicker({
   onRefresh?: () => void;
 }) {
   const [open, setOpen] = useState(false);
-  const orderedModels = useMemo(() => {
-    const priority = [value, recommended].filter((item): item is string =>
-      Boolean(item),
-    );
-    return [...models].sort((left, right) => {
-      const leftPriority = priority.indexOf(left);
-      const rightPriority = priority.indexOf(right);
-      if (leftPriority !== -1 || rightPriority !== -1) {
-        if (leftPriority === -1) return 1;
-        if (rightPriority === -1) return -1;
-        return leftPriority - rightPriority;
-      }
-      return left.localeCompare(right);
-    });
-  }, [models, recommended, value]);
+  const orderedModels = useMemo(
+    () => sortModelNames(models, [value, recommended]),
+    [models, recommended, value],
+  );
 
   return (
     <Popover
@@ -92,7 +82,7 @@ export function ModelPicker({
           <CommandList className="max-h-[320px]">
             <CommandEmpty>没有找到匹配的模型</CommandEmpty>
             <CommandGroup
-              heading={`账号当前可用 ${orderedModels.length} 个模型`}
+              heading={`当前/推荐优先 · 新版本在前 · 共 ${orderedModels.length} 个`}
             >
               {orderedModels.map((model) => (
                 <CommandItem
@@ -110,6 +100,11 @@ export function ModelPicker({
                     )}
                   />
                   <span className="min-w-0 flex-1 truncate">{model}</span>
+                  {model === value && (
+                    <span className="shrink-0 text-[9px] font-medium text-primary">
+                      当前
+                    </span>
+                  )}
                   {model === recommended && (
                     <span className="shrink-0 text-[9px] text-emerald-600">
                       推荐
