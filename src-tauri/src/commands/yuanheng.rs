@@ -12,6 +12,10 @@ use tauri_plugin_opener::OpenerExt;
 use toml_edit::DocumentMut;
 
 use crate::app_config::AppType;
+use crate::model_reasoning::{
+    fallback_reasoning_profile, load_local_reasoning_profiles, reasoning_profile_for_model,
+    REASONING_LEVELS,
+};
 use crate::provider::{
     ClaudeDesktopMode, ClaudeDesktopModelRoute, LocalProxyRequestOverrides, Provider, ProviderMeta,
 };
@@ -65,6 +69,8 @@ pub struct YuanhengConnectionStatus {
     pub model_groups: HashMap<String, Vec<String>>,
     #[serde(default)]
     pub reasoning_levels: HashMap<String, Vec<String>>,
+    #[serde(default)]
+    pub reasoning_defaults: HashMap<String, String>,
     pub announcement: Option<String>,
     pub last_synced_at: Option<i64>,
 }
@@ -163,6 +169,7 @@ impl Default for YuanhengConnectionStatus {
             groups: Vec::new(),
             model_groups: HashMap::new(),
             reasoning_levels: HashMap::new(),
+            reasoning_defaults: HashMap::new(),
             announcement: None,
             last_synced_at: None,
         }
@@ -633,136 +640,31 @@ async fn ensure_device_api_token(
     Ok((normalize_api_token(key)?, token_id))
 }
 
-const REASONING_LEVELS: &[&str] = &[
-    "none", "minimal", "low", "medium", "high", "xhigh", "max", "ultra",
-];
-
-fn normalize_reasoning_levels(values: impl IntoIterator<Item = String>) -> Vec<String> {
-    let mut levels = Vec::new();
-    for value in values {
-        let level = value.trim().to_ascii_lowercase();
-        if REASONING_LEVELS.contains(&level.as_str()) && !levels.contains(&level) {
-            levels.push(level);
-        }
-    }
-    levels
-}
-
 fn fallback_reasoning_levels(model: &str) -> Vec<String> {
-    let model = model.to_ascii_lowercase();
-    if model.contains("claude") {
-        return ["low", "medium", "high", "max"]
-            .into_iter()
-            .map(str::to_string)
-            .collect();
-    }
-    if model.starts_with("gpt-")
-        || model.starts_with("o1")
-        || model.starts_with("o3")
-        || model.starts_with("o4")
-        || model.contains("codex")
-        || model == "k3"
-    {
-        return ["low", "medium", "high", "xhigh"]
-            .into_iter()
-            .map(str::to_string)
-            .collect();
-    }
-    if model.contains("gemini") {
-        return ["low", "medium", "high"]
-            .into_iter()
-            .map(str::to_string)
-            .collect();
-    }
-    Vec::new()
+    fallback_reasoning_profile(model)
+        .map(|profile| profile.supported_levels)
+        .unwrap_or_default()
 }
 
-fn catalog_reasoning_levels() -> HashMap<String, Vec<String>> {
-    let Some(codex_dir) = dirs::home_dir().map(|home| home.join(".codex")) else {
-        return HashMap::new();
-    };
-    let Ok(entries) = std::fs::read_dir(codex_dir) else {
-        return HashMap::new();
-    };
-    let mut paths: Vec<_> = entries
-        .flatten()
-        .map(|entry| entry.path())
-        .filter(|path| {
-            let name = path
-                .file_name()
-                .and_then(|name| name.to_str())
-                .unwrap_or_default();
-            path.is_file()
-                && name.ends_with(".json")
-                && ((name.contains("model") && name.contains("catalog"))
-                    || name == "models_cache.json")
-        })
-        .collect();
-    paths.sort_by_key(|path| {
-        let name = path
-            .file_name()
-            .and_then(|name| name.to_str())
-            .unwrap_or_default();
-        if name == "model-catalog.cn-meta-api.json" {
-            0
-        } else if name == "cc-switch-model-catalog.json" {
-            1
-        } else if name == "yuanheng-switch-model-catalog.json" {
-            2
-        } else if name == "models_cache.json" {
-            3
-        } else {
-            4
+fn reasoning_profiles_for_models(
+    models: &[String],
+) -> (HashMap<String, Vec<String>>, HashMap<String, String>) {
+    let catalog = load_local_reasoning_profiles();
+    let mut levels = HashMap::new();
+    let mut defaults = HashMap::new();
+    for model in models {
+        let Some(profile) = reasoning_profile_for_model(model, &catalog) else {
+            continue;
+        };
+        if profile.supported_levels.is_empty() {
+            continue;
         }
-    });
-
-    let mut result = HashMap::new();
-    for path in paths {
-        let Ok(text) = std::fs::read_to_string(path) else {
-            continue;
-        };
-        let Ok(catalog) = serde_json::from_str::<Value>(&text) else {
-            continue;
-        };
-        let Some(models) = catalog.get("models").and_then(Value::as_array) else {
-            continue;
-        };
-        for model in models {
-            let Some(slug) = model.get("slug").and_then(Value::as_str) else {
-                continue;
-            };
-            let values = model
-                .get("supported_reasoning_levels")
-                .and_then(Value::as_array)
-                .into_iter()
-                .flatten()
-                .filter_map(|item| {
-                    item.get("effort")
-                        .and_then(Value::as_str)
-                        .or_else(|| item.as_str())
-                        .map(str::to_string)
-                });
-            let levels = normalize_reasoning_levels(values);
-            if !levels.is_empty() {
-                result.entry(slug.to_ascii_lowercase()).or_insert(levels);
-            }
+        if let Some(default) = profile.default_level {
+            defaults.insert(model.clone(), default);
         }
+        levels.insert(model.clone(), profile.supported_levels);
     }
-    result
-}
-
-fn reasoning_levels_for_models(models: &[String]) -> HashMap<String, Vec<String>> {
-    let catalog = catalog_reasoning_levels();
-    models
-        .iter()
-        .filter_map(|model| {
-            let levels = catalog
-                .get(&model.to_ascii_lowercase())
-                .cloned()
-                .unwrap_or_else(|| fallback_reasoning_levels(model));
-            (!levels.is_empty()).then_some((model.clone(), levels))
-        })
-        .collect()
+    (levels, defaults)
 }
 
 async fn sync_connection(
@@ -851,7 +753,7 @@ async fn sync_connection(
     };
 
     let models: Vec<String> = model_names.into_iter().collect();
-    let reasoning_levels = reasoning_levels_for_models(&models);
+    let (reasoning_levels, reasoning_defaults) = reasoning_profiles_for_models(&models);
 
     Ok(YuanhengConnectionStatus {
         connected: true,
@@ -862,6 +764,7 @@ async fn sync_connection(
         groups,
         model_groups,
         reasoning_levels,
+        reasoning_defaults,
         announcement: notice,
         last_synced_at: Some(chrono::Utc::now().timestamp()),
     })
@@ -996,7 +899,8 @@ fn read_cached_status(state: &AppState) -> Result<YuanhengConnectionStatus, Stri
         .unwrap_or_default();
     status.connected = true;
     status.base_url = BASE_URL.to_string();
-    status.reasoning_levels = reasoning_levels_for_models(&status.models);
+    (status.reasoning_levels, status.reasoning_defaults) =
+        reasoning_profiles_for_models(&status.models);
     Ok(status)
 }
 
@@ -1276,6 +1180,13 @@ impl CodexSurface {
             Self::Desktop => CHATGPT_DESKTOP_NAMESPACE,
         }
     }
+
+    fn catalog_filename(self) -> &'static str {
+        match self {
+            Self::Terminal => crate::codex_config::YUANHENG_TERMINAL_MODEL_CATALOG_FILENAME,
+            Self::Desktop => crate::codex_config::YUANHENG_DESKTOP_MODEL_CATALOG_FILENAME,
+        }
+    }
 }
 
 fn codex_terminal_profile_path() -> std::path::PathBuf {
@@ -1364,16 +1275,16 @@ fn codex_surface_route_config(
         crate::codex_config::prepare_codex_provider_live_config(&placeholder_auth, &config_text)
             .map_err(|error| error.to_string())?;
     let configured_reasoning = provider_reasoning(provider).unwrap_or_else(|| "auto".to_string());
-    let reasoning_override = match (surface, configured_reasoning.as_str()) {
-        (CodexSurface::Terminal, "auto") => Some("medium"),
-        (_, "auto") => None,
-        (_, level) => Some(level),
+    let reasoning_override = match configured_reasoning.as_str() {
+        "auto" => None,
+        level => Some(level),
     };
     let config_text = set_codex_reasoning_field(&config_text, reasoning_override)?;
-    crate::codex_config::prepare_codex_config_text_with_model_catalog(
+    crate::codex_config::prepare_codex_config_text_with_named_model_catalog(
         catalog_settings,
         &config_text,
         crate::codex_config::CodexCatalogToolProfile::ProxyChat,
+        surface.catalog_filename(),
     )
     .map_err(|error| error.to_string())
 }
@@ -2209,6 +2120,17 @@ fn remove_codex_surface_artifacts(state: &AppState) -> Result<bool, String> {
     if profile_should_remove {
         std::fs::remove_file(&profile_path)
             .map_err(|error| format!("移除 Codex 终端独立配置失败: {error}"))?;
+    }
+    for filename in [
+        crate::codex_config::YUANHENG_TERMINAL_MODEL_CATALOG_FILENAME,
+        crate::codex_config::YUANHENG_DESKTOP_MODEL_CATALOG_FILENAME,
+    ] {
+        let path = crate::codex_config::get_codex_named_model_catalog_path(filename);
+        if let Err(error) = std::fs::remove_file(&path) {
+            if error.kind() != std::io::ErrorKind::NotFound {
+                return Err(format!("移除 Codex 模型目录失败: {error}"));
+            }
+        }
     }
 
     Ok(desktop_provider.is_some() || profile_should_remove)
@@ -3773,8 +3695,47 @@ mod tests {
         .unwrap();
         assert!(terminal_config.contains("/codex/v1"));
         assert!(terminal_config.contains("model = \"gpt-5.6-sol\""));
+        assert!(terminal_config.contains("yuanheng-terminal-model-catalog.json"));
+        assert!(!terminal_config.contains("yuanheng-desktop-model-catalog.json"));
         assert!(desktop_config.contains("/chatgpt-desktop/v1"));
         assert!(desktop_config.contains("model = \"k3\""));
+        assert!(desktop_config.contains("yuanheng-desktop-model-catalog.json"));
+        assert!(!desktop_config.contains("yuanheng-terminal-model-catalog.json"));
+        assert!(crate::codex_config::get_codex_named_model_catalog_path(
+            crate::codex_config::YUANHENG_TERMINAL_MODEL_CATALOG_FILENAME
+        )
+        .exists());
+        assert!(crate::codex_config::get_codex_named_model_catalog_path(
+            crate::codex_config::YUANHENG_DESKTOP_MODEL_CATALOG_FILENAME
+        )
+        .exists());
+    }
+
+    #[test]
+    #[serial]
+    fn codex_surface_auto_uses_catalog_default_without_writing_medium() {
+        let (_home, _state) = isolated_state();
+        let provider =
+            managed_provider(&AppType::Codex, "token", "gpt-5.6-sol", "default", "auto").unwrap();
+        let catalog = json!({
+            "modelCatalog": { "models": [{ "model": "gpt-5.6-sol" }] }
+        });
+        let config = codex_surface_route_config(
+            &provider,
+            "http://127.0.0.1:15721/codex/v1",
+            &catalog,
+            CodexSurface::Terminal,
+        )
+        .unwrap();
+        assert!(!config.contains("model_reasoning_effort"));
+        let catalog_path = crate::codex_config::get_codex_named_model_catalog_path(
+            crate::codex_config::YUANHENG_TERMINAL_MODEL_CATALOG_FILENAME,
+        );
+        let generated: Value = serde_json::from_str(
+            &std::fs::read_to_string(catalog_path).expect("terminal catalog should exist"),
+        )
+        .unwrap();
+        assert_eq!(generated["models"][0]["default_reasoning_level"], "low");
     }
 
     #[test]

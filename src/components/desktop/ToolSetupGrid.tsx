@@ -88,6 +88,14 @@ export const REASONING_LABELS: Record<YuanhengReasoningLevel, string> = {
   ultra: "极限",
 };
 
+export const reasoningLabel = (
+  level: YuanhengReasoningLevel,
+  defaultLevel?: YuanhengReasoningLevel,
+) =>
+  level === "auto" && defaultLevel
+    ? `自动（默认：${REASONING_LABELS[defaultLevel]}）`
+    : REASONING_LABELS[level];
+
 /** 为模型挑选默认令牌分组：优先保留当前选择，其次 auto / 账号分组，最后按费率最低 */
 export function pickPreferredGroup(
   connection: YuanhengConnectionStatus | undefined,
@@ -496,6 +504,9 @@ export function ToolSetupGrid({
           const supportedReasoning = selectedModel
             ? (connection?.reasoningLevels[selectedModel] ?? [])
             : [];
+          const defaultReasoning = selectedModel
+            ? connection?.reasoningDefaults?.[selectedModel]
+            : undefined;
           const reasoningOptions: YuanhengReasoningLevel[] = [
             "auto",
             ...supportedReasoning,
@@ -747,7 +758,12 @@ export function ToolSetupGrid({
                       <select
                         aria-label={`${toolLabel(app)} 推理等级`}
                         className="h-7 min-w-0 flex-1 rounded-md border bg-background px-2 text-[10px]"
-                        value={selectedReasoning}
+                        value={
+                          supportedReasoning.length > 0
+                            ? selectedReasoning
+                            : "unsupported"
+                        }
+                        disabled={supportedReasoning.length === 0}
                         onClick={(event) => event.stopPropagation()}
                         onChange={(event) => {
                           const value = event.target
@@ -758,11 +774,15 @@ export function ToolSetupGrid({
                           }));
                         }}
                       >
-                        {reasoningOptions.map((level) => (
-                          <option key={level} value={level}>
-                            {REASONING_LABELS[level]}
-                          </option>
-                        ))}
+                        {supportedReasoning.length === 0 ? (
+                          <option value="unsupported">不适用</option>
+                        ) : (
+                          reasoningOptions.map((level) => (
+                            <option key={level} value={level}>
+                              {reasoningLabel(level, defaultReasoning)}
+                            </option>
+                          ))
+                        )}
                       </select>
                     </div>
                   )}

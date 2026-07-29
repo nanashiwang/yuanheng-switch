@@ -23,6 +23,7 @@ mod lightweight;
 mod linux_fix;
 mod mcp;
 mod model_capabilities;
+mod model_reasoning;
 mod openclaw_config;
 mod opencode_config;
 mod panic_hook;

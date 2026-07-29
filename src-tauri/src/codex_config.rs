@@ -7,6 +7,10 @@ use crate::config::{
 };
 use crate::error::AppError;
 use crate::model_capabilities::{image_input_capability_from_modalities, ImageInputCapability};
+use crate::model_reasoning::{
+    load_local_reasoning_profiles, normalize_reasoning_level, normalize_reasoning_levels,
+    reasoning_profile_for_model, ReasoningProfile,
+};
 use once_cell::sync::OnceCell;
 use serde_json::{json, Value};
 use std::fs;
@@ -20,6 +24,8 @@ pub const CC_SWITCH_CODEX_MODEL_PROVIDER_ID: &str = "custom";
 /// cleaned up without mistaking a user's own local provider for takeover.
 pub const CC_SWITCH_CODEX_OFFICIAL_PROXY_PROVIDER_ID: &str = "yuanheng-switch-official";
 pub const CC_SWITCH_CODEX_MODEL_CATALOG_FILENAME: &str = "yuanheng-switch-model-catalog.json";
+pub const YUANHENG_TERMINAL_MODEL_CATALOG_FILENAME: &str = "yuanheng-terminal-model-catalog.json";
+pub const YUANHENG_DESKTOP_MODEL_CATALOG_FILENAME: &str = "yuanheng-desktop-model-catalog.json";
 const CODEX_PROXY_AUTH_PLACEHOLDER: &str = "PROXY_MANAGED";
 
 #[cfg(target_os = "windows")]
@@ -187,6 +193,10 @@ pub fn get_codex_config_path() -> PathBuf {
 
 pub fn get_codex_model_catalog_path() -> PathBuf {
     get_codex_config_dir().join(CC_SWITCH_CODEX_MODEL_CATALOG_FILENAME)
+}
+
+pub fn get_codex_named_model_catalog_path(filename: &str) -> PathBuf {
+    get_codex_config_dir().join(filename)
 }
 
 /// 获取 Codex 供应商配置文件路径
@@ -483,6 +493,42 @@ fn codex_catalog_model_entry(
     entry_obj.insert("availability_nux".to_string(), Value::Null);
     entry_obj.insert("upgrade".to_string(), Value::Null);
 
+    let reasoning_profile = spec
+        .reasoning_profile
+        .clone()
+        .unwrap_or_else(|| ReasoningProfile {
+            supported_levels: vec!["none".to_string()],
+            default_level: Some("none".to_string()),
+        });
+    let default_level = reasoning_profile
+        .default_level
+        .as_deref()
+        .filter(|level| {
+            reasoning_profile
+                .supported_levels
+                .iter()
+                .any(|item| item == level)
+        })
+        .or_else(|| {
+            reasoning_profile
+                .supported_levels
+                .first()
+                .map(String::as_str)
+        })
+        .unwrap_or("none");
+    entry_obj.insert("default_reasoning_level".to_string(), json!(default_level));
+    entry_obj.insert(
+        "supported_reasoning_levels".to_string(),
+        json!(reasoning_profile
+            .supported_levels
+            .iter()
+            .map(|effort| json!({
+                "effort": effort,
+                "description": reasoning_level_description(effort),
+            }))
+            .collect::<Vec<_>>()),
+    );
+
     // Image support is a model capability, not a tool-profile capability.
     // Trust hidden preset metadata first, then the confirmed text-only registry;
     // every unknown model fails open so GPT/relay aliases are never declared
@@ -550,6 +596,52 @@ struct CodexCatalogModelSpec {
     /// back to the template default when absent. Only consulted for
     /// `NativeResponses`.
     base_instructions: Option<String>,
+    /// Model-specific reasoning capabilities. Unknown models deliberately get
+    /// a single non-adjustable `none` value instead of inheriting a GPT template.
+    reasoning_profile: Option<ReasoningProfile>,
+}
+
+fn reasoning_level_description(level: &str) -> &'static str {
+    match level {
+        "none" => "Disable reasoning",
+        "minimal" => "Minimal reasoning",
+        "low" => "Fast responses with lighter reasoning",
+        "medium" => "Balanced speed and reasoning depth",
+        "high" => "Greater reasoning depth for complex tasks",
+        "xhigh" => "Extra high reasoning depth",
+        "max" => "Maximum reasoning depth",
+        "ultra" => "Maximum reasoning with automatic task delegation",
+        _ => "Reasoning effort",
+    }
+}
+
+fn model_config_reasoning_profile(model_config: &Value) -> Option<ReasoningProfile> {
+    let values = model_config
+        .get("supportedReasoningLevels")
+        .or_else(|| model_config.get("supported_reasoning_levels"))
+        .and_then(Value::as_array)?
+        .iter()
+        .filter_map(|item| {
+            item.get("effort")
+                .and_then(Value::as_str)
+                .or_else(|| item.as_str())
+                .map(str::to_string)
+        });
+    let supported_levels = normalize_reasoning_levels(values);
+    if supported_levels.is_empty() {
+        return None;
+    }
+    let default_level = model_config
+        .get("defaultReasoningLevel")
+        .or_else(|| model_config.get("default_reasoning_level"))
+        .and_then(Value::as_str)
+        .and_then(normalize_reasoning_level)
+        .filter(|level| supported_levels.contains(level))
+        .or_else(|| supported_levels.first().cloned());
+    Some(ReasoningProfile {
+        supported_levels,
+        default_level,
+    })
 }
 
 fn codex_catalog_model_specs(settings: &Value, config_text: &str) -> Vec<CodexCatalogModelSpec> {
@@ -565,6 +657,7 @@ fn codex_catalog_model_specs(settings: &Value, config_text: &str) -> Vec<CodexCa
         extract_codex_top_level_u64(config_text, "model_context_window").unwrap_or(128_000);
     let mut seen = std::collections::HashSet::new();
     let mut specs = Vec::new();
+    let local_reasoning_profiles = load_local_reasoning_profiles();
 
     for model_config in models {
         let Some(model) = model_config
@@ -618,6 +711,8 @@ fn codex_catalog_model_specs(settings: &Value, config_text: &str) -> Vec<CodexCa
             .map(str::trim)
             .filter(|text| !text.is_empty())
             .map(str::to_string);
+        let reasoning_profile = model_config_reasoning_profile(model_config)
+            .or_else(|| reasoning_profile_for_model(model, &local_reasoning_profiles));
 
         specs.push(CodexCatalogModelSpec {
             model: model.to_string(),
@@ -626,6 +721,7 @@ fn codex_catalog_model_specs(settings: &Value, config_text: &str) -> Vec<CodexCa
             supports_parallel_tool_calls,
             input_modalities,
             base_instructions,
+            reasoning_profile,
         });
     }
 
@@ -1016,16 +1112,23 @@ fn set_codex_model_catalog_json_field(
         .map_err(|e| AppError::Message(format!("Invalid Codex config.toml: {e}")))?;
 
     match catalog_path {
-        Some(_) => {
-            doc["model_catalog_json"] = toml_edit::value(CC_SWITCH_CODEX_MODEL_CATALOG_FILENAME);
+        Some(path) => {
+            let filename = path
+                .file_name()
+                .and_then(|name| name.to_str())
+                .ok_or_else(|| AppError::Message("Invalid Codex model catalog path".to_string()))?;
+            doc["model_catalog_json"] = toml_edit::value(filename);
         }
         None => {
             let should_remove = doc
                 .get("model_catalog_json")
                 .and_then(|item| item.as_str())
                 .map(|path| {
-                    Path::new(path).file_name().and_then(|name| name.to_str())
-                        == Some(CC_SWITCH_CODEX_MODEL_CATALOG_FILENAME)
+                    Path::new(path)
+                        .file_name()
+                        .and_then(|name| name.to_str())
+                        .map(is_yuanheng_managed_catalog_filename)
+                        .unwrap_or(false)
                 })
                 .unwrap_or(false);
             if should_remove {
@@ -1075,7 +1178,21 @@ pub fn prepare_codex_config_text_with_model_catalog(
     config_text: &str,
     profile: CodexCatalogToolProfile,
 ) -> Result<String, AppError> {
-    let catalog_path = get_codex_model_catalog_path();
+    prepare_codex_config_text_with_named_model_catalog(
+        settings,
+        config_text,
+        profile,
+        CC_SWITCH_CODEX_MODEL_CATALOG_FILENAME,
+    )
+}
+
+pub fn prepare_codex_config_text_with_named_model_catalog(
+    settings: &Value,
+    config_text: &str,
+    profile: CodexCatalogToolProfile,
+    catalog_filename: &str,
+) -> Result<String, AppError> {
+    let catalog_path = get_codex_named_model_catalog_path(catalog_filename);
 
     if let Some(catalog) = codex_model_catalog_from_settings(settings, config_text, profile)? {
         let config_text = set_codex_model_catalog_json_field(config_text, Some(&catalog_path))?;
@@ -1103,6 +1220,15 @@ pub fn prepare_codex_config_text_with_model_catalog(
         let disable_web_search = profile == CodexCatalogToolProfile::Anthropic;
         set_codex_native_web_search_field(&config_text, disable_web_search)
     }
+}
+
+fn is_yuanheng_managed_catalog_filename(filename: &str) -> bool {
+    matches!(
+        filename,
+        CC_SWITCH_CODEX_MODEL_CATALOG_FILENAME
+            | YUANHENG_TERMINAL_MODEL_CATALOG_FILENAME
+            | YUANHENG_DESKTOP_MODEL_CATALOG_FILENAME
+    )
 }
 
 /// Reverse of `prepare_codex_config_text_with_model_catalog`: read the
@@ -1164,8 +1290,11 @@ pub(crate) fn resolve_cc_switch_catalog_path(
         .filter(|s| !s.is_empty())?;
 
     let referenced_path = Path::new(catalog_path_str);
-    let is_cc_switch_owned = referenced_path.file_name().and_then(|name| name.to_str())
-        == Some(CC_SWITCH_CODEX_MODEL_CATALOG_FILENAME);
+    let is_cc_switch_owned = referenced_path
+        .file_name()
+        .and_then(|name| name.to_str())
+        .map(is_yuanheng_managed_catalog_filename)
+        .unwrap_or(false);
     if !is_cc_switch_owned {
         return None;
     }
@@ -1173,7 +1302,9 @@ pub(crate) fn resolve_cc_switch_catalog_path(
     if referenced_path.is_absolute() {
         Some(referenced_path.to_path_buf())
     } else {
-        Some(generated_path.to_path_buf())
+        generated_path
+            .parent()
+            .map(|parent| parent.join(referenced_path))
     }
 }
 
@@ -1235,6 +1366,35 @@ fn build_simplified_catalog_from_texts(config_text: &str, catalog_text: &str) ->
             let inferred = codex_catalog_input_modalities(model, None);
             if !mods.is_empty() && mods != inferred {
                 obj.insert("inputModalities".to_string(), json!(mods));
+            }
+        }
+        let reasoning_levels = entry
+            .get("supported_reasoning_levels")
+            .and_then(Value::as_array)
+            .into_iter()
+            .flatten()
+            .filter_map(|item| {
+                item.get("effort")
+                    .and_then(Value::as_str)
+                    .or_else(|| item.as_str())
+                    .map(str::to_string)
+            });
+        let reasoning_levels = normalize_reasoning_levels(reasoning_levels);
+        if !reasoning_levels.is_empty() {
+            let default_reasoning = entry
+                .get("default_reasoning_level")
+                .and_then(Value::as_str)
+                .and_then(normalize_reasoning_level)
+                .filter(|level| reasoning_levels.contains(level));
+            obj.insert(
+                "supportedReasoningLevels".to_string(),
+                json!(reasoning_levels),
+            );
+            if let Some(default_reasoning) = default_reasoning {
+                obj.insert(
+                    "defaultReasoningLevel".to_string(),
+                    json!(default_reasoning),
+                );
             }
         }
 
@@ -2784,6 +2944,7 @@ base_url = "https://production.api/v1"
             supports_parallel_tool_calls: None,
             input_modalities: None,
             base_instructions: None,
+            reasoning_profile: None,
         }];
         let catalog =
             codex_model_catalog_from_specs(&specs, &template, CodexCatalogToolProfile::ProxyChat);
@@ -2896,6 +3057,49 @@ base_url = "https://production.api/v1"
     }
 
     #[test]
+    fn catalog_uses_per_model_reasoning_profiles_instead_of_template_defaults() {
+        let template = json!({
+            "default_reasoning_level": "high",
+            "supported_reasoning_levels": [{ "effort": "high" }]
+        });
+        let settings = json!({
+            "modelCatalog": {
+                "models": [
+                    {
+                        "model": "gpt-5.6-sol",
+                        "defaultReasoningLevel": "low",
+                        "supportedReasoningLevels": [
+                            "low", "medium", "high", "xhigh", "max", "ultra"
+                        ]
+                    },
+                    { "model": "ocr-specialist" }
+                ]
+            }
+        });
+
+        let specs = codex_catalog_model_specs(&settings, "");
+        let catalog =
+            codex_model_catalog_from_specs(&specs, &template, CodexCatalogToolProfile::ProxyChat);
+        let models = catalog["models"].as_array().unwrap();
+
+        assert_eq!(models[0]["default_reasoning_level"], json!("low"));
+        assert_eq!(
+            models[0]["supported_reasoning_levels"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .filter_map(|item| item["effort"].as_str())
+                .collect::<Vec<_>>(),
+            vec!["low", "medium", "high", "xhigh", "max", "ultra"]
+        );
+        assert_eq!(models[1]["default_reasoning_level"], json!("none"));
+        assert_eq!(
+            models[1]["supported_reasoning_levels"],
+            json!([{ "effort": "none", "description": "Disable reasoning" }])
+        );
+    }
+
+    #[test]
     fn native_responses_profile_suppresses_apply_patch_and_keeps_shell() {
         // Native (direct) /responses providers must NOT emit a freeform
         // apply_patch (type=="custom") tool — gateways like MiMo reject it.
@@ -2982,6 +3186,7 @@ base_url = "https://production.api/v1"
                 supports_parallel_tool_calls: None,
                 input_modalities: None,
                 base_instructions: None,
+                reasoning_profile: None,
             },
             CodexCatalogModelSpec {
                 model: "deepseek/deepseek-v4-pro".to_string(),
@@ -2990,6 +3195,7 @@ base_url = "https://production.api/v1"
                 supports_parallel_tool_calls: None,
                 input_modalities: None,
                 base_instructions: None,
+                reasoning_profile: None,
             },
             CodexCatalogModelSpec {
                 model: "glm-5.2v".to_string(),
@@ -2998,6 +3204,7 @@ base_url = "https://production.api/v1"
                 supports_parallel_tool_calls: None,
                 input_modalities: None,
                 base_instructions: None,
+                reasoning_profile: None,
             },
             CodexCatalogModelSpec {
                 model: "deepseek-v4-flash".to_string(),
@@ -3006,6 +3213,7 @@ base_url = "https://production.api/v1"
                 supports_parallel_tool_calls: None,
                 input_modalities: Some(vec!["text".to_string(), "image".to_string()]),
                 base_instructions: None,
+                reasoning_profile: None,
             },
             CodexCatalogModelSpec {
                 model: "custom-text-alias".to_string(),
@@ -3014,6 +3222,7 @@ base_url = "https://production.api/v1"
                 supports_parallel_tool_calls: None,
                 input_modalities: Some(vec!["text".to_string()]),
                 base_instructions: None,
+                reasoning_profile: None,
             },
         ];
 
@@ -3085,6 +3294,7 @@ base_url = "https://production.api/v1"
             supports_parallel_tool_calls: None,
             input_modalities: None,
             base_instructions: None,
+            reasoning_profile: None,
         }];
         // Using a gpt-5.5-shaped template under ProxyChat must NOT strip
         // apply_patch_tool_type. (The native template lacks it, so synthesize
@@ -3355,6 +3565,31 @@ web_search = "disabled"
         assert_eq!(
             models[1].get("displayName").and_then(|v| v.as_str()),
             Some("DeepSeek Flash")
+        );
+    }
+
+    #[test]
+    fn build_simplified_catalog_preserves_reasoning_capabilities() {
+        let catalog = r#"{
+            "models": [{
+                "slug": "gpt-5.6-sol",
+                "default_reasoning_level": "low",
+                "supported_reasoning_levels": [
+                    { "effort": "low" },
+                    { "effort": "medium" },
+                    { "effort": "high" },
+                    { "effort": "xhigh" },
+                    { "effort": "max" },
+                    { "effort": "ultra" }
+                ]
+            }]
+        }"#;
+        let result = build_simplified_catalog_from_texts("", catalog).unwrap();
+        let entry = &result["models"][0];
+        assert_eq!(entry["defaultReasoningLevel"], json!("low"));
+        assert_eq!(
+            entry["supportedReasoningLevels"],
+            json!(["low", "medium", "high", "xhigh", "max", "ultra"])
         );
     }
 
@@ -3637,6 +3872,19 @@ model = "glm-5"
     }
 
     #[test]
+    fn set_catalog_json_field_preserves_surface_specific_filename() {
+        let input = r#"model_provider = "custom"
+"#;
+        let path = Path::new("/home/user/.codex/yuanheng-terminal-model-catalog.json");
+        let result = set_codex_model_catalog_json_field(input, Some(path)).unwrap();
+        let parsed: toml::Value = toml::from_str(&result).unwrap();
+        assert_eq!(
+            parsed.get("model_catalog_json").and_then(|v| v.as_str()),
+            Some(YUANHENG_TERMINAL_MODEL_CATALOG_FILENAME)
+        );
+    }
+
+    #[test]
     fn set_catalog_json_none_removes_cc_switch_owned_by_filename() {
         // After the WSL fix, TOML may contain a Linux-style path.
         // The None arm must still remove it (file_name match catches any format).
@@ -3674,6 +3922,19 @@ model_catalog_json = "yuanheng-switch-model-catalog.json"
             result,
             Some(generated_path),
             "relative filename should resolve to generated_path for file I/O"
+        );
+    }
+
+    #[test]
+    fn resolve_catalog_finds_surface_specific_relative_filename() {
+        let config_text = r#"model_catalog_json = "yuanheng-desktop-model-catalog.json"
+"#;
+        let generated_path = PathBuf::from("/home/user/.codex/yuanheng-switch-model-catalog.json");
+        assert_eq!(
+            resolve_cc_switch_catalog_path(config_text, &generated_path),
+            Some(PathBuf::from(
+                "/home/user/.codex/yuanheng-desktop-model-catalog.json"
+            ))
         );
     }
 

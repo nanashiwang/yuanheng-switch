@@ -9,11 +9,7 @@ import { Button } from "@/components/ui/button";
 import { ProviderIcon } from "@/components/ProviderIcon";
 import type { YuanhengReasoningLevel, YuanhengToolId } from "@/lib/api";
 import { ModelPicker } from "./ModelPicker";
-import {
-  pickPreferredGroup,
-  REASONING_LABELS,
-  toolLabel,
-} from "./ToolSetupGrid";
+import { pickPreferredGroup, reasoningLabel, toolLabel } from "./ToolSetupGrid";
 import {
   providerIconOf,
   type ModelSwitchCenterState,
@@ -109,6 +105,9 @@ export function ModelSwitchCenter({
             const supportedReasoning = selectedModel
               ? (connection.reasoningLevels[selectedModel] ?? [])
               : [];
+            const defaultReasoning = selectedModel
+              ? connection.reasoningDefaults?.[selectedModel]
+              : undefined;
             const reasoningOptions: YuanhengReasoningLevel[] = [
               "auto",
               ...supportedReasoning.filter((level) => level !== "auto"),
@@ -120,7 +119,8 @@ export function ModelSwitchCenter({
               supportedReasoning.includes(requestedReasoning)
                 ? requestedReasoning
                 : "auto";
-            const showReasoning = controlsReasoning(app);
+            const showReasoning =
+              controlsReasoning(app) && supportedReasoning.length > 0;
             const codexStatus = (() => {
               if (app !== "codex" || !codexBridge.data?.connectedTerminals)
                 return null;
@@ -246,7 +246,7 @@ export function ModelSwitchCenter({
                       ) : (
                         reasoningOptions.map((level) => (
                           <option key={level} value={level}>
-                            {REASONING_LABELS[level]}
+                            {reasoningLabel(level, defaultReasoning)}
                           </option>
                         ))
                       )}

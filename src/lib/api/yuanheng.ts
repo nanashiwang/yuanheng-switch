@@ -26,6 +26,7 @@ export interface YuanhengConnectionStatus {
   groups: YuanhengGroupOption[];
   modelGroups: Record<string, string[]>;
   reasoningLevels: Record<string, YuanhengReasoningLevel[]>;
+  reasoningDefaults?: Record<string, YuanhengReasoningLevel>;
   announcement: string | null;
   lastSyncedAt: number | null;
 }

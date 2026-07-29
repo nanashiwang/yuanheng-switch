@@ -156,11 +156,9 @@ fn bridge_state() -> &'static Arc<BridgeState> {
     STATE.get_or_init(|| Arc::new(BridgeState::new()))
 }
 
-fn effective_effort(reasoning: &str) -> String {
-    match reasoning.trim() {
-        "" | "auto" => "medium".to_string(),
-        value => value.to_string(),
-    }
+fn effective_effort(model: &str, reasoning: &str) -> String {
+    crate::model_reasoning::effective_reasoning_level(model, reasoning)
+        .unwrap_or_else(|| "none".to_string())
 }
 
 pub fn update_codex_session_model(model: &str, reasoning: &str) {
@@ -170,7 +168,7 @@ pub fn update_codex_session_model(model: &str, reasoning: &str) {
     }
     let selection = ModelSelection {
         model: model.to_string(),
-        effort: effective_effort(reasoning),
+        effort: effective_effort(model, reasoning),
     };
     bridge_state().set_selection(selection.clone());
     log::info!(
@@ -204,8 +202,8 @@ fn selection_from_profile(path: &Path) -> Option<ModelSelection> {
     let effort = config
         .get("model_reasoning_effort")
         .and_then(toml::Value::as_str)
-        .map(effective_effort)
-        .unwrap_or_else(|| "medium".to_string());
+        .map(|reasoning| effective_effort(model, reasoning))
+        .unwrap_or_else(|| effective_effort(model, "auto"));
     Some(ModelSelection {
         model: model.to_string(),
         effort,
@@ -237,6 +235,23 @@ fn codex_profile_overrides(path: &Path) -> Result<Vec<String>, String> {
                 toml::Value::String(value.to_string())
             ));
         }
+    }
+    if let Some(catalog) = config
+        .get("model_catalog_json")
+        .and_then(toml::Value::as_str)
+    {
+        let catalog = Path::new(catalog);
+        let resolved = if catalog.is_absolute() {
+            catalog.to_path_buf()
+        } else {
+            path.parent()
+                .unwrap_or_else(|| Path::new("."))
+                .join(catalog)
+        };
+        overrides.push(format!(
+            "model_catalog_json={}",
+            toml::Value::String(resolved.to_string_lossy().into_owned())
+        ));
     }
     Ok(overrides)
 }
@@ -683,8 +698,8 @@ mod tests {
 
     #[test]
     fn auto_effort_matches_terminal_profile_default() {
-        assert_eq!(effective_effort("auto"), "medium");
-        assert_eq!(effective_effort("xhigh"), "xhigh");
+        assert_eq!(effective_effort("gpt-5.6-sol", "auto"), "low");
+        assert_eq!(effective_effort("gpt-5.6-sol", "xhigh"), "xhigh");
     }
 
     #[test]
@@ -719,6 +734,7 @@ mod tests {
         std::fs::write(
             &profile,
             r#"model_provider = "yuanheng"
+model_catalog_json = "yuanheng-terminal-model-catalog.json"
 [model_providers.yuanheng]
 base_url = "http://127.0.0.1:15721/codex/v1"
 wire_api = "responses"
@@ -730,9 +746,16 @@ experimental_bearer_token = "secret"
         assert_eq!(
             overrides,
             vec![
-                r#"model_provider="yuanheng""#,
-                r#"model_providers.yuanheng.base_url="http://127.0.0.1:15721/codex/v1""#,
-                r#"model_providers.yuanheng.wire_api="responses""#,
+                r#"model_provider="yuanheng""#.to_string(),
+                r#"model_providers.yuanheng.base_url="http://127.0.0.1:15721/codex/v1""#
+                    .to_string(),
+                r#"model_providers.yuanheng.wire_api="responses""#.to_string(),
+                format!(
+                    r#"model_catalog_json="{}""#,
+                    temp.path()
+                        .join("yuanheng-terminal-model-catalog.json")
+                        .display()
+                )
             ]
         );
         assert!(overrides.iter().all(|value| !value.contains("secret")));
