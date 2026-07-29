@@ -117,7 +117,8 @@ lto = "thin"
 opt-level = "s"
 # 使用 unwind 以便 panic hook 能捕获 backtrace（abort 会直接终止无法捕获）
 panic = "unwind"
-strip = "symbols"
+# Tauri updater needs its bundle marker to remain in Windows/Linux binaries.
+strip = "debuginfo"
 
 [dev-dependencies]
 serial_test = "3"
