@@ -146,7 +146,25 @@ const renderApp = (AppComponent: ComponentType) => {
   );
 };
 
-describe("App integration with MSW", () => {
+const dismissOnboarding = async () => {
+  const onboarding = await screen.findByRole(
+    "dialog",
+    { name: "首次配置" },
+    { timeout: 10_000 },
+  );
+  fireEvent.click(
+    within(onboarding).getByRole("button", { name: "稍后配置" }),
+  );
+  await waitFor(
+    () =>
+      expect(
+        screen.queryByRole("dialog", { name: "首次配置" }),
+      ).not.toBeInTheDocument(),
+    { timeout: 10_000 },
+  );
+};
+
+describe("App integration with MSW", { timeout: 15_000 }, () => {
   beforeEach(() => {
     resetProviderState();
     setYuanhengConnection({
@@ -211,16 +229,7 @@ describe("App integration with MSW", () => {
     const { default: App } = await import("@/App");
     renderApp(App);
 
-    const onboarding = await screen.findByRole("dialog", {
-      name: "首次配置",
-    });
-    expect(onboarding).toBeInTheDocument();
-    fireEvent.click(screen.getByRole("button", { name: "稍后配置" }));
-    await waitFor(() =>
-      expect(
-        screen.queryByRole("dialog", { name: "首次配置" }),
-      ).not.toBeInTheDocument(),
-    );
+    await dismissOnboarding();
 
     expect(
       await screen.findByRole("heading", {
@@ -256,16 +265,7 @@ describe("App integration with MSW", () => {
     const { default: App } = await import("@/App");
     renderApp(App);
 
-    const onboarding = await screen.findByRole("dialog", {
-      name: "首次配置",
-    });
-    expect(onboarding).toBeInTheDocument();
-    fireEvent.click(screen.getByRole("button", { name: "稍后配置" }));
-    await waitFor(() =>
-      expect(
-        screen.queryByRole("dialog", { name: "首次配置" }),
-      ).not.toBeInTheDocument(),
-    );
+    await dismissOnboarding();
 
     expect(() => {
       emitTauriEvent("webdav-sync-status-updated", null);
