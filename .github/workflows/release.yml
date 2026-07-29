@@ -63,12 +63,6 @@ jobs:
       TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
       TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
       YUANHENG_BUILD_TARGET: ${{ matrix.target }}
-      APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
-      APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
-      APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
-      APPLE_ID: ${{ secrets.APPLE_ID }}
-      APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
-      APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
 
     steps:
       - name: Checkout
@@ -80,10 +74,15 @@ jobs:
           node-version: "20"
 
       - name: Setup pnpm
+        if: matrix.platform != 'macos-15-intel'
         uses: pnpm/action-setup@v6
         with:
           version: 10.12.3
           run_install: false
+
+      - name: Setup pnpm on Intel macOS
+        if: matrix.platform == 'macos-15-intel'
+        run: npm install --global pnpm@10.12.3
 
       - name: Setup Rust target
         uses: dtolnay/rust-toolchain@stable
@@ -122,6 +121,49 @@ jobs:
           echo "tag=$TAG" >> "$GITHUB_OUTPUT"
           echo "draft=$DRAFT" >> "$GITHUB_OUTPUT"
           echo "prerelease=$PRERELEASE" >> "$GITHUB_OUTPUT"
+
+      - name: Configure optional Apple signing
+        if: runner.os == 'macOS'
+        shell: bash
+        env:
+          CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
+          CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+          SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
+          NOTARIZATION_APPLE_ID: ${{ secrets.APPLE_ID }}
+          NOTARIZATION_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
+          NOTARIZATION_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+        run: |
+          if [[ -z "$CERTIFICATE" ]]; then
+            echo "Apple signing secrets are not configured; building without Developer ID signing."
+            exit 0
+          fi
+
+          test -n "$CERTIFICATE_PASSWORD"
+          test -n "$SIGNING_IDENTITY"
+
+          write_env() {
+            local key="$1"
+            local value="$2"
+            local delimiter="__YUANHENG_${key}__"
+            {
+              echo "$key<<$delimiter"
+              printf '%s\n' "$value"
+              echo "$delimiter"
+            } >> "$GITHUB_ENV"
+          }
+
+          write_env APPLE_CERTIFICATE "$CERTIFICATE"
+          write_env APPLE_CERTIFICATE_PASSWORD "$CERTIFICATE_PASSWORD"
+          write_env APPLE_SIGNING_IDENTITY "$SIGNING_IDENTITY"
+
+          if [[ -n "$NOTARIZATION_APPLE_ID" || -n "$NOTARIZATION_PASSWORD" || -n "$NOTARIZATION_TEAM_ID" ]]; then
+            test -n "$NOTARIZATION_APPLE_ID"
+            test -n "$NOTARIZATION_PASSWORD"
+            test -n "$NOTARIZATION_TEAM_ID"
+            write_env APPLE_ID "$NOTARIZATION_APPLE_ID"
+            write_env APPLE_PASSWORD "$NOTARIZATION_PASSWORD"
+            write_env APPLE_TEAM_ID "$NOTARIZATION_TEAM_ID"
+          fi
 
       - name: Build and publish signed updater artifacts
         uses: tauri-apps/tauri-action@v1
