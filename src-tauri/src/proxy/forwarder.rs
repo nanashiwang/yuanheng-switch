@@ -502,6 +502,48 @@ impl RequestForwarder {
             });
         }
 
+        // Image decoding/resizing is CPU-heavy. Normalize Claude Desktop context once before the
+        // provider loop and keep it off Tokio's async worker threads.
+        let body = if matches!(app_type, AppType::ClaudeDesktop) {
+            let optimized = tokio::task::spawn_blocking(move || {
+                let mut body = body;
+                let replaced =
+                    super::media_sanitizer::replace_historical_image_blocks_with_marker(&mut body);
+                let media = super::media_sanitizer::optimize_embedded_images_for_context(&mut body);
+                (body, replaced, media)
+            })
+            .await
+            .map_err(|error| ForwardError {
+                error: ProxyError::Internal(format!(
+                    "Failed to optimize Claude Desktop media context: {error}"
+                )),
+                provider: None,
+            })?;
+
+            let (body, replaced, media) = optimized;
+            if replaced > 0 {
+                log::info!(
+                    "[claude-desktop] [Context] Replaced {replaced} historical image block(s) before forwarding to prevent auto-compact thrashing"
+                );
+            }
+            if media.compressed_images > 0
+                || media.duplicate_images > 0
+                || media.budget_omitted_images > 0
+            {
+                log::info!(
+                    "[claude-desktop] [Context] Optimized embedded images: compressed={}, duplicates={}, budget_omitted={}, bytes={} -> {}",
+                    media.compressed_images,
+                    media.duplicate_images,
+                    media.budget_omitted_images,
+                    media.original_bytes,
+                    media.outbound_bytes
+                );
+            }
+            body
+        } else {
+            body
+        };
+
         let mut last_error = None;
         let mut last_provider = None;
         let mut attempted_providers = 0usize;
@@ -559,17 +601,6 @@ impl RequestForwarder {
                 } else {
                     body.clone()
                 };
-
-            if matches!(app_type, AppType::ClaudeDesktop) {
-                let replaced = super::media_sanitizer::replace_historical_image_blocks_with_marker(
-                    &mut provider_body,
-                );
-                if replaced > 0 {
-                    log::info!(
-                        "[claude-desktop] [Context] Replaced {replaced} historical image block(s) before forwarding to prevent auto-compact thrashing"
-                    );
-                }
-            }
 
             attempted_providers += 1;
 

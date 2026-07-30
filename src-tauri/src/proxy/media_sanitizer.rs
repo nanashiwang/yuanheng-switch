@@ -3,11 +3,57 @@ use crate::model_capabilities::is_confirmed_text_only_model as confirmed_text_on
 use crate::model_capabilities::{image_input_capability_from_settings, ImageInputCapability};
 use crate::provider::Provider;
 use crate::proxy::error::ProxyError;
+use base64::{engine::general_purpose::STANDARD as BASE64_STANDARD, Engine as _};
+use image::codecs::jpeg::JpegEncoder;
+use image::imageops::FilterType;
+use image::{DynamicImage, GenericImageView, ImageReader, Limits, Rgb, RgbImage};
 use serde_json::{json, Value};
+use sha2::{Digest, Sha256};
+use std::collections::HashSet;
+use std::io::Cursor;
 
 pub const UNSUPPORTED_IMAGE_MARKER: &str = "[Unsupported Image]";
 pub const HISTORICAL_IMAGE_MARKER: &str =
     "[Historical image omitted after it was processed to reduce context usage]";
+pub const DUPLICATE_IMAGE_MARKER: &str = "[Duplicate image omitted to reduce context usage]";
+pub const MEDIA_BUDGET_IMAGE_MARKER: &str =
+    "[Image omitted because the request exceeded the safe media budget]";
+
+const IMAGE_COMPRESSION_THRESHOLD_BYTES: usize = 384 * 1024;
+const MAX_IMAGE_EDGE: u32 = 1_600;
+const MAX_IMAGE_DECODE_DIMENSION: u32 = 20_000;
+const MAX_IMAGE_DECODE_ALLOC_BYTES: u64 = 192 * 1024 * 1024;
+const MAX_SINGLE_EMBEDDED_IMAGE_BYTES: usize = 8 * 1024 * 1024;
+const MAX_TOTAL_EMBEDDED_IMAGE_BYTES: usize = 4 * 1024 * 1024;
+const JPEG_QUALITY: u8 = 82;
+
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
+pub struct MediaOptimizationStats {
+    pub compressed_images: usize,
+    pub duplicate_images: usize,
+    pub budget_omitted_images: usize,
+    pub original_bytes: usize,
+    pub outbound_bytes: usize,
+}
+
+/// Optimize only embedded base64 images; remote URLs and file references pass through unchanged.
+///
+/// This runs on the per-provider request copy, so the local conversation remains untouched. It
+/// compresses large current images, removes duplicates, then keeps the newest images inside a
+/// conservative media budget. Unsupported or undecodable images remain unchanged unless their
+/// embedded payload alone is too large to forward safely.
+pub fn optimize_embedded_images_for_context(body: &mut Value) -> MediaOptimizationStats {
+    let mut stats = MediaOptimizationStats::default();
+    let mut seen = HashSet::new();
+
+    visit_embedded_images_mut(body, &mut |block, text_type| {
+        optimize_embedded_image_block(block, text_type, &mut seen, &mut stats)
+    });
+
+    enforce_embedded_image_budget(body, &mut stats);
+    stats.outbound_bytes = embedded_image_usage(body).0;
+    stats
+}
 
 /// Replace image blocks before sending when the routed model is text-only.
 ///
@@ -73,6 +119,335 @@ pub fn replace_historical_image_blocks_with_marker(body: &mut Value) -> usize {
             replace_images_in_content_with_marker(content, "text", HISTORICAL_IMAGE_MARKER)
         })
         .sum()
+}
+
+#[derive(Debug, Clone, Copy)]
+enum EmbeddedImageField {
+    AnthropicSource,
+    ImageUrlObject,
+    ImageUrlString,
+}
+
+#[derive(Debug)]
+struct EmbeddedBase64Image {
+    field: EmbeddedImageField,
+    data: String,
+}
+
+fn optimize_embedded_image_block(
+    block: &mut Value,
+    text_type: &str,
+    seen: &mut HashSet<[u8; 32]>,
+    stats: &mut MediaOptimizationStats,
+) {
+    let Some(embedded) = extract_embedded_base64_image(block) else {
+        return;
+    };
+    let compact_data = if embedded.data.bytes().any(|byte| byte.is_ascii_whitespace()) {
+        embedded
+            .data
+            .bytes()
+            .filter(|byte| !byte.is_ascii_whitespace())
+            .map(char::from)
+            .collect::<String>()
+    } else {
+        embedded.data.clone()
+    };
+    let Ok(original) = BASE64_STANDARD.decode(compact_data.as_bytes()) else {
+        return;
+    };
+
+    stats.original_bytes = stats.original_bytes.saturating_add(original.len());
+    let digest: [u8; 32] = Sha256::digest(&original).into();
+    if !seen.insert(digest) {
+        replace_image_block_with_text_marker(block, text_type, DUPLICATE_IMAGE_MARKER);
+        stats.duplicate_images += 1;
+        return;
+    }
+
+    if let Some(compressed) = compress_embedded_image(&original) {
+        write_embedded_base64_image(block, embedded.field, "image/jpeg", &compressed);
+        stats.compressed_images += 1;
+        return;
+    }
+
+    if original.len() > MAX_SINGLE_EMBEDDED_IMAGE_BYTES {
+        replace_image_block_with_text_marker(block, text_type, MEDIA_BUDGET_IMAGE_MARKER);
+        stats.budget_omitted_images += 1;
+    }
+}
+
+fn compress_embedded_image(original: &[u8]) -> Option<Vec<u8>> {
+    let mut reader = ImageReader::new(Cursor::new(original))
+        .with_guessed_format()
+        .ok()?;
+    let mut limits = Limits::default();
+    limits.max_image_width = Some(MAX_IMAGE_DECODE_DIMENSION);
+    limits.max_image_height = Some(MAX_IMAGE_DECODE_DIMENSION);
+    limits.max_alloc = Some(MAX_IMAGE_DECODE_ALLOC_BYTES);
+    reader.limits(limits);
+    let decoded = reader.decode().ok()?;
+    let (width, height) = decoded.dimensions();
+
+    if original.len() < IMAGE_COMPRESSION_THRESHOLD_BYTES
+        && width <= MAX_IMAGE_EDGE
+        && height <= MAX_IMAGE_EDGE
+    {
+        return None;
+    }
+
+    let resized = if width > MAX_IMAGE_EDGE || height > MAX_IMAGE_EDGE {
+        decoded.resize(MAX_IMAGE_EDGE, MAX_IMAGE_EDGE, FilterType::Lanczos3)
+    } else {
+        decoded
+    };
+    let rgb = flatten_onto_white(&resized);
+    let mut encoded = Vec::new();
+    JpegEncoder::new_with_quality(&mut encoded, JPEG_QUALITY)
+        .encode_image(&DynamicImage::ImageRgb8(rgb))
+        .ok()?;
+
+    // Avoid replacing already-efficient JPEG/WebP payloads with a larger request.
+    (encoded.len().saturating_mul(100) < original.len().saturating_mul(95)).then_some(encoded)
+}
+
+fn flatten_onto_white(image: &DynamicImage) -> RgbImage {
+    let rgba = image.to_rgba8();
+    let mut rgb = RgbImage::new(rgba.width(), rgba.height());
+    for (x, y, pixel) in rgba.enumerate_pixels() {
+        let alpha = u16::from(pixel[3]);
+        let blend =
+            |channel: u8| ((u16::from(channel) * alpha + 255 * (255 - alpha) + 127) / 255) as u8;
+        rgb.put_pixel(
+            x,
+            y,
+            Rgb([blend(pixel[0]), blend(pixel[1]), blend(pixel[2])]),
+        );
+    }
+    rgb
+}
+
+fn extract_embedded_base64_image(block: &Value) -> Option<EmbeddedBase64Image> {
+    if let Some(source) = block.get("source").and_then(Value::as_object) {
+        if source.get("type").and_then(Value::as_str) == Some("base64") {
+            return Some(EmbeddedBase64Image {
+                field: EmbeddedImageField::AnthropicSource,
+                data: source.get("data")?.as_str()?.to_string(),
+            });
+        }
+    }
+
+    match block.get("image_url")? {
+        Value::Object(image_url) => {
+            let (_, data) = parse_base64_data_url(image_url.get("url")?.as_str()?)?;
+            Some(EmbeddedBase64Image {
+                field: EmbeddedImageField::ImageUrlObject,
+                data,
+            })
+        }
+        Value::String(image_url) => {
+            let (_, data) = parse_base64_data_url(image_url)?;
+            Some(EmbeddedBase64Image {
+                field: EmbeddedImageField::ImageUrlString,
+                data,
+            })
+        }
+        _ => None,
+    }
+}
+
+fn parse_base64_data_url(url: &str) -> Option<(String, String)> {
+    let payload = url.strip_prefix("data:")?;
+    let (metadata, data) = payload.split_once(',')?;
+    if !metadata
+        .split(';')
+        .skip(1)
+        .any(|parameter| parameter.eq_ignore_ascii_case("base64"))
+    {
+        return None;
+    }
+    let media_type = metadata
+        .split(';')
+        .next()
+        .filter(|value| !value.is_empty())
+        .unwrap_or("image/png");
+    Some((media_type.to_string(), data.to_string()))
+}
+
+fn write_embedded_base64_image(
+    block: &mut Value,
+    field: EmbeddedImageField,
+    media_type: &str,
+    bytes: &[u8],
+) {
+    let data = BASE64_STANDARD.encode(bytes);
+    match field {
+        EmbeddedImageField::AnthropicSource => {
+            if let Some(source) = block.get_mut("source").and_then(Value::as_object_mut) {
+                source.insert(
+                    "media_type".to_string(),
+                    Value::String(media_type.to_string()),
+                );
+                source.insert("data".to_string(), Value::String(data));
+            }
+        }
+        EmbeddedImageField::ImageUrlObject => {
+            if let Some(url) = block.pointer_mut("/image_url/url") {
+                *url = Value::String(format!("data:{media_type};base64,{data}"));
+            }
+        }
+        EmbeddedImageField::ImageUrlString => {
+            if let Some(url) = block.get_mut("image_url") {
+                *url = Value::String(format!("data:{media_type};base64,{data}"));
+            }
+        }
+    }
+}
+
+fn enforce_embedded_image_budget(body: &mut Value, stats: &mut MediaOptimizationStats) {
+    let (mut total_bytes, mut image_count) = embedded_image_usage(body);
+    if total_bytes <= MAX_TOTAL_EMBEDDED_IMAGE_BYTES {
+        return;
+    }
+
+    visit_embedded_images_mut(body, &mut |block, text_type| {
+        let Some(bytes) = embedded_image_size(block) else {
+            return;
+        };
+        let exceeds_single_limit = bytes > MAX_SINGLE_EMBEDDED_IMAGE_BYTES;
+        let can_drop_older_image = total_bytes > MAX_TOTAL_EMBEDDED_IMAGE_BYTES && image_count > 1;
+        if !exceeds_single_limit && !can_drop_older_image {
+            return;
+        }
+
+        replace_image_block_with_text_marker(block, text_type, MEDIA_BUDGET_IMAGE_MARKER);
+        total_bytes = total_bytes.saturating_sub(bytes);
+        image_count = image_count.saturating_sub(1);
+        stats.budget_omitted_images += 1;
+    });
+}
+
+fn embedded_image_usage(body: &Value) -> (usize, usize) {
+    let mut total_bytes = 0usize;
+    let mut image_count = 0usize;
+    visit_embedded_images(body, &mut |block| {
+        if let Some(bytes) = embedded_image_size(block) {
+            total_bytes = total_bytes.saturating_add(bytes);
+            image_count += 1;
+        }
+    });
+    (total_bytes, image_count)
+}
+
+fn embedded_image_size(block: &Value) -> Option<usize> {
+    let data = extract_embedded_base64_image(block)?.data;
+    let compact_len = data
+        .bytes()
+        .filter(|byte| !byte.is_ascii_whitespace())
+        .count();
+    let padding = data
+        .bytes()
+        .rev()
+        .filter(|byte| !byte.is_ascii_whitespace())
+        .take_while(|byte| *byte == b'=')
+        .count()
+        .min(2);
+    Some((compact_len.saturating_mul(3) / 4usize).saturating_sub(padding))
+}
+
+fn visit_embedded_images(body: &Value, visitor: &mut impl FnMut(&Value)) {
+    if let Some(messages) = body.get("messages").and_then(Value::as_array) {
+        for content in messages.iter().filter_map(|message| message.get("content")) {
+            visit_content_images(content, visitor);
+        }
+    }
+    if let Some(input) = body.get("input") {
+        visit_responses_input_images(input, visitor);
+    }
+}
+
+fn visit_content_images(content: &Value, visitor: &mut impl FnMut(&Value)) {
+    let Some(blocks) = content.as_array() else {
+        return;
+    };
+    for block in blocks {
+        if is_image_block_type(block.get("type").and_then(Value::as_str)) {
+            visitor(block);
+        }
+        if let Some(nested) = block.get("content") {
+            visit_content_images(nested, visitor);
+        }
+    }
+}
+
+fn visit_responses_input_images(input: &Value, visitor: &mut impl FnMut(&Value)) {
+    match input {
+        Value::Array(items) => {
+            for item in items {
+                visit_responses_input_images(item, visitor);
+            }
+        }
+        Value::Object(_) => {
+            if input.get("type").and_then(Value::as_str) == Some("input_image") {
+                visitor(input);
+            }
+            if let Some(content) = input.get("content") {
+                visit_content_images(content, visitor);
+            }
+        }
+        _ => {}
+    }
+}
+
+fn visit_embedded_images_mut(body: &mut Value, visitor: &mut impl FnMut(&mut Value, &str)) {
+    if let Some(messages) = body.get_mut("messages").and_then(Value::as_array_mut) {
+        for content in messages
+            .iter_mut()
+            .filter_map(|message| message.get_mut("content"))
+        {
+            visit_content_images_mut(content, "text", visitor);
+        }
+    }
+    if let Some(input) = body.get_mut("input") {
+        visit_responses_input_images_mut(input, visitor);
+    }
+}
+
+fn visit_content_images_mut(
+    content: &mut Value,
+    text_type: &str,
+    visitor: &mut impl FnMut(&mut Value, &str),
+) {
+    let Some(blocks) = content.as_array_mut() else {
+        return;
+    };
+    for block in blocks {
+        if is_image_block_type(block.get("type").and_then(Value::as_str)) {
+            visitor(block, text_type);
+        }
+        if let Some(nested) = block.get_mut("content") {
+            visit_content_images_mut(nested, text_type, visitor);
+        }
+    }
+}
+
+fn visit_responses_input_images_mut(input: &mut Value, visitor: &mut impl FnMut(&mut Value, &str)) {
+    match input {
+        Value::Array(items) => {
+            for item in items {
+                visit_responses_input_images_mut(item, visitor);
+            }
+        }
+        Value::Object(_) => {
+            if input.get("type").and_then(Value::as_str) == Some("input_image") {
+                visitor(input, "input_text");
+            }
+            if let Some(content) = input.get_mut("content") {
+                visit_content_images_mut(content, "input_text", visitor);
+            }
+        }
+        _ => {}
+    }
 }
 
 pub fn is_unsupported_image_error(error: &ProxyError) -> bool {
@@ -845,5 +1220,120 @@ mod tests {
 
         assert_eq!(replace_historical_image_blocks_with_marker(&mut body), 0);
         assert_eq!(body["messages"][0]["content"][0]["type"], "image");
+    }
+
+    fn png_bytes(width: u32, height: u32) -> Vec<u8> {
+        let image = RgbImage::from_pixel(width, height, Rgb([32, 128, 224]));
+        let mut output = Cursor::new(Vec::new());
+        DynamicImage::ImageRgb8(image)
+            .write_to(&mut output, image::ImageFormat::Png)
+            .unwrap();
+        output.into_inner()
+    }
+
+    #[test]
+    fn compresses_large_current_anthropic_image_without_touching_conversation_shape() {
+        let original = png_bytes(2_400, 1_200);
+        let mut body = json!({
+            "messages": [{
+                "role": "user",
+                "content": [{
+                    "type": "image",
+                    "source": {
+                        "type": "base64",
+                        "media_type": "image/png",
+                        "data": BASE64_STANDARD.encode(&original)
+                    },
+                    "cache_control": {"type": "ephemeral"}
+                }]
+            }]
+        });
+
+        let stats = optimize_embedded_images_for_context(&mut body);
+
+        assert_eq!(stats.compressed_images, 1);
+        assert_eq!(stats.duplicate_images, 0);
+        let block = &body["messages"][0]["content"][0];
+        assert_eq!(block["type"], "image");
+        assert_eq!(block["source"]["media_type"], "image/jpeg");
+        assert_eq!(block["cache_control"]["type"], "ephemeral");
+        let compressed = BASE64_STANDARD
+            .decode(block["source"]["data"].as_str().unwrap())
+            .unwrap();
+        let decoded = image::load_from_memory(&compressed).unwrap();
+        assert!(decoded.width() <= MAX_IMAGE_EDGE);
+        assert!(decoded.height() <= MAX_IMAGE_EDGE);
+        assert!(compressed.len() < original.len());
+    }
+
+    #[test]
+    fn removes_duplicate_current_images_but_keeps_the_first_copy() {
+        let image = BASE64_STANDARD.encode(png_bytes(64, 64));
+        let mut body = json!({
+            "messages": [{
+                "role": "user",
+                "content": [
+                    {"type": "image", "source": {"type": "base64", "media_type": "image/png", "data": image}},
+                    {"type": "image", "source": {"type": "base64", "media_type": "image/png", "data": image}}
+                ]
+            }]
+        });
+
+        let stats = optimize_embedded_images_for_context(&mut body);
+
+        assert_eq!(stats.duplicate_images, 1);
+        assert_eq!(body["messages"][0]["content"][0]["type"], "image");
+        assert_eq!(body["messages"][0]["content"][1]["type"], "text");
+        assert_eq!(
+            body["messages"][0]["content"][1]["text"],
+            DUPLICATE_IMAGE_MARKER
+        );
+    }
+
+    #[test]
+    fn media_budget_drops_oldest_payload_and_preserves_newest_image() {
+        let first = BASE64_STANDARD.encode(vec![1u8; 3 * 1024 * 1024]);
+        let second = BASE64_STANDARD.encode(vec![2u8; 3 * 1024 * 1024]);
+        let mut body = json!({
+            "messages": [{
+                "role": "user",
+                "content": [
+                    {"type": "image", "source": {"type": "base64", "media_type": "image/png", "data": first}},
+                    {"type": "image", "source": {"type": "base64", "media_type": "image/png", "data": second}}
+                ]
+            }]
+        });
+
+        let stats = optimize_embedded_images_for_context(&mut body);
+
+        assert_eq!(stats.budget_omitted_images, 1);
+        assert_eq!(body["messages"][0]["content"][0]["type"], "text");
+        assert_eq!(
+            body["messages"][0]["content"][0]["text"],
+            MEDIA_BUDGET_IMAGE_MARKER
+        );
+        assert_eq!(body["messages"][0]["content"][1]["type"], "image");
+        assert_eq!(stats.outbound_bytes, 3 * 1024 * 1024);
+    }
+
+    #[test]
+    fn preserves_remote_image_urls_without_downloading_them() {
+        let mut body = json!({
+            "input": [{
+                "role": "user",
+                "content": [{
+                    "type": "input_image",
+                    "image_url": "https://example.com/private-signed-image.png"
+                }]
+            }]
+        });
+
+        let stats = optimize_embedded_images_for_context(&mut body);
+
+        assert_eq!(stats, MediaOptimizationStats::default());
+        assert_eq!(
+            body["input"][0]["content"][0]["image_url"],
+            "https://example.com/private-signed-image.png"
+        );
     }
 }
