@@ -560,6 +560,17 @@ impl RequestForwarder {
                     body.clone()
                 };
 
+            if matches!(app_type, AppType::ClaudeDesktop) {
+                let replaced = super::media_sanitizer::replace_historical_image_blocks_with_marker(
+                    &mut provider_body,
+                );
+                if replaced > 0 {
+                    log::info!(
+                        "[claude-desktop] [Context] Replaced {replaced} historical image block(s) before forwarding to prevent auto-compact thrashing"
+                    );
+                }
+            }
+
             attempted_providers += 1;
 
             // 更新状态中的当前 Provider 信息（per-attempt 维度的标识）
@@ -1267,6 +1278,8 @@ impl RequestForwarder {
 
         // 与 CCH 对齐：请求前不做 thinking 主动改写（仅保留兼容入口）
         let mut mapped_body = normalize_thinking_type(mapped_body);
+        let is_context_compaction = matches!(app_type, AppType::ClaudeDesktop)
+            && super::copilot_optimizer::is_compact_request(&mapped_body);
 
         // Grok Build exposes a stable client-side model profile in config.toml.
         // Route requests to the provider's real upstream model before applying
@@ -1667,6 +1680,11 @@ impl RequestForwarder {
                     filtered_body = prepare_upstream_request_body(filtered_body);
                 }
             }
+        }
+        if is_context_compaction && lower_compaction_reasoning_effort(&mut filtered_body) {
+            log::info!(
+                "[claude-desktop] [Context] Lowered reasoning effort for auto-compaction request"
+            );
         }
         // 出站 body 定稿后刷新真值（覆盖 Codex chat 上游模型覆写、转换层模型改写）
         if let Some(m) = filtered_body
@@ -3347,6 +3365,23 @@ fn apply_local_proxy_body_overrides(
     merge_json_override(body, override_body)
 }
 
+fn lower_compaction_reasoning_effort(body: &mut Value) -> bool {
+    let mut changed = false;
+
+    if let Some(value) = body.get_mut("reasoning_effort") {
+        changed |= *value != Value::String("low".to_string());
+        *value = Value::String("low".to_string());
+    }
+    for pointer in ["/reasoning/effort", "/output_config/effort"] {
+        if let Some(value) = body.pointer_mut(pointer) {
+            changed |= *value != Value::String("low".to_string());
+            *value = Value::String("low".to_string());
+        }
+    }
+
+    changed
+}
+
 fn merge_json_override(target: &mut Value, patch: &Value) -> bool {
     merge_json_override_inner(target, patch, true)
 }
@@ -3805,6 +3840,32 @@ mod tests {
         assert_eq!(body["metadata"]["temperature"], 0.2);
         assert_eq!(body["metadata"]["top_p"], 0.9);
         assert_eq!(body["messages"], json!([]));
+    }
+
+    #[test]
+    fn compact_requests_lower_existing_reasoning_effort_shapes() {
+        let mut body = json!({
+            "reasoning_effort": "xhigh",
+            "reasoning": {"effort": "high", "summary": "auto"},
+            "output_config": {"effort": "max"}
+        });
+
+        assert!(lower_compaction_reasoning_effort(&mut body));
+        assert_eq!(body["reasoning_effort"], "low");
+        assert_eq!(body["reasoning"]["effort"], "low");
+        assert_eq!(body["reasoning"]["summary"], "auto");
+        assert_eq!(body["output_config"]["effort"], "low");
+        assert!(!lower_compaction_reasoning_effort(&mut body));
+    }
+
+    #[test]
+    fn compact_reasoning_does_not_inject_unsupported_fields() {
+        let mut body = json!({"messages": []});
+
+        assert!(!lower_compaction_reasoning_effort(&mut body));
+        assert!(body.get("reasoning_effort").is_none());
+        assert!(body.get("reasoning").is_none());
+        assert!(body.get("output_config").is_none());
     }
 
     #[test]

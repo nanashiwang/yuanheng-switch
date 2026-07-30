@@ -6,6 +6,8 @@ use crate::proxy::error::ProxyError;
 use serde_json::{json, Value};
 
 pub const UNSUPPORTED_IMAGE_MARKER: &str = "[Unsupported Image]";
+pub const HISTORICAL_IMAGE_MARKER: &str =
+    "[Historical image omitted after it was processed to reduce context usage]";
 
 /// Replace image blocks before sending when the routed model is text-only.
 ///
@@ -45,6 +47,32 @@ pub fn contains_image_blocks(body: &Value) -> bool {
 
 pub fn replace_image_blocks_with_marker(body: &mut Value) -> usize {
     replace_images_in_body(body)
+}
+
+/// Drop only images that are already behind the latest assistant turn.
+///
+/// The latest user/tool-result images must stay available for the next model
+/// turn. Older images have already been consumed by an assistant response, so
+/// retaining their base64 payloads on every subsequent request only refills the
+/// context window and can make Claude Desktop's auto-compaction thrash.
+pub fn replace_historical_image_blocks_with_marker(body: &mut Value) -> usize {
+    let Some(messages) = body.get_mut("messages").and_then(Value::as_array_mut) else {
+        return 0;
+    };
+    let Some(last_assistant_index) = messages
+        .iter()
+        .rposition(|message| message.get("role").and_then(Value::as_str) == Some("assistant"))
+    else {
+        return 0;
+    };
+
+    messages[..last_assistant_index]
+        .iter_mut()
+        .filter_map(|message| message.get_mut("content"))
+        .map(|content| {
+            replace_images_in_content_with_marker(content, "text", HISTORICAL_IMAGE_MARKER)
+        })
+        .sum()
 }
 
 pub fn is_unsupported_image_error(error: &ProxyError) -> bool {
@@ -148,6 +176,14 @@ fn replace_images_in_content(content: &mut Value) -> usize {
 }
 
 fn replace_images_in_content_with_text_type(content: &mut Value, text_type: &str) -> usize {
+    replace_images_in_content_with_marker(content, text_type, UNSUPPORTED_IMAGE_MARKER)
+}
+
+fn replace_images_in_content_with_marker(
+    content: &mut Value,
+    text_type: &str,
+    marker: &str,
+) -> usize {
     let Some(blocks) = content.as_array_mut() else {
         return 0;
     };
@@ -155,13 +191,13 @@ fn replace_images_in_content_with_text_type(content: &mut Value, text_type: &str
     let mut replaced = 0usize;
     for block in blocks {
         if is_image_block_type(block.get("type").and_then(Value::as_str)) {
-            replace_image_block_with_text_marker(block, text_type);
+            replace_image_block_with_text_marker(block, text_type, marker);
             replaced += 1;
             continue;
         }
 
         if let Some(nested_content) = block.get_mut("content") {
-            replaced += replace_images_in_content_with_text_type(nested_content, text_type);
+            replaced += replace_images_in_content_with_marker(nested_content, text_type, marker);
         }
     }
 
@@ -210,7 +246,7 @@ fn replace_images_in_responses_input_item(item: &mut Value) -> usize {
     let mut replaced = 0usize;
 
     if item.get("type").and_then(Value::as_str) == Some("input_image") {
-        replace_image_block_with_text_marker(item, "input_text");
+        replace_image_block_with_text_marker(item, "input_text", UNSUPPORTED_IMAGE_MARKER);
         replaced += 1;
     }
 
@@ -225,11 +261,11 @@ fn is_image_block_type(block_type: Option<&str>) -> bool {
     matches!(block_type, Some("image" | "image_url" | "input_image"))
 }
 
-fn replace_image_block_with_text_marker(block: &mut Value, text_type: &str) {
+fn replace_image_block_with_text_marker(block: &mut Value, text_type: &str, marker: &str) {
     let cache_control = block.get("cache_control").cloned();
     *block = json!({
         "type": text_type,
-        "text": UNSUPPORTED_IMAGE_MARKER
+        "text": marker
     });
     if let (Some(cache_control), Some(object)) = (cache_control, block.as_object_mut()) {
         object.insert("cache_control".to_string(), cache_control);
@@ -751,5 +787,63 @@ mod tests {
             body["messages"][0]["content"][0]["text"],
             UNSUPPORTED_IMAGE_MARKER
         );
+    }
+
+    #[test]
+    fn replaces_only_images_already_processed_by_an_assistant_turn() {
+        let mut body = json!({
+            "messages": [
+                {
+                    "role": "assistant",
+                    "content": [{"type": "tool_use", "name": "Read"}]
+                },
+                {
+                    "role": "user",
+                    "content": [{
+                        "type": "tool_result",
+                        "content": [{
+                            "type": "image",
+                            "source": {"type": "base64", "data": "old-image"}
+                        }]
+                    }]
+                },
+                {
+                    "role": "assistant",
+                    "content": [{"type": "text", "text": "I inspected the old image."}]
+                },
+                {
+                    "role": "user",
+                    "content": [{
+                        "type": "image",
+                        "source": {"type": "base64", "data": "current-image"}
+                    }]
+                }
+            ]
+        });
+
+        let count = replace_historical_image_blocks_with_marker(&mut body);
+
+        assert_eq!(count, 1);
+        assert_eq!(
+            body["messages"][1]["content"][0]["content"][0]["text"],
+            HISTORICAL_IMAGE_MARKER
+        );
+        assert_eq!(body["messages"][3]["content"][0]["type"], "image");
+    }
+
+    #[test]
+    fn keeps_images_when_no_assistant_has_processed_them() {
+        let mut body = json!({
+            "messages": [{
+                "role": "user",
+                "content": [{
+                    "type": "image",
+                    "source": {"type": "base64", "data": "current-image"}
+                }]
+            }]
+        });
+
+        assert_eq!(replace_historical_image_blocks_with_marker(&mut body), 0);
+        assert_eq!(body["messages"][0]["content"][0]["type"], "image");
     }
 }
