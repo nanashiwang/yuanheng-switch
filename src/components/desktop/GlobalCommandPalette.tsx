@@ -99,6 +99,7 @@ export function GlobalCommandPalette({
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent
         zIndex="top"
+        closeOnInteractOutside
         className="max-w-[620px] overflow-hidden rounded-2xl p-0"
       >
         <DialogTitle className="sr-only">快捷操作</DialogTitle>
