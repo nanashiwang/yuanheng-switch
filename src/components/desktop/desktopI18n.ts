@@ -1,8 +1,9 @@
 import i18n from "@/i18n";
+import { DESKTOP_ZH_TW } from "./desktopI18n.zhTW";
 
 type Values = Record<string, string | number | null | undefined>;
 
-const EN: Record<string, string> = {
+export const DESKTOP_EN: Record<string, string> = {
   工作台: "Workspace",
   工具管理: "Tool Management",
   能力中心: "Capability Center",
@@ -510,8 +511,19 @@ const DYNAMIC_EN: Array<[RegExp, (...matches: string[]) => string]> = [
   [/^(\d+) 个工具已经就绪。$/, (count) => `${count} tools are ready.`],
 ];
 
-function translateDynamic(source: string): string | undefined {
-  for (const [pattern, translate] of DYNAMIC_EN) {
+const DYNAMIC_ZH_TW: Array<[RegExp, (...matches: string[]) => string]> = [
+  [
+    /^检测到 (\d+) 个工具配置发生变化。$/,
+    (count) => `偵測到 ${count} 個工具設定發生變更。`,
+  ],
+  [/^(\d+) 个工具已经就绪。$/, (count) => `${count} 個工具已就緒。`],
+];
+
+function translateDynamic(
+  source: string,
+  translations: Array<[RegExp, (...matches: string[]) => string]>,
+): string | undefined {
+  for (const [pattern, translate] of translations) {
     const match = source.match(pattern);
     if (match) return translate(...match.slice(1));
   }
@@ -531,9 +543,19 @@ export function desktopLocale(): string {
 
 export function dt(source: string, values?: Values): string {
   const language = i18n.resolvedLanguage || i18n.language;
-  const template =
-    language === "zh-CN"
-      ? source
-      : (EN[source] ?? translateDynamic(source) ?? source);
+  let template: string;
+
+  if (language === "zh-CN") {
+    template = source;
+  } else if (language === "zh-TW") {
+    template =
+      DESKTOP_ZH_TW[source] ??
+      translateDynamic(source, DYNAMIC_ZH_TW) ??
+      source;
+  } else {
+    template =
+      DESKTOP_EN[source] ?? translateDynamic(source, DYNAMIC_EN) ?? source;
+  }
+
   return interpolate(template, values);
 }
