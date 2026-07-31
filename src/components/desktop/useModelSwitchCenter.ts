@@ -353,12 +353,15 @@ export function useModelSwitchCenter() {
         supportedReasoning.includes(selectedReasoning)
           ? selectedReasoning
           : "auto";
-      const dirty = Boolean(
-        !status?.configured ||
-          (model && model !== status.model) ||
-          (group && group !== status.group) ||
-          normalizedReasoning !== (status.reasoning ?? "auto"),
-      );
+      const restartPending = getRestartRequiredApps().has(app);
+      const dirty =
+        !restartPending &&
+        Boolean(
+          !status?.configured ||
+            (model && model !== status.model) ||
+            (group && group !== status.group) ||
+            normalizedReasoning !== (status.reasoning ?? "auto"),
+        );
       if (dirty && model) {
         const results = await configure.mutateAsync({
           apps: [app],
@@ -376,8 +379,7 @@ export function useModelSwitchCenter() {
         }
       }
       if (!isCurrentOperation(app, operationId)) return;
-      const shouldRestart =
-        isDesktopApp(app) && (dirty || restartRequiredApps.has(app));
+      const shouldRestart = isDesktopApp(app) && (dirty || restartPending);
       await yuanhengApi.launchTool(app, shouldRestart);
       if (shouldRestart) clearRestartRequired(app);
       if (!isCurrentOperation(app, operationId)) return;
