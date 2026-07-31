@@ -1,0 +1,62 @@
+{
+  "common": {
+    "unknown": "Unbekannt",
+    "settings": "Einstellungen"
+  },
+  "settings": {
+    "title": "Einstellungen",
+    "language": "Sprache",
+    "languageHint": "Wähle die Anzeigesprache der App.",
+    "saveFailedGeneric": "Speichern fehlgeschlagen. Bitte erneut versuchen."
+  },
+  "desktop": {
+    "toolbar": {
+      "language": "Sprache wechseln",
+      "settings": "Einstellungen",
+      "switchTool": "Aktuelles Werkzeug wechseln"
+    },
+    "window": {
+      "minimize": "Fenster minimieren",
+      "maximize": "Fenster maximieren",
+      "restore": "Fenster wiederherstellen",
+      "close": "Fenster schließen",
+      "actionFailed": "Fensteraktion fehlgeschlagen: {{error}}"
+    },
+    "views": {
+      "home": "Start",
+      "tools": "Werkzeuge",
+      "capabilities": "Funktionen",
+      "skills": "Skills",
+      "skillsDiscovery": "Skills entdecken",
+      "mcp": "MCP",
+      "prompts": "Prompts",
+      "agents": "Agents",
+      "usage": "Sitzungen und Nutzung",
+      "network": "Verbindung und Routing",
+      "settings": "Einstellungen",
+      "workspace": "Arbeitsbereichsdateien",
+      "openclawEnv": "OpenClaw-Umgebung",
+      "openclawTools": "OpenClaw-Werkzeuge",
+      "openclawAgents": "OpenClaw Agents",
+      "hermesMemory": "Hermes-Speicher"
+    },
+    "back": "Zurück zu {{label}}",
+    "syncFailed": "Automatische {{service}}-Synchronisierung fehlgeschlagen: {{error}}",
+    "skills": {
+      "description": "Funktionen für KI-Werkzeuge installieren, aktivieren und synchronisieren.",
+      "restore": "Wiederherstellen",
+      "import": "Importieren",
+      "discover": "Entdecken",
+      "discoveryDescription": "Funktionen aus vertrauenswürdigen Repositories suchen und installieren."
+    },
+    "mcp": {
+      "description": "Von KI-Werkzeugen gemeinsam genutzte MCP-Server verwalten.",
+      "import": "Vorhandene Konfiguration importieren",
+      "add": "MCP hinzufügen"
+    },
+    "prompts": {
+      "description": "Wiederverwendbare Prompt-Vorlagen verwalten.",
+      "add": "Prompt hinzufügen"
+    }
+  }
+}

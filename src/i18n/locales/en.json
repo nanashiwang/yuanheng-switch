@@ -435,7 +435,7 @@
       }
     },
     "language": "Language",
-    "languageHint": "Preview interface language immediately after switching, takes effect permanently after saving.",
+    "languageHint": "Choose the app display language. Changes are saved immediately.",
     "theme": "Theme",
     "themeHint": "Choose the appearance theme for the app, takes effect immediately.",
     "themeLight": "Light",
@@ -3039,5 +3039,55 @@
     "expiredHint": "Run the {{tool}} command to refresh your login",
     "queryFailed": "Query failed",
     "refresh": "Refresh"
+  },
+  "desktop": {
+    "views": {
+      "home": "Home",
+      "tools": "Tool Management",
+      "capabilities": "Capability Center",
+      "skills": "Skills",
+      "skillsDiscovery": "Discover Skills",
+      "mcp": "MCP",
+      "prompts": "Prompts",
+      "agents": "Agents",
+      "usage": "Sessions & Usage",
+      "network": "Connection & Routing",
+      "settings": "Settings",
+      "workspace": "Workspace Files",
+      "openclawEnv": "OpenClaw Environment",
+      "openclawTools": "OpenClaw Tools",
+      "openclawAgents": "OpenClaw Agents",
+      "hermesMemory": "Hermes Memory"
+    },
+    "toolbar": {
+      "language": "Change language",
+      "settings": "Settings",
+      "switchTool": "Switch current tool"
+    },
+    "window": {
+      "minimize": "Minimize window",
+      "maximize": "Maximize window",
+      "restore": "Restore window",
+      "close": "Close window",
+      "actionFailed": "Window action failed: {{error}}"
+    },
+    "back": "Back to {{label}}",
+    "syncFailed": "{{service}} auto-sync failed: {{error}}",
+    "skills": {
+      "description": "Install, enable, and sync capabilities required by AI tools.",
+      "restore": "Restore",
+      "import": "Import",
+      "discover": "Discover",
+      "discoveryDescription": "Find and install capabilities from trusted repositories."
+    },
+    "mcp": {
+      "description": "Manage MCP servers shared by AI tools.",
+      "import": "Import existing configuration",
+      "add": "Add MCP"
+    },
+    "prompts": {
+      "description": "Manage reusable prompt templates.",
+      "add": "Add prompt"
+    }
   }
 }

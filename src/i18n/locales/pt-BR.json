@@ -1,0 +1,62 @@
+{
+  "common": {
+    "unknown": "Desconhecido",
+    "settings": "Configurações"
+  },
+  "settings": {
+    "title": "Configurações",
+    "language": "Idioma",
+    "languageHint": "Escolha o idioma de exibição do aplicativo.",
+    "saveFailedGeneric": "Não foi possível salvar. Tente novamente."
+  },
+  "desktop": {
+    "toolbar": {
+      "language": "Alterar idioma",
+      "settings": "Configurações",
+      "switchTool": "Alterar ferramenta atual"
+    },
+    "window": {
+      "minimize": "Minimizar janela",
+      "maximize": "Maximizar janela",
+      "restore": "Restaurar janela",
+      "close": "Fechar janela",
+      "actionFailed": "Falha na ação da janela: {{error}}"
+    },
+    "views": {
+      "home": "Início",
+      "tools": "Ferramentas",
+      "capabilities": "Recursos",
+      "skills": "Skills",
+      "skillsDiscovery": "Descobrir Skills",
+      "mcp": "MCP",
+      "prompts": "Prompts",
+      "agents": "Agents",
+      "usage": "Sessões e uso",
+      "network": "Conexão e roteamento",
+      "settings": "Configurações",
+      "workspace": "Arquivos do espaço de trabalho",
+      "openclawEnv": "Ambiente OpenClaw",
+      "openclawTools": "Ferramentas OpenClaw",
+      "openclawAgents": "Agentes OpenClaw",
+      "hermesMemory": "Memória Hermes"
+    },
+    "back": "Voltar para {{label}}",
+    "syncFailed": "Falha na sincronização automática do {{service}}: {{error}}",
+    "skills": {
+      "description": "Instale, ative e sincronize recursos para ferramentas de IA.",
+      "restore": "Restaurar",
+      "import": "Importar",
+      "discover": "Descobrir",
+      "discoveryDescription": "Encontre e instale recursos de repositórios confiáveis."
+    },
+    "mcp": {
+      "description": "Gerencie servidores MCP compartilhados por ferramentas de IA.",
+      "import": "Importar configuração existente",
+      "add": "Adicionar MCP"
+    },
+    "prompts": {
+      "description": "Gerencie modelos de prompts reutilizáveis.",
+      "add": "Adicionar prompt"
+    }
+  }
+}

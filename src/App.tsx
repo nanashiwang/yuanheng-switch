@@ -50,6 +50,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { UpdateBadge } from "@/components/UpdateBadge";
 import { ModeToggle } from "@/components/mode-toggle";
+import { LanguageSwitcher } from "@/components/desktop/LanguageSwitcher";
 import { EnvWarningBanner } from "@/components/env/EnvWarningBanner";
 import { DeepLinkImportDialog } from "@/components/DeepLinkImportDialog";
 import { SettingsPage } from "@/components/settings/SettingsPage";
@@ -113,23 +114,23 @@ const TOP_LEVEL_VIEWS: DesktopView[] = [
   "settings",
 ];
 
-const VIEW_LABELS: Record<DesktopView, string> = {
-  home: "工作台",
-  tools: "工具管理",
-  capabilities: "能力中心",
-  skills: "Skills",
-  skillsDiscovery: "发现 Skills",
-  mcp: "MCP",
-  prompts: "Prompts",
-  agents: "Agents",
-  usage: "会话与用量",
-  network: "连接与路由",
-  settings: "设置",
-  workspace: "工作区文件",
-  openclawEnv: "OpenClaw 环境",
-  openclawTools: "OpenClaw 工具",
-  openclawAgents: "OpenClaw Agents",
-  hermesMemory: "Hermes 记忆",
+const VIEW_LABEL_KEYS: Record<DesktopView, string> = {
+  home: "desktop.views.home",
+  tools: "desktop.views.tools",
+  capabilities: "desktop.views.capabilities",
+  skills: "desktop.views.skills",
+  skillsDiscovery: "desktop.views.skillsDiscovery",
+  mcp: "desktop.views.mcp",
+  prompts: "desktop.views.prompts",
+  agents: "desktop.views.agents",
+  usage: "desktop.views.usage",
+  network: "desktop.views.network",
+  settings: "desktop.views.settings",
+  workspace: "desktop.views.workspace",
+  openclawEnv: "desktop.views.openclawEnv",
+  openclawTools: "desktop.views.openclawTools",
+  openclawAgents: "desktop.views.openclawAgents",
+  hermesMemory: "desktop.views.hermesMemory",
 };
 
 const VIEW_PARENTS: Partial<Record<DesktopView, DesktopView>> = {
@@ -169,10 +170,13 @@ function DetailFrame({
   title,
   description,
   onBack,
-  backLabel = "能力中心",
+  backLabel,
   actions,
   children,
 }: DetailFrameProps) {
+  const { t } = useTranslation();
+  const resolvedBackLabel = backLabel ?? t("desktop.views.capabilities");
+
   return (
     <div className="flex h-full min-h-0 flex-col overflow-hidden px-7 pt-5">
       <div className="flex shrink-0 items-start gap-3 pb-4">
@@ -180,7 +184,7 @@ function DetailFrame({
           variant="outline"
           size="icon"
           className="h-9 w-9"
-          aria-label={`返回${backLabel}`}
+          aria-label={t("desktop.back", { label: resolvedBackLabel })}
           onClick={onBack}
         >
           <ArrowLeft className="h-4 w-4" />
@@ -280,7 +284,12 @@ function App() {
     async (payload) => {
       await queryClient.invalidateQueries({ queryKey: ["settings"] });
       if (payload?.source === "auto" && payload.status === "error") {
-        toast.error(`WebDAV 自动同步失败：${payload.error || "未知错误"}`);
+        toast.error(
+          t("desktop.syncFailed", {
+            service: "WebDAV",
+            error: payload.error || t("common.unknown"),
+          }),
+        );
       }
     },
   );
@@ -290,7 +299,12 @@ function App() {
     async (payload) => {
       await queryClient.invalidateQueries({ queryKey: ["settings"] });
       if (payload?.source === "auto" && payload.status === "error") {
-        toast.error(`S3 自动同步失败：${payload.error || "未知错误"}`);
+        toast.error(
+          t("desktop.syncFailed", {
+            service: "S3",
+            error: payload.error || t("common.unknown"),
+          }),
+        );
       }
     },
   );
@@ -396,7 +410,9 @@ function App() {
       }
       if (action === "close") await window.close();
     } catch (error) {
-      toast.error(`窗口操作失败：${extractErrorMessage(error)}`);
+      toast.error(
+        t("desktop.window.actionFailed", { error: extractErrorMessage(error) }),
+      );
     }
   };
 
@@ -444,7 +460,7 @@ function App() {
         return (
           <DetailFrame
             title="Skills"
-            description="安装、启用并同步 AI 工具需要的专业能力。"
+            description={t("desktop.skills.description")}
             onBack={() => navigate("capabilities")}
             actions={
               <>
@@ -455,7 +471,8 @@ function App() {
                     unifiedSkillsPanelRef.current?.openRestoreFromBackup()
                   }
                 >
-                  <History className="h-3.5 w-3.5" /> 恢复
+                  <History className="h-3.5 w-3.5" />{" "}
+                  {t("desktop.skills.restore")}
                 </Button>
                 <Button
                   variant="outline"
@@ -472,13 +489,15 @@ function App() {
                   className="relative"
                   onClick={() => unifiedSkillsPanelRef.current?.openImport()}
                 >
-                  <Download className="h-3.5 w-3.5" /> 导入
+                  <Download className="h-3.5 w-3.5" />{" "}
+                  {t("desktop.skills.import")}
                   {hasUnmanagedSkills && (
                     <span className="absolute right-1 top-1 h-1.5 w-1.5 rounded-full bg-emerald-500" />
                   )}
                 </Button>
                 <Button size="sm" onClick={() => navigate("skillsDiscovery")}>
-                  <Search className="h-3.5 w-3.5" /> 发现
+                  <Search className="h-3.5 w-3.5" />{" "}
+                  {t("desktop.skills.discover")}
                 </Button>
               </>
             }
@@ -493,10 +512,10 @@ function App() {
       case "skillsDiscovery":
         return (
           <DetailFrame
-            title="发现 Skills"
-            description="从可信仓库查找并安装工具能力。"
+            title={t("desktop.views.skillsDiscovery")}
+            description={t("desktop.skills.discoveryDescription")}
             onBack={() => navigate("skills")}
-            backLabel="Skills"
+            backLabel={t("desktop.views.skills")}
             actions={getSkillsPageHeaderActions(skillsDiscoverySource).map(
               ({ key, labelKey, Icon, execute }) => (
                 <Button
@@ -530,13 +549,14 @@ function App() {
                   size="sm"
                   onClick={() => mcpPanelRef.current?.openImport()}
                 >
-                  <Download className="h-3.5 w-3.5" /> 导入已有配置
+                  <Download className="h-3.5 w-3.5" />{" "}
+                  {t("desktop.skills.import")}已有配置
                 </Button>
                 <Button
                   size="sm"
                   onClick={() => mcpPanelRef.current?.openAdd()}
                 >
-                  <Plus className="h-3.5 w-3.5" /> 添加 MCP
+                  <Plus className="h-3.5 w-3.5" /> {t("desktop.mcp.add")}
                 </Button>
               </>
             }
@@ -558,7 +578,7 @@ function App() {
                 size="sm"
                 onClick={() => promptPanelRef.current?.openAdd()}
               >
-                <Plus className="h-3.5 w-3.5" /> 添加提示词
+                <Plus className="h-3.5 w-3.5" /> {t("desktop.prompts.add")}
               </Button>
             }
           >
@@ -631,7 +651,7 @@ function App() {
                 variant="ghost"
                 size="icon"
                 className="h-7 w-7 text-slate-300"
-                aria-label="最小化窗口"
+                aria-label={t("desktop.window.minimize")}
                 onClick={() => void windowAction("minimize")}
               >
                 <Minus className="h-4 w-4" />
@@ -640,7 +660,11 @@ function App() {
                 variant="ghost"
                 size="icon"
                 className="h-7 w-7 text-slate-300"
-                aria-label={isWindowMaximized ? "还原窗口" : "最大化窗口"}
+                aria-label={
+                  isWindowMaximized
+                    ? t("desktop.window.restore")
+                    : t("desktop.window.maximize")
+                }
                 onClick={() => void windowAction("maximize")}
               >
                 {isWindowMaximized ? (
@@ -653,7 +677,7 @@ function App() {
                 variant="ghost"
                 size="icon"
                 className="h-7 w-7 text-slate-300 hover:bg-red-500/20 hover:text-red-300"
-                aria-label="关闭窗口"
+                aria-label={t("desktop.window.close")}
                 onClick={() => void windowAction("close")}
               >
                 <X className="h-4 w-4" />
@@ -690,13 +714,13 @@ function App() {
                       onClick={() => navigate(VIEW_PARENTS[view]!)}
                       className="shrink-0 font-medium text-muted-foreground transition-colors hover:text-foreground"
                     >
-                      {VIEW_LABELS[VIEW_PARENTS[view]!]}
+                      {t(VIEW_LABEL_KEYS[VIEW_PARENTS[view]!])}
                     </button>
                     <ChevronRight className="h-3 w-3 shrink-0 text-muted-foreground/50" />
                   </>
                 )}
                 <span className="truncate font-semibold">
-                  {VIEW_LABELS[view]}
+                  {t(VIEW_LABEL_KEYS[view])}
                 </span>
               </div>
               <div
@@ -708,7 +732,7 @@ function App() {
                     <button
                       type="button"
                       className="mr-1 hidden h-8 items-center gap-2 rounded-lg bg-muted/60 px-2.5 text-[11px] text-muted-foreground transition-colors hover:bg-muted hover:text-foreground sm:flex"
-                      aria-label="切换当前工具"
+                      aria-label={t("desktop.toolbar.switchTool")}
                     >
                       <ProviderIcon
                         icon={appProviderIcon(activeApp)}
@@ -743,6 +767,7 @@ function App() {
                     )}
                   </DropdownMenuContent>
                 </DropdownMenu>
+                <LanguageSwitcher />
                 <ModeToggle />
                 <Button
                   variant="outline"
@@ -751,7 +776,7 @@ function App() {
                     setSettingsDefaultTab("general");
                     navigate("settings");
                   }}
-                  title="设置"
+                  title={t("desktop.toolbar.settings")}
                 >
                   <Settings className="h-4 w-4" />
                 </Button>

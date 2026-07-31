@@ -64,7 +64,7 @@ const createSettingsMock = (overrides: Partial<SettingsMock> = {}) => {
       showInTray: true,
       minimizeToTrayOnClose: true,
       enableClaudePluginIntegration: false,
-      language: "zh",
+      language: "zh-CN",
       claudeConfigDir: "/claude",
       codexConfigDir: "/codex",
     },
@@ -290,7 +290,7 @@ describe("SettingsPage Component", () => {
 
     renderSettingsPage();
 
-    expect(screen.queryByText("language:zh")).not.toBeInTheDocument();
+    expect(screen.queryByText("language:zh-CN")).not.toBeInTheDocument();
     // 加载状态下显示 spinner 而不是表单内容
     expect(document.querySelector(".animate-spin")).toBeInTheDocument();
   });
@@ -327,7 +327,7 @@ describe("SettingsPage Component", () => {
 
     renderSettingsPage({ onOpenChange });
 
-    expect(screen.getByText("language:zh")).toBeInTheDocument();
+    expect(screen.getByText("language:zh-CN")).toBeInTheDocument();
     expect(screen.getByText("theme-settings")).toBeInTheDocument();
 
     fireEvent.click(screen.getByText("change-language"));

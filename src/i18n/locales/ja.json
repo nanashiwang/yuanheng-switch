@@ -435,7 +435,7 @@
       }
     },
     "language": "言語",
-    "languageHint": "切り替えるとすぐにプレビューされ、保存後に永続化されます。",
+    "languageHint": "アプリの表示言語を選択します。変更はすぐに保存されます。",
     "theme": "テーマ",
     "themeHint": "アプリのテーマを選択します。すぐに反映されます。",
     "themeLight": "ライト",
@@ -3039,5 +3039,55 @@
     "expiredHint": "{{tool}}コマンドを実行してログインを更新してください",
     "queryFailed": "クエリに失敗しました",
     "refresh": "更新"
+  },
+  "desktop": {
+    "views": {
+      "home": "ホーム",
+      "tools": "ツール管理",
+      "capabilities": "機能センター",
+      "skills": "Skills",
+      "skillsDiscovery": "Skills を探す",
+      "mcp": "MCP",
+      "prompts": "Prompts",
+      "agents": "Agents",
+      "usage": "セッションと使用量",
+      "network": "接続とルーティング",
+      "settings": "設定",
+      "workspace": "ワークスペースファイル",
+      "openclawEnv": "OpenClaw 環境",
+      "openclawTools": "OpenClaw ツール",
+      "openclawAgents": "OpenClaw Agents",
+      "hermesMemory": "Hermes メモリ"
+    },
+    "toolbar": {
+      "language": "言語を切り替える",
+      "settings": "設定",
+      "switchTool": "現在のツールを切り替える"
+    },
+    "window": {
+      "minimize": "ウィンドウを最小化",
+      "maximize": "ウィンドウを最大化",
+      "restore": "ウィンドウを復元",
+      "close": "ウィンドウを閉じる",
+      "actionFailed": "ウィンドウ操作に失敗しました: {{error}}"
+    },
+    "back": "{{label}} に戻る",
+    "syncFailed": "{{service}} の自動同期に失敗しました: {{error}}",
+    "skills": {
+      "description": "AI ツールに必要な機能をインストール、有効化、同期します。",
+      "restore": "復元",
+      "import": "インポート",
+      "discover": "探す",
+      "discoveryDescription": "信頼できるリポジトリから機能を探してインストールします。"
+    },
+    "mcp": {
+      "description": "AI ツールで共有する MCP サーバーを管理します。",
+      "import": "既存設定をインポート",
+      "add": "MCP を追加"
+    },
+    "prompts": {
+      "description": "再利用可能なプロンプトテンプレートを管理します。",
+      "add": "プロンプトを追加"
+    }
   }
 }

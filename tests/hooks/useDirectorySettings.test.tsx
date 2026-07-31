@@ -49,7 +49,7 @@ const createSettings = (
   claudeConfigDir: "/claude/custom",
   codexConfigDir: "/codex/custom",
   grokConfigDir: "/grok/custom",
-  language: "zh",
+  language: "zh-CN",
   ...overrides,
 });
 
@@ -215,7 +215,9 @@ describe("useDirectorySettings", () => {
     });
     expect(result.current.resolvedDirs.claude).toBe("/home/mock/.claude");
     expect(result.current.resolvedDirs.codex).toBe("/home/mock/.codex");
-    expect(result.current.resolvedDirs.appConfig).toBe("/home/mock/.yuanheng-switch");
+    expect(result.current.resolvedDirs.appConfig).toBe(
+      "/home/mock/.yuanheng-switch",
+    );
   });
 
   it("updates openclaw directory when browsing succeeds", async () => {

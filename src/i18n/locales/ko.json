@@ -1,0 +1,62 @@
+{
+  "common": {
+    "unknown": "알 수 없음",
+    "settings": "설정"
+  },
+  "settings": {
+    "title": "설정",
+    "language": "언어",
+    "languageHint": "앱의 표시 언어를 선택합니다.",
+    "saveFailedGeneric": "저장하지 못했습니다. 다시 시도해 주세요."
+  },
+  "desktop": {
+    "toolbar": {
+      "language": "언어 변경",
+      "settings": "설정",
+      "switchTool": "현재 도구 변경"
+    },
+    "window": {
+      "minimize": "창 최소화",
+      "maximize": "창 최대화",
+      "restore": "창 복원",
+      "close": "창 닫기",
+      "actionFailed": "창 작업 실패: {{error}}"
+    },
+    "views": {
+      "home": "홈",
+      "tools": "도구",
+      "capabilities": "기능",
+      "skills": "Skills",
+      "skillsDiscovery": "Skills 찾기",
+      "mcp": "MCP",
+      "prompts": "Prompts",
+      "agents": "Agents",
+      "usage": "세션 및 사용량",
+      "network": "연결 및 라우팅",
+      "settings": "설정",
+      "workspace": "워크스페이스 파일",
+      "openclawEnv": "OpenClaw 환경",
+      "openclawTools": "OpenClaw 도구",
+      "openclawAgents": "OpenClaw Agents",
+      "hermesMemory": "Hermes 메모리"
+    },
+    "back": "{{label}}로 돌아가기",
+    "syncFailed": "{{service}} 자동 동기화 실패: {{error}}",
+    "skills": {
+      "description": "AI 도구에 필요한 기능을 설치, 활성화 및 동기화합니다.",
+      "restore": "복원",
+      "import": "가져오기",
+      "discover": "찾기",
+      "discoveryDescription": "신뢰할 수 있는 저장소에서 기능을 찾아 설치합니다."
+    },
+    "mcp": {
+      "description": "AI 도구가 공유하는 MCP 서버를 관리합니다.",
+      "import": "기존 구성 가져오기",
+      "add": "MCP 추가"
+    },
+    "prompts": {
+      "description": "재사용 가능한 프롬프트 템플릿을 관리합니다.",
+      "add": "프롬프트 추가"
+    }
+  }
+}

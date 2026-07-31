@@ -524,7 +524,7 @@ impl Default for AppSettings {
             failover_confirmed: None,
             first_run_notice_confirmed: None,
             common_config_confirmed: None,
-            language: None,
+            language: Some("en".to_string()),
             visible_apps: None,
             claude_config_dir: None,
             codex_config_dir: None,
@@ -614,12 +614,38 @@ impl AppSettings {
             .filter(|s| !s.is_empty())
             .map(|s| s.to_string());
 
-        self.language = self
-            .language
-            .as_ref()
-            .map(|s| s.trim())
-            .filter(|s| matches!(*s, "en" | "zh" | "zh-TW" | "ja"))
-            .map(|s| s.to_string());
+        self.language = self.language.as_deref().map(|language| {
+            let normalized = language.trim().to_ascii_lowercase().replace('_', "-");
+            if normalized == "zh-tw"
+                || normalized.starts_with("zh-hant")
+                || normalized.starts_with("zh-hk")
+                || normalized.starts_with("zh-mo")
+            {
+                "zh-TW".to_string()
+            } else if normalized == "zh"
+                || normalized == "zh-cn"
+                || normalized.starts_with("zh-hans")
+                || normalized.starts_with("zh-sg")
+            {
+                "zh-CN".to_string()
+            } else if normalized.starts_with("en") {
+                "en".to_string()
+            } else if normalized.starts_with("ja") {
+                "ja".to_string()
+            } else if normalized.starts_with("ko") {
+                "ko".to_string()
+            } else if normalized.starts_with("es") {
+                "es".to_string()
+            } else if normalized.starts_with("de") {
+                "de".to_string()
+            } else if normalized.starts_with("fr") {
+                "fr".to_string()
+            } else if normalized.starts_with("pt") {
+                "pt-BR".to_string()
+            } else {
+                "en".to_string()
+            }
+        });
 
         if let Some(sync) = &mut self.webdav_sync {
             sync.normalize();
@@ -636,6 +662,15 @@ impl AppSettings {
         }
     }
 
+    fn normalize_after_load(&mut self) {
+        let is_legacy_language_missing = self.language.is_none();
+        self.normalize_paths();
+        if is_legacy_language_missing {
+            // Releases before language persistence defaulted to Chinese implicitly.
+            self.language = Some("zh-CN".to_string());
+        }
+    }
+
     fn load_from_file() -> Self {
         let Some(path) = Self::settings_path() else {
             return Self::default();
@@ -643,7 +678,7 @@ impl AppSettings {
         if let Ok(content) = fs::read_to_string(&path) {
             match serde_json::from_str::<AppSettings>(&content) {
                 Ok(mut settings) => {
-                    settings.normalize_paths();
+                    settings.normalize_after_load();
                     settings
                 }
                 Err(err) => {
@@ -1154,11 +1189,57 @@ mod tests {
     }
 
     #[test]
+    fn new_install_defaults_to_english() {
+        assert_eq!(AppSettings::default().language.as_deref(), Some("en"));
+    }
+
+    #[test]
+    fn legacy_chinese_language_is_migrated() {
+        let mut settings = AppSettings {
+            language: Some("zh".to_string()),
+            ..AppSettings::default()
+        };
+
+        settings.normalize_paths();
+
+        assert_eq!(settings.language.as_deref(), Some("zh-CN"));
+    }
+
+    #[test]
+    fn language_aliases_and_unknown_values_are_normalized() {
+        let cases = [
+            ("zh_Hant_HK", "zh-TW"),
+            ("en-US", "en"),
+            ("pt-PT", "pt-BR"),
+            ("unsupported", "en"),
+        ];
+
+        for (input, expected) in cases {
+            let mut settings = AppSettings {
+                language: Some(input.to_string()),
+                ..AppSettings::default()
+            };
+            settings.normalize_paths();
+            assert_eq!(settings.language.as_deref(), Some(expected));
+        }
+    }
+
+    #[test]
     fn legacy_settings_without_launch_preference_stay_disabled() {
         let settings: AppSettings =
             serde_json::from_value(serde_json::json!({})).expect("legacy settings");
 
         assert!(!settings.launch_on_startup);
+    }
+
+    #[test]
+    fn legacy_settings_without_language_keep_the_previous_chinese_default() {
+        let mut settings: AppSettings =
+            serde_json::from_value(serde_json::json!({})).expect("legacy settings");
+
+        settings.normalize_after_load();
+
+        assert_eq!(settings.language.as_deref(), Some("zh-CN"));
     }
 
     #[test]

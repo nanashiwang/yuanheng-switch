@@ -435,7 +435,7 @@
       }
     },
     "language": "介面語言",
-    "languageHint": "切換後立即預覽介面語言，儲存後永久生效。",
+    "languageHint": "選擇應用程式顯示語言，切換後會立即儲存。",
     "theme": "外觀主題",
     "themeHint": "選擇應用程式的外觀主題，立即生效。",
     "themeLight": "淺色",
@@ -3011,5 +3011,55 @@
     "expiredHint": "請執行 {{tool}} 命令重新整理登入",
     "queryFailed": "查詢失敗",
     "refresh": "重新整理"
+  },
+  "desktop": {
+    "views": {
+      "home": "工作台",
+      "tools": "工具管理",
+      "capabilities": "能力中心",
+      "skills": "Skills",
+      "skillsDiscovery": "探索 Skills",
+      "mcp": "MCP",
+      "prompts": "Prompts",
+      "agents": "Agents",
+      "usage": "工作階段與用量",
+      "network": "連線與路由",
+      "settings": "設定",
+      "workspace": "工作區檔案",
+      "openclawEnv": "OpenClaw 環境",
+      "openclawTools": "OpenClaw 工具",
+      "openclawAgents": "OpenClaw Agents",
+      "hermesMemory": "Hermes 記憶"
+    },
+    "toolbar": {
+      "language": "切換語言",
+      "settings": "設定",
+      "switchTool": "切換目前工具"
+    },
+    "window": {
+      "minimize": "最小化視窗",
+      "maximize": "最大化視窗",
+      "restore": "還原視窗",
+      "close": "關閉視窗",
+      "actionFailed": "視窗操作失敗：{{error}}"
+    },
+    "back": "返回{{label}}",
+    "syncFailed": "{{service}} 自動同步失敗：{{error}}",
+    "skills": {
+      "description": "安裝、啟用並同步 AI 工具所需的專業能力。",
+      "restore": "還原",
+      "import": "匯入",
+      "discover": "探索",
+      "discoveryDescription": "從可信任的儲存庫尋找並安裝工具能力。"
+    },
+    "mcp": {
+      "description": "管理 AI 工具共用的 MCP 伺服器。",
+      "import": "匯入現有設定",
+      "add": "新增 MCP"
+    },
+    "prompts": {
+      "description": "管理可重複使用的提示詞範本。",
+      "add": "新增提示詞"
+    }
   }
 }

@@ -1,3 +1,5 @@
+import type { AppLanguage } from "@/i18n/languages";
+
 export type ProviderCategory =
   | "official" // 官方
   | "cn_official" // 开源官方（原"国产官方"）
@@ -382,8 +384,8 @@ export interface Settings {
   autoSyncConfirmed?: boolean;
   // User has confirmed the common config first-run notice
   commonConfigConfirmed?: boolean;
-  // 首选语言（可选，默认中文）
-  language?: "en" | "zh" | "zh-TW" | "ja";
+  // Preferred interface language (new installations default to English)
+  language?: AppLanguage;
 
   // 主页面显示的应用（默认全部显示）
   visibleApps?: VisibleApps;

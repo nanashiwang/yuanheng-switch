@@ -435,7 +435,7 @@
       }
     },
     "language": "界面语言",
-    "languageHint": "切换后立即预览界面语言，保存后永久生效。",
+    "languageHint": "选择应用显示语言，切换后会立即保存。",
     "theme": "外观主题",
     "themeHint": "选择应用的外观主题，立即生效。",
     "themeLight": "浅色",
@@ -3039,5 +3039,55 @@
     "expiredHint": "请运行 {{tool}} 命令刷新登录",
     "queryFailed": "查询失败",
     "refresh": "刷新"
+  },
+  "desktop": {
+    "views": {
+      "home": "工作台",
+      "tools": "工具管理",
+      "capabilities": "能力中心",
+      "skills": "Skills",
+      "skillsDiscovery": "发现 Skills",
+      "mcp": "MCP",
+      "prompts": "Prompts",
+      "agents": "Agents",
+      "usage": "会话与用量",
+      "network": "连接与路由",
+      "settings": "设置",
+      "workspace": "工作区文件",
+      "openclawEnv": "OpenClaw 环境",
+      "openclawTools": "OpenClaw 工具",
+      "openclawAgents": "OpenClaw Agents",
+      "hermesMemory": "Hermes 记忆"
+    },
+    "toolbar": {
+      "language": "切换语言",
+      "settings": "设置",
+      "switchTool": "切换当前工具"
+    },
+    "window": {
+      "minimize": "最小化窗口",
+      "maximize": "最大化窗口",
+      "restore": "还原窗口",
+      "close": "关闭窗口",
+      "actionFailed": "窗口操作失败：{{error}}"
+    },
+    "back": "返回{{label}}",
+    "syncFailed": "{{service}} 自动同步失败：{{error}}",
+    "skills": {
+      "description": "安装、启用并同步 AI 工具需要的专业能力。",
+      "restore": "恢复",
+      "import": "导入",
+      "discover": "发现",
+      "discoveryDescription": "从可信仓库查找并安装工具能力。"
+    },
+    "mcp": {
+      "description": "管理 AI 工具共享的 MCP 服务器。",
+      "import": "导入已有配置",
+      "add": "添加 MCP"
+    },
+    "prompts": {
+      "description": "管理可复用的提示词模板。",
+      "add": "添加提示词"
+    }
   }
 }

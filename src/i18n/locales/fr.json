@@ -1,0 +1,62 @@
+{
+  "common": {
+    "unknown": "Inconnu",
+    "settings": "Paramètres"
+  },
+  "settings": {
+    "title": "Paramètres",
+    "language": "Langue",
+    "languageHint": "Choisissez la langue d’affichage de l’application.",
+    "saveFailedGeneric": "Échec de l’enregistrement. Réessayez."
+  },
+  "desktop": {
+    "toolbar": {
+      "language": "Changer de langue",
+      "settings": "Paramètres",
+      "switchTool": "Changer l’outil actuel"
+    },
+    "window": {
+      "minimize": "Réduire la fenêtre",
+      "maximize": "Agrandir la fenêtre",
+      "restore": "Restaurer la fenêtre",
+      "close": "Fermer la fenêtre",
+      "actionFailed": "Échec de l’action sur la fenêtre : {{error}}"
+    },
+    "views": {
+      "home": "Accueil",
+      "tools": "Outils",
+      "capabilities": "Capacités",
+      "skills": "Skills",
+      "skillsDiscovery": "Découvrir des Skills",
+      "mcp": "MCP",
+      "prompts": "Prompts",
+      "agents": "Agents",
+      "usage": "Sessions et utilisation",
+      "network": "Connexion et routage",
+      "settings": "Paramètres",
+      "workspace": "Fichiers de l’espace de travail",
+      "openclawEnv": "Environnement OpenClaw",
+      "openclawTools": "Outils OpenClaw",
+      "openclawAgents": "Agents OpenClaw",
+      "hermesMemory": "Mémoire Hermes"
+    },
+    "back": "Retour à {{label}}",
+    "syncFailed": "Échec de la synchronisation automatique {{service}} : {{error}}",
+    "skills": {
+      "description": "Installez, activez et synchronisez les capacités des outils d’IA.",
+      "restore": "Restaurer",
+      "import": "Importer",
+      "discover": "Découvrir",
+      "discoveryDescription": "Recherchez et installez des capacités depuis des dépôts fiables."
+    },
+    "mcp": {
+      "description": "Gérez les serveurs MCP partagés par les outils d’IA.",
+      "import": "Importer une configuration existante",
+      "add": "Ajouter un MCP"
+    },
+    "prompts": {
+      "description": "Gérez les modèles de prompts réutilisables.",
+      "add": "Ajouter un prompt"
+    }
+  }
+}

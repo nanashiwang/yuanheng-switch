@@ -148,14 +148,16 @@ describe("SettingsPage integration", () => {
     renderDialog();
 
     await waitFor(() =>
-      expect(screen.getByText("language:zh")).toBeInTheDocument(),
+      expect(screen.getByText("language:zh-CN")).toBeInTheDocument(),
     );
     fireEvent.click(screen.getByText("settings.tabAdvanced"));
     fireEvent.click(screen.getByText("settings.advanced.configDir.title"));
     const appInput = await screen.findByPlaceholderText(
       "settings.browsePlaceholderApp",
     );
-    expect((appInput as HTMLInputElement).value).toBe("/home/mock/.yuanheng-switch");
+    expect((appInput as HTMLInputElement).value).toBe(
+      "/home/mock/.yuanheng-switch",
+    );
   });
 
   it("imports configuration and triggers success callback", async () => {
@@ -163,7 +165,7 @@ describe("SettingsPage integration", () => {
     renderDialog({ onImportSuccess });
 
     await waitFor(() =>
-      expect(screen.getByText("language:zh")).toBeInTheDocument(),
+      expect(screen.getByText("language:zh-CN")).toBeInTheDocument(),
     );
 
     fireEvent.click(screen.getByText("settings.tabAdvanced"));
@@ -187,7 +189,7 @@ describe("SettingsPage integration", () => {
     renderDialog();
 
     await waitFor(() =>
-      expect(screen.getByText("language:zh")).toBeInTheDocument(),
+      expect(screen.getByText("language:zh-CN")).toBeInTheDocument(),
     );
 
     fireEvent.click(screen.getByText("settings.tabAdvanced"));
@@ -214,7 +216,7 @@ describe("SettingsPage integration", () => {
     renderDialog();
 
     await waitFor(() =>
-      expect(screen.getByText("language:zh")).toBeInTheDocument(),
+      expect(screen.getByText("language:zh-CN")).toBeInTheDocument(),
     );
 
     fireEvent.click(screen.getByText("settings.tabAdvanced"));
@@ -234,7 +236,9 @@ describe("SettingsPage integration", () => {
     );
 
     fireEvent.click(resetButtons[0]);
-    await waitFor(() => expect(appInput.value).toBe("/home/mock/.yuanheng-switch"));
+    await waitFor(() =>
+      expect(appInput.value).toBe("/home/mock/.yuanheng-switch"),
+    );
 
     const claudeInput = (await screen.findByPlaceholderText(
       "settings.browsePlaceholderClaude",
@@ -255,7 +259,7 @@ describe("SettingsPage integration", () => {
     renderDialog();
 
     await waitFor(() =>
-      expect(screen.getByText("language:zh")).toBeInTheDocument(),
+      expect(screen.getByText("language:zh-CN")).toBeInTheDocument(),
     );
     fireEvent.click(screen.getByText("settings.tabAdvanced"));
     fireEvent.click(screen.getByText("settings.advanced.data.title"));

@@ -2,47 +2,19 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { useSettingsQuery } from "@/lib/query";
 import type { Settings } from "@/types";
+import {
+  DEFAULT_LANGUAGE,
+  normalizeLanguage,
+  persistLanguage,
+  readStoredLanguage,
+  applyLanguageToDocument,
+  type AppLanguage,
+} from "@/i18n/languages";
 
-type Language = "zh" | "zh-TW" | "en" | "ja";
+type Language = AppLanguage;
 
 export type SettingsFormState = Omit<Settings, "language"> & {
   language: Language;
-};
-
-const normalizeLanguage = (lang?: string | null): Language => {
-  if (!lang) return "zh";
-  const normalized = lang.toLowerCase().replace(/_/g, "-");
-
-  if (normalized === "zh") {
-    return "zh";
-  }
-
-  if (
-    normalized === "zh-tw" ||
-    normalized.startsWith("zh-hant") ||
-    normalized.startsWith("zh-hk") ||
-    normalized.startsWith("zh-mo")
-  ) {
-    return "zh-TW";
-  }
-
-  if (normalized === "en" || normalized === "ja") {
-    return normalized;
-  }
-
-  if (normalized.startsWith("zh")) {
-    return "zh";
-  }
-
-  return "zh";
-};
-
-const isSupportedLanguage = (lang?: string | null): boolean => {
-  if (!lang) return false;
-  const normalized = lang.toLowerCase().replace(/_/g, "-");
-  return (
-    normalized === "en" || normalized === "ja" || normalized.startsWith("zh")
-  );
 };
 
 const sanitizeDir = (value?: string | null): string | undefined => {
@@ -77,21 +49,18 @@ export function useSettingsForm(): UseSettingsFormResult {
     null,
   );
 
-  const initialLanguageRef = useRef<Language>("zh");
+  const initialLanguageRef = useRef<Language>(DEFAULT_LANGUAGE);
 
-  const readPersistedLanguage = useCallback((): Language => {
-    if (typeof window !== "undefined") {
-      const stored = window.localStorage.getItem("language");
-      if (isSupportedLanguage(stored)) {
-        return normalizeLanguage(stored);
-      }
-    }
-    return normalizeLanguage(i18n.language);
-  }, [i18n]);
+  const readPersistedLanguage = useCallback(
+    (): Language => readStoredLanguage(),
+    [],
+  );
 
   const syncLanguage = useCallback(
     (lang: Language) => {
       const current = normalizeLanguage(i18n.language);
+      persistLanguage(lang);
+      applyLanguageToDocument(lang);
       if (current !== lang) {
         void i18n.changeLanguage(lang);
       }

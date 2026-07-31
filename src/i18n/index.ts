@@ -1,92 +1,54 @@
 import i18n from "i18next";
 import { initReactI18next } from "react-i18next";
 
+import de from "./locales/de.json";
 import en from "./locales/en.json";
+import es from "./locales/es.json";
+import fr from "./locales/fr.json";
 import ja from "./locales/ja.json";
+import ko from "./locales/ko.json";
+import ptBR from "./locales/pt-BR.json";
 import zh from "./locales/zh.json";
 import zhTW from "./locales/zh-TW.json";
-
-type Language = "zh" | "zh-TW" | "en" | "ja";
-
-const DEFAULT_LANGUAGE: Language = "zh";
-
-const getInitialLanguage = (): Language => {
-  if (typeof window !== "undefined") {
-    try {
-      const stored = window.localStorage.getItem("language");
-      if (
-        stored === "zh" ||
-        stored === "zh-TW" ||
-        stored === "en" ||
-        stored === "ja"
-      ) {
-        return stored;
-      }
-    } catch (error) {
-      console.warn("[i18n] Failed to read stored language preference", error);
-    }
-  }
-
-  const navigatorLang =
-    typeof navigator !== "undefined"
-      ? (navigator.language?.toLowerCase() ??
-        navigator.languages?.[0]?.toLowerCase())
-      : undefined;
-
-  if (navigatorLang === "zh") {
-    return "zh";
-  }
-
-  if (
-    navigatorLang?.startsWith("zh-tw") ||
-    navigatorLang?.startsWith("zh-hk") ||
-    navigatorLang?.startsWith("zh-mo") ||
-    navigatorLang?.startsWith("zh-hant")
-  ) {
-    return "zh-TW";
-  }
-
-  if (navigatorLang?.startsWith("zh")) {
-    return "zh";
-  }
-
-  if (navigatorLang?.startsWith("ja")) {
-    return "ja";
-  }
-
-  if (navigatorLang?.startsWith("en")) {
-    return "en";
-  }
-
-  return DEFAULT_LANGUAGE;
-};
+import {
+  DEFAULT_LANGUAGE,
+  applyLanguageToDocument,
+  normalizeLanguage,
+  persistLanguage,
+  readStoredLanguage,
+} from "./languages";
 
 const resources = {
-  en: {
-    translation: en,
-  },
-  ja: {
-    translation: ja,
-  },
-  zh: {
-    translation: zh,
-  },
-  "zh-TW": {
-    translation: zhTW,
-  },
+  en: { translation: en },
+  "zh-CN": { translation: zh },
+  "zh-TW": { translation: zhTW },
+  ja: { translation: ja },
+  ko: { translation: ko },
+  es: { translation: es },
+  de: { translation: de },
+  fr: { translation: fr },
+  "pt-BR": { translation: ptBR },
 };
+
+const initialLanguage = readStoredLanguage();
+applyLanguageToDocument(initialLanguage);
 
 i18n.use(initReactI18next).init({
   resources,
-  lng: getInitialLanguage(), // 根据本地存储或系统语言选择默认语言
-  fallbackLng: "en", // 如果缺少中文翻译则退回英文
-
+  lng: initialLanguage,
+  fallbackLng: DEFAULT_LANGUAGE,
+  supportedLngs: Object.keys(resources),
+  load: "currentOnly",
   interpolation: {
-    escapeValue: false, // React 已经默认转义
+    escapeValue: false,
   },
-
-  // 开发模式下显示调试信息
   debug: false,
+});
+
+i18n.on("languageChanged", (language) => {
+  const normalized = normalizeLanguage(language);
+  persistLanguage(normalized);
+  applyLanguageToDocument(normalized);
 });
 
 export default i18n;

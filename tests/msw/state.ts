@@ -106,7 +106,7 @@ let settingsState: Settings = {
   enableClaudePluginIntegration: false,
   claudeConfigDir: "/default/claude",
   codexConfigDir: "/default/codex",
-  language: "zh",
+  language: "zh-CN",
 };
 let appConfigDirOverride: string | null = null;
 const sessionMessageKey = (providerId: string, sourcePath: string) =>
@@ -271,7 +271,7 @@ export const resetProviderState = () => {
     enableClaudePluginIntegration: false,
     claudeConfigDir: "/default/claude",
     codexConfigDir: "/default/codex",
-    language: "zh",
+    language: "zh-CN",
   };
   appConfigDirOverride = null;
   mcpConfigs = {

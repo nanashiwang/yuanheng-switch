@@ -1,0 +1,62 @@
+{
+  "common": {
+    "unknown": "Desconocido",
+    "settings": "Configuración"
+  },
+  "settings": {
+    "title": "Configuración",
+    "language": "Idioma",
+    "languageHint": "Elige el idioma de la interfaz.",
+    "saveFailedGeneric": "No se pudo guardar. Inténtalo de nuevo."
+  },
+  "desktop": {
+    "toolbar": {
+      "language": "Cambiar idioma",
+      "settings": "Configuración",
+      "switchTool": "Cambiar herramienta actual"
+    },
+    "window": {
+      "minimize": "Minimizar ventana",
+      "maximize": "Maximizar ventana",
+      "restore": "Restaurar ventana",
+      "close": "Cerrar ventana",
+      "actionFailed": "Error en la acción de la ventana: {{error}}"
+    },
+    "views": {
+      "home": "Inicio",
+      "tools": "Herramientas",
+      "capabilities": "Capacidades",
+      "skills": "Skills",
+      "skillsDiscovery": "Descubrir Skills",
+      "mcp": "MCP",
+      "prompts": "Prompts",
+      "agents": "Agents",
+      "usage": "Sesiones y uso",
+      "network": "Conexión y enrutamiento",
+      "settings": "Configuración",
+      "workspace": "Archivos del espacio de trabajo",
+      "openclawEnv": "Entorno de OpenClaw",
+      "openclawTools": "Herramientas de OpenClaw",
+      "openclawAgents": "Agentes de OpenClaw",
+      "hermesMemory": "Memoria de Hermes"
+    },
+    "back": "Volver a {{label}}",
+    "syncFailed": "Error de sincronización automática de {{service}}: {{error}}",
+    "skills": {
+      "description": "Instala, activa y sincroniza capacidades para herramientas de IA.",
+      "restore": "Restaurar",
+      "import": "Importar",
+      "discover": "Descubrir",
+      "discoveryDescription": "Busca e instala capacidades de repositorios de confianza."
+    },
+    "mcp": {
+      "description": "Gestiona servidores MCP compartidos por herramientas de IA.",
+      "import": "Importar configuración existente",
+      "add": "Añadir MCP"
+    },
+    "prompts": {
+      "description": "Gestiona plantillas de prompts reutilizables.",
+      "add": "Añadir prompt"
+    }
+  }
+}
