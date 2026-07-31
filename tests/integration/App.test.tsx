@@ -22,6 +22,7 @@ import {
 } from "../msw/state";
 import { emitTauriEvent } from "../msw/tauriMocks";
 import { server } from "../msw/server";
+import i18n from "@/i18n";
 
 const toastSuccessMock = vi.fn();
 const toastErrorMock = vi.fn();
@@ -152,9 +153,7 @@ const dismissOnboarding = async () => {
     { name: "首次配置" },
     { timeout: 10_000 },
   );
-  fireEvent.click(
-    within(onboarding).getByRole("button", { name: "稍后配置" }),
-  );
+  fireEvent.click(within(onboarding).getByRole("button", { name: "稍后配置" }));
   await waitFor(
     () =>
       expect(
@@ -165,7 +164,8 @@ const dismissOnboarding = async () => {
 };
 
 describe("App integration with MSW", { timeout: 15_000 }, () => {
-  beforeEach(() => {
+  beforeEach(async () => {
+    await i18n.changeLanguage("zh-CN");
     resetProviderState();
     setYuanhengConnection({
       connected: true,
@@ -181,6 +181,23 @@ describe("App integration with MSW", { timeout: 15_000 }, () => {
     localStorage.clear();
     toastSuccessMock.mockReset();
     toastErrorMock.mockReset();
+  });
+
+  it("renders the access screen in English", async () => {
+    setSettings({ firstRunNoticeConfirmed: true, language: "en" });
+    setYuanhengConnection({ connected: false });
+    await i18n.changeLanguage("en");
+
+    const { default: App } = await import("@/App");
+    renderApp(App);
+
+    expect(
+      await screen.findByRole("heading", { name: "Sign In to YuanHeng" }),
+    ).toBeInTheDocument();
+    expect(screen.queryByText("登录你的元衡账号")).not.toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: "Visit YuanHeng Website" }),
+    ).toBeInTheDocument();
   });
 
   it("requires login before showing the workspace", async () => {

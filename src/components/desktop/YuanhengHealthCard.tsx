@@ -25,6 +25,7 @@ import {
 } from "@/lib/query/yuanheng";
 import { extractErrorMessage } from "@/utils/errorUtils";
 import { cn } from "@/lib/utils";
+import { dt } from "./desktopI18n";
 
 interface YuanhengHealthCardProps {
   compact?: boolean;
@@ -84,7 +85,7 @@ export function YuanhengHealthCard({
     }
     if (report?.status === "ok") {
       await diagnostics.refetch();
-      toast.success("体检完成，一切正常");
+      toast.success(dt("体检完成，一切正常"));
       return;
     }
     try {
@@ -92,11 +93,11 @@ export function YuanhengHealthCard({
       await diagnostics.refetch();
       toast.success(
         result.repairedTools.length > 0
-          ? `已修复 ${result.repairedTools.length} 个工具配置`
-          : "连接与凭据已恢复",
+          ? dt("已修复 {{v0}} 个工具配置", { v0: result.repairedTools.length })
+          : dt("连接与凭据已恢复"),
       );
     } catch (error) {
-      toast.error(extractErrorMessage(error) || "自动修复失败，请重新登录");
+      toast.error(extractErrorMessage(error) || dt("自动修复失败，请重新登录"));
     }
   };
 
@@ -112,16 +113,18 @@ export function YuanhengHealthCard({
     };
     try {
       await copyText(JSON.stringify(safeReport, null, 2));
-      toast.success("脱敏诊断已复制");
+      toast.success(dt("脱敏诊断已复制"));
     } catch {
-      toast.error("复制诊断失败");
+      toast.error(dt("复制诊断失败"));
     }
   };
 
   const rotateDeviceCredential = async () => {
     if (
       !window.confirm(
-        "将重新生成当前设备凭据，并自动更新已经配置的工具。旧凭据会被撤销，是否继续？",
+        dt(
+          "将重新生成当前设备凭据，并自动更新已经配置的工具。旧凭据会被撤销，是否继续？",
+        ),
       )
     ) {
       return;
@@ -131,11 +134,13 @@ export function YuanhengHealthCard({
       await diagnostics.refetch();
       toast.success(
         result.updatedTools.length > 0
-          ? `凭据已更新，并同步到 ${result.updatedTools.length} 个工具`
-          : "本机凭据已重新生成",
+          ? dt("凭据已更新，并同步到 {{v0}} 个工具", {
+              v0: result.updatedTools.length,
+            })
+          : dt("本机凭据已重新生成"),
       );
     } catch (error) {
-      toast.error(extractErrorMessage(error) || "重新生成凭据失败");
+      toast.error(extractErrorMessage(error) || dt("重新生成凭据失败"));
     }
   };
 
@@ -147,9 +152,9 @@ export function YuanhengHealthCard({
       );
       if (!filePath) return;
       const savedPath = await yuanhengApi.exportDiagnostics(filePath);
-      toast.success(`脱敏诊断已导出：${savedPath}`);
+      toast.success(dt("脱敏诊断已导出：{{v0}}", { v0: savedPath }));
     } catch (error) {
-      toast.error(extractErrorMessage(error) || "导出诊断失败");
+      toast.error(extractErrorMessage(error) || dt("导出诊断失败"));
     }
   };
 
@@ -163,12 +168,12 @@ export function YuanhengHealthCard({
 
   const primaryLabel =
     !connection?.connected || actions.has("login")
-      ? "前往登录"
+      ? dt("前往登录")
       : actions.has("configure_tools") && !actions.has("repair_credentials")
-        ? "配置工具"
+        ? dt("配置工具")
         : report?.status === "ok"
-          ? "重新检查"
-          : "一键修复";
+          ? dt("重新检查")
+          : dt("一键修复");
 
   return (
     <section className="overflow-hidden rounded-2xl border bg-card shadow-sm">
@@ -184,14 +189,15 @@ export function YuanhengHealthCard({
         </span>
         <div className="min-w-0 flex-1">
           <p className="text-[10px] font-semibold uppercase tracking-[0.16em] text-muted-foreground">
-            智能体检
+            {dt("智能体检")}
           </p>
           <h2 className="mt-1 font-display text-base font-semibold">
-            {report ? meta.title : "暂时无法检查"}
+            {report ? dt(meta.title) : dt("暂时无法检查")}
           </h2>
           <p className="mt-1 text-[11px] leading-5 text-muted-foreground">
-            {report?.checks.find((item) => item.status !== "ok")?.message ??
-              meta.description}
+            {report?.checks.find((item) => item.status !== "ok")?.message
+              ? dt(report.checks.find((item) => item.status !== "ok")!.message)
+              : dt(meta.description)}
           </p>
         </div>
       </div>
@@ -221,7 +227,7 @@ export function YuanhengHealthCard({
             onClick={() => setExpanded((value) => !value)}
           >
             <Stethoscope className="h-3.5 w-3.5" />
-            检查详情
+            {dt("检查详情")}
             <ChevronDown
               className={cn(
                 "h-3.5 w-3.5 transition-transform",
@@ -245,9 +251,9 @@ export function YuanhengHealthCard({
                 <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0 text-amber-500" />
               )}
               <div className="min-w-0">
-                <p className="text-[11px] font-medium">{check.title}</p>
+                <p className="text-[11px] font-medium">{dt(check.title)}</p>
                 <p className="mt-0.5 text-[10px] leading-4 text-muted-foreground">
-                  {check.message}
+                  {dt(check.message)}
                 </p>
               </div>
             </div>
@@ -259,7 +265,7 @@ export function YuanhengHealthCard({
             onClick={() => void copyDiagnostics()}
           >
             <ClipboardCheck className="h-3.5 w-3.5" />
-            复制脱敏诊断
+            {dt("复制脱敏诊断")}
           </Button>
           <Button
             variant="ghost"
@@ -268,7 +274,7 @@ export function YuanhengHealthCard({
             onClick={() => void exportDiagnostics()}
           >
             <Download className="h-3.5 w-3.5" />
-            导出脱敏诊断
+            {dt("导出脱敏诊断")}
           </Button>
           {connection?.connected && (
             <Button
@@ -283,7 +289,7 @@ export function YuanhengHealthCard({
               ) : (
                 <RotateCw className="h-3.5 w-3.5" />
               )}
-              重新生成本机凭据
+              {dt("重新生成本机凭据")}
             </Button>
           )}
         </div>

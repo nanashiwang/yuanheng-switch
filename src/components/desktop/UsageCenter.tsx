@@ -21,6 +21,7 @@ import {
 import { useYuanhengConnection } from "@/lib/query/yuanheng";
 import { useYuanhengTopup } from "@/hooks/useYuanhengTopup";
 import { PageHeader } from "./PageHeader";
+import { dt } from "./desktopI18n";
 
 interface UsageCenterProps {
   activeApp: AppId;
@@ -55,13 +56,13 @@ export function UsageCenter({
       <div className="mx-auto w-full max-w-[1120px]">
         <PageHeader
           eyebrow="Sessions & Usage"
-          title="会话与用量"
-          description="本地请求、会话历史和元衡余额集中在同一处查看。"
+          title={dt("会话与用量")}
+          description={dt("本地请求、会话历史和元衡余额集中在同一处查看。")}
           actions={
             connection?.connected ? (
               <div className="flex h-9 items-center gap-2 rounded-lg border bg-card pl-3 pr-1 text-[11px]">
                 <WalletCards className="h-3.5 w-3.5 text-primary" />
-                元衡余额
+                {dt("元衡余额")}
                 <strong>
                   ${connection.account?.remainingUsd.toFixed(2) ?? "0.00"}
                 </strong>
@@ -76,7 +77,7 @@ export function UsageCenter({
                   ) : (
                     <CreditCard className="h-3 w-3" />
                   )}
-                  充值
+                  {dt("充值")}
                 </button>
               </div>
             ) : undefined
@@ -92,10 +93,10 @@ export function UsageCenter({
         <div className="mb-4 flex shrink-0 items-center justify-between gap-4">
           <TabsList className="h-9">
             <TabsTrigger value="usage" className="gap-1.5 text-[12px]">
-              <Activity className="h-3.5 w-3.5" /> 用量统计
+              <Activity className="h-3.5 w-3.5" /> {dt("用量统计")}
             </TabsTrigger>
             <TabsTrigger value="sessions" className="gap-1.5 text-[12px]">
-              <History className="h-3.5 w-3.5" /> 会话记录
+              <History className="h-3.5 w-3.5" /> {dt("会话记录")}
             </TabsTrigger>
           </TabsList>
           {tab === "sessions" && (

@@ -12,6 +12,7 @@ import appIcon from "@/assets/icons/app-icon.png";
 import { YUANHENG_WEBSITE_URL } from "@/config/yuanhengBrand";
 import { settingsApi } from "@/lib/api";
 import { YuanhengConnectionPanel } from "./YuanhengConnectionPanel";
+import { dt } from "./desktopI18n";
 
 interface YuanhengAccessScreenProps {
   loading?: boolean;
@@ -23,7 +24,7 @@ export function YuanhengAccessScreen({
   const handleOpenWebsite = () => {
     void settingsApi.openExternal(YUANHENG_WEBSITE_URL).catch((error) => {
       console.error("[YuanhengAccessScreen] Failed to open website", error);
-      toast.error("打开官网失败，请稍后重试");
+      toast.error(dt("打开官网失败，请稍后重试"));
     });
   };
 
@@ -40,7 +41,7 @@ export function YuanhengAccessScreen({
             </span>
             <div>
               <p className="font-display text-lg font-semibold tracking-wide">
-                元衡桌面端
+                {dt("元衡桌面端")}
               </p>
               <p className="text-[10px] uppercase tracking-[0.2em] text-emerald-200/45">
                 Yuanheng AI Workspace
@@ -49,23 +50,24 @@ export function YuanhengAccessScreen({
           </div>
 
           <p className="mt-10 text-[11px] font-semibold uppercase tracking-[0.22em] text-[#e2ae75]">
-            一个入口，连接全部工具
+            {dt("一个入口，连接全部工具")}
           </p>
           <h1 className="mt-3 font-display text-[34px] font-semibold leading-[1.18] tracking-[-0.035em] sm:text-[42px]">
-            登录后，模型与额度
+            {dt("登录后，模型与额度")}
             <br />
-            自动同步到本机
+            {dt("自动同步到本机")}
           </h1>
           <p className="mt-4 max-w-md text-[13px] leading-6 text-slate-300/70">
-            使用元衡账号统一管理 Claude、Codex、ChatGPT 等 AI
-            工具，无需逐个填写接口与密钥。
+            {dt(
+              "使用元衡账号统一管理 Claude、Codex、ChatGPT 等 AI\n            工具，无需逐个填写接口与密钥。",
+            )}
           </p>
 
           <div className="mt-8 grid max-w-md gap-2.5 sm:grid-cols-3 lg:grid-cols-1 xl:grid-cols-3">
             {[
-              { icon: Layers3, label: "模型自动同步" },
-              { icon: Sparkles, label: "配置立即生效" },
-              { icon: ShieldCheck, label: "本机安全凭据" },
+              { icon: Layers3, label: dt("模型自动同步") },
+              { icon: Sparkles, label: dt("配置立即生效") },
+              { icon: ShieldCheck, label: dt("本机安全凭据") },
             ].map(({ icon: Icon, label }) => (
               <div
                 key={label}
@@ -81,10 +83,10 @@ export function YuanhengAccessScreen({
             type="button"
             onClick={handleOpenWebsite}
             className="group mt-5 inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/[0.045] px-3.5 py-2 text-[11px] font-medium text-slate-300 transition-colors hover:border-white/20 hover:bg-white/[0.08] hover:text-white"
-            aria-label="访问元衡官网"
+            aria-label={dt("访问元衡官网")}
           >
             <Globe className="h-3.5 w-3.5 text-[#e2ae75]" />
-            访问元衡官网
+            {dt("访问元衡官网")}
             <ExternalLink className="h-3 w-3 text-slate-600 transition-colors group-hover:text-slate-300" />
           </button>
         </section>
@@ -98,7 +100,7 @@ export function YuanhengAccessScreen({
               <div className="text-center">
                 <Loader2 className="mx-auto h-6 w-6 animate-spin text-[#e2ae75]" />
                 <p className="mt-3 text-[12px] text-slate-400">
-                  正在检查登录状态…
+                  {dt("正在检查登录状态…")}
                 </p>
               </div>
             </div>
@@ -106,7 +108,7 @@ export function YuanhengAccessScreen({
             <div className="rounded-[26px] border border-white/10 bg-[#f7f4ed] p-2 text-[#142d2a] shadow-[0_30px_90px_-35px_rgba(0,0,0,0.75)] dark:bg-[#152221] dark:text-white">
               <YuanhengConnectionPanel compact />
               <p className="flex items-center justify-center gap-1.5 px-4 pb-3 pt-1 text-[10px] text-muted-foreground">
-                登录后自动进入工作台
+                {dt("登录后自动进入工作台")}
                 <ArrowRight className="h-3 w-3" />
               </p>
             </div>

@@ -11,6 +11,7 @@ import { AccountUsageCard } from "./AccountUsageCard";
 import { TodayStatsBand } from "./TodayStatsBand";
 import { YuanhengHealthCard } from "./YuanhengHealthCard";
 import { PlatformAnnouncementCenter } from "./PlatformAnnouncementCenter";
+import { dt } from "./desktopI18n";
 
 interface WorkspaceDashboardProps {
   focusApp?: YuanhengToolId;
@@ -29,7 +30,7 @@ export function WorkspaceDashboard({
 
   return (
     <div className="mx-auto flex h-full w-full max-w-[1120px] flex-col gap-3.5 overflow-y-auto px-7 pb-8 pt-4">
-      <h1 className="sr-only">工作台</h1>
+      <h1 className="sr-only">{dt("工作台")}</h1>
 
       <PlatformAnnouncementCenter />
 
@@ -60,14 +61,16 @@ export function WorkspaceDashboard({
           <div className="grid gap-3 sm:grid-cols-2">
             {[
               {
-                title: "能力中心",
+                title: dt("能力中心"),
                 value: `${skills.length} Skills · ${Object.keys(mcpServers).length} MCP`,
                 icon: Blocks,
                 view: "capabilities" as const,
               },
               {
-                title: "工具管理",
-                value: `${configuredTools.length} 个已就绪`,
+                title: dt("工具管理"),
+                value: dt("{{count}} 个已就绪", {
+                  count: configuredTools.length,
+                }),
                 icon: ServerCog,
                 view: "tools" as const,
               },

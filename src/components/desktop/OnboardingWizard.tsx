@@ -21,6 +21,7 @@ import { useYuanhengToolStatuses } from "@/lib/query/yuanheng";
 import { cn } from "@/lib/utils";
 import { ToolSetupGrid } from "./ToolSetupGrid";
 import { YuanhengConnectionPanel } from "./YuanhengConnectionPanel";
+import { dt } from "./desktopI18n";
 
 interface OnboardingWizardProps {
   open: boolean;
@@ -60,10 +61,12 @@ export function OnboardingWizard({ open, onFinish }: OnboardingWizardProps) {
             Yuanheng Desktop
           </p>
           <h2 className="mt-2 font-display text-3xl font-semibold tracking-[-0.04em]">
-            一次连接，配置所有 AI 工具
+            {dt("一次连接，配置所有 AI 工具")}
           </h2>
           <p className="mt-3 max-w-lg text-[13px] leading-6 text-muted-foreground">
-            连接元衡账号，选择本机需要使用的工具，自动写入 API、认证和推荐模型。
+            {dt(
+              "连接元衡账号，选择本机需要使用的工具，自动写入 API、认证和推荐模型。",
+            )}
           </p>
         </div>
       );
@@ -74,7 +77,7 @@ export function OnboardingWizard({ open, onFinish }: OnboardingWizardProps) {
         <div className="min-h-[330px] px-6 py-2">
           <YuanhengConnectionPanel compact onConnected={() => setStep(2)} />
           <p className="mt-3 text-center text-[11px] text-muted-foreground">
-            也可以暂时跳过，稍后在“连接与路由”中完成。
+            {dt("也可以暂时跳过，稍后在“连接与路由”中完成。")}
           </p>
         </div>
       );
@@ -85,10 +88,10 @@ export function OnboardingWizard({ open, onFinish }: OnboardingWizardProps) {
         <div className="max-h-[470px] min-h-[330px] overflow-y-auto px-6 py-2">
           <div className="mb-4">
             <h2 className="font-display text-xl font-semibold">
-              选择需要的工具
+              {dt("选择需要的工具")}
             </h2>
             <p className="mt-1 text-[12px] text-muted-foreground">
-              只配置你实际使用的工具，之后可以随时增减。
+              {dt("只配置你实际使用的工具，之后可以随时增减。")}
             </p>
           </div>
           <ToolSetupGrid compact onConfigured={() => setStep(3)} />
@@ -101,11 +104,15 @@ export function OnboardingWizard({ open, onFinish }: OnboardingWizardProps) {
         <span className="flex h-16 w-16 items-center justify-center rounded-2xl bg-emerald-500/10 text-emerald-600">
           <Check className="h-7 w-7" />
         </span>
-        <h2 className="mt-5 font-display text-2xl font-semibold">配置完成</h2>
+        <h2 className="mt-5 font-display text-2xl font-semibold">
+          {dt("配置完成")}
+        </h2>
         <p className="mt-2 max-w-md text-[13px] leading-6 text-muted-foreground">
           {configuredCount > 0
-            ? `已有 ${configuredCount} 个 AI 工具接入元衡，可以直接开始使用。`
-            : "你可以稍后进入工具管理页面完成配置。"}
+            ? dt("已有 {{v0}} 个 AI 工具接入元衡，可以直接开始使用。", {
+                v0: configuredCount,
+              })
+            : dt("你可以稍后进入工具管理页面完成配置。")}
         </p>
       </div>
     );
@@ -115,13 +122,15 @@ export function OnboardingWizard({ open, onFinish }: OnboardingWizardProps) {
     <Dialog open={open} onOpenChange={(next) => !next && finish()}>
       <DialogContent className="max-w-4xl overflow-hidden p-0">
         <DialogHeader className="sr-only">
-          <DialogTitle>首次配置</DialogTitle>
-          <DialogDescription>连接元衡账号并配置本机 AI 工具</DialogDescription>
+          <DialogTitle>{dt("首次配置")}</DialogTitle>
+          <DialogDescription>
+            {dt("连接元衡账号并配置本机 AI 工具")}
+          </DialogDescription>
         </DialogHeader>
         <div className="grid grid-cols-4 border-b bg-muted/35 px-6 py-3">
           {STEPS.map((item, index) => (
             <div
-              key={item.label}
+              key={dt(item.label)}
               className={cn(
                 "flex items-center justify-center gap-1.5 text-[10px] font-medium",
                 index === step
@@ -143,14 +152,14 @@ export function OnboardingWizard({ open, onFinish }: OnboardingWizardProps) {
                   <item.icon className="h-3 w-3" />
                 )}
               </span>
-              {item.label}
+              {dt(item.label)}
             </div>
           ))}
         </div>
         {renderStep()}
         <DialogFooter className="border-t bg-muted/20 px-6 py-4">
           <Button variant="ghost" onClick={finish}>
-            稍后配置
+            {dt("稍后配置")}
           </Button>
           <div className="flex-1" />
           {step > 0 && (
@@ -158,16 +167,17 @@ export function OnboardingWizard({ open, onFinish }: OnboardingWizardProps) {
               variant="outline"
               onClick={() => setStep((value) => value - 1)}
             >
-              <ChevronLeft className="h-4 w-4" /> 上一步
+              <ChevronLeft className="h-4 w-4" /> {dt("上一步")}
             </Button>
           )}
           {step < 3 ? (
             <Button onClick={() => setStep((value) => value + 1)}>
-              继续 <ChevronRight className="h-4 w-4" />
+              {dt("继续")}
+              <ChevronRight className="h-4 w-4" />
             </Button>
           ) : (
             <Button onClick={finish}>
-              <Check className="h-4 w-4" /> 进入工具中心
+              <Check className="h-4 w-4" /> {dt("进入工具中心")}
             </Button>
           )}
         </DialogFooter>

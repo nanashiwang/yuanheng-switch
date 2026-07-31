@@ -27,6 +27,11 @@ import { Button } from "@/components/ui/button";
 import { ModelPicker } from "./ModelPicker";
 import { cn } from "@/lib/utils";
 import { extractErrorMessage } from "@/utils/errorUtils";
+import { dt } from "./desktopI18n";
+import {
+  clearRestartRequired,
+  markRestartRequired,
+} from "./desktopRestartState";
 
 export const DESKTOP_TOOLS: YuanhengToolId[] = [
   "claude",
@@ -93,8 +98,8 @@ export const reasoningLabel = (
   defaultLevel?: YuanhengReasoningLevel,
 ) =>
   level === "auto" && defaultLevel
-    ? `自动（默认：${REASONING_LABELS[defaultLevel]}）`
-    : REASONING_LABELS[level];
+    ? dt("自动（默认：{{v0}}）", { v0: dt(REASONING_LABELS[defaultLevel]) })
+    : dt(REASONING_LABELS[level]);
 
 /** 为模型挑选默认令牌分组：优先保留当前选择，其次 auto / 账号分组，最后按费率最低 */
 export function pickPreferredGroup(
@@ -273,20 +278,26 @@ export function ToolSetupGrid({
       const succeeded = results.filter((item) => item.configured);
       const failed = results.filter((item) => !item.configured);
       if (succeeded.length > 0) {
-        toast.success(`已完成 ${succeeded.length} 个工具的元衡配置`);
+        succeeded.forEach((item) => markRestartRequired(item.app));
+        toast.success(
+          dt("已完成 {{v0}} 个工具的元衡配置", { v0: succeeded.length }),
+        );
         onConfigured?.();
       }
       if (failed.length > 0) {
         toast.error(
           failed
-            .map(
-              (item) => `${toolLabel(item.app)}：${item.error ?? "配置失败"}`,
+            .map((item) =>
+              dt("{{v0}}：{{v1}}", {
+                v0: toolLabel(item.app),
+                v1: item.error ?? dt("配置失败"),
+              }),
             )
             .join("；"),
         );
       }
     } catch (error) {
-      toast.error(extractErrorMessage(error) || "工具配置失败");
+      toast.error(extractErrorMessage(error) || dt("工具配置失败"));
     }
   };
 
@@ -310,8 +321,9 @@ export function ToolSetupGrid({
         reasoning: { codex: selectedReasoning },
       });
       const result = results.find((item) => item.app === "codex");
-      if (!result?.configured) throw new Error(result?.error || "模型切换失败");
-      toast.success(`Codex 已切换到 ${model}，下一条消息生效`);
+      if (!result?.configured)
+        throw new Error(result?.error || dt("模型切换失败"));
+      toast.success(dt("Codex 已切换到 {{v0}}，下一条消息生效", { v0: model }));
       onConfigured?.();
     } catch (error) {
       setModels((current) => ({ ...current, codex: previousModel }));
@@ -321,7 +333,7 @@ export function ToolSetupGrid({
         else delete next.codex;
         return next;
       });
-      toast.error(extractErrorMessage(error) || "模型切换失败");
+      toast.error(extractErrorMessage(error) || dt("模型切换失败"));
     }
   };
 
@@ -333,16 +345,18 @@ export function ToolSetupGrid({
       if (downloadUrl) {
         await settingsApi.openExternal(downloadUrl);
         toast.success(
-          `已打开 ${toolLabel(app)} 官方下载页，安装完成后请刷新检测`,
+          dt("已打开 {{v0}} 官方下载页，安装完成后请刷新检测", {
+            v0: toolLabel(app),
+          }),
         );
         return;
       }
       if (!command) return;
       await settingsApi.runToolLifecycleAction([command], "install");
-      toast.success(`${toolLabel(app)} 安装任务已完成`);
+      toast.success(dt("{{v0}} 安装任务已完成", { v0: toolLabel(app) }));
       await versions.refetch();
     } catch (error) {
-      toast.error(extractErrorMessage(error) || "安装失败");
+      toast.error(extractErrorMessage(error) || dt("安装失败"));
     }
   };
 
@@ -373,17 +387,26 @@ export function ToolSetupGrid({
         });
         const result = results.find((item) => item.app === app);
         if (!result?.configured) {
-          throw new Error(result?.error || "模型配置失败");
+          throw new Error(result?.error || dt("模型配置失败"));
         }
         onConfigured?.();
       }
       const restarted = isDesktopApp(app) && (needsApply || forceRestart);
       await yuanhengApi.launchTool(app, restarted);
+      if (restarted) clearRestartRequired(app);
       toast.success(
-        `${toolLabel(app)} 已使用 ${launchedModel ?? "推荐模型"} ${restarted ? "重新打开" : isDesktopApp(app) ? "打开" : "启动"}`,
+        dt("{{v0}} 已使用 {{v1}} {{v2}}", {
+          v0: toolLabel(app),
+          v1: launchedModel ?? dt("推荐模型"),
+          v2: restarted
+            ? dt("重新打开")
+            : isDesktopApp(app)
+              ? dt("打开")
+              : dt("启动"),
+        }),
       );
     } catch (error) {
-      toast.error(extractErrorMessage(error) || "启动失败");
+      toast.error(extractErrorMessage(error) || dt("启动失败"));
     }
   };
 
@@ -400,7 +423,7 @@ export function ToolSetupGrid({
       try {
         await refreshConnection.mutateAsync();
       } catch (error) {
-        toast.error(extractErrorMessage(error) || "网站模型同步失败");
+        toast.error(extractErrorMessage(error) || dt("网站模型同步失败"));
       }
     }
     await Promise.all([versions.refetch(), statuses.refetch()]);
@@ -409,7 +432,7 @@ export function ToolSetupGrid({
   const refreshModels = () => {
     if (!connection?.connected || refreshConnection.isPending) return;
     void refreshConnection.mutateAsync().catch(() => {
-      toast.error("网站模型同步失败，已保留上次可用列表");
+      toast.error(dt("网站模型同步失败，已保留上次可用列表"));
     });
   };
 
@@ -419,11 +442,11 @@ export function ToolSetupGrid({
         <div className="min-w-0 flex-1">
           <p className="text-[12px] font-semibold">
             {selected.length > 0
-              ? `已选择 ${selected.length} 个工具`
-              : "选择你需要使用的工具"}
+              ? dt("已选择 {{v0}} 个工具", { v0: selected.length })
+              : dt("选择你需要使用的工具")}
           </p>
           <p className="mt-0.5 text-[10px] text-muted-foreground">
-            元衡将写入 API、模型和认证配置，不修改工作目录。
+            {dt("元衡将写入 API、模型和认证配置，不修改工作目录。")}
           </p>
         </div>
         <Button
@@ -435,7 +458,7 @@ export function ToolSetupGrid({
             statuses.isFetching ||
             refreshConnection.isPending
           }
-          aria-label="刷新工具状态"
+          aria-label={dt("刷新工具状态")}
         >
           <RefreshCw
             className={cn(
@@ -446,7 +469,7 @@ export function ToolSetupGrid({
                 "animate-spin",
             )}
           />
-          刷新
+          {dt("刷新")}
         </Button>
         <Button
           size="sm"
@@ -462,13 +485,13 @@ export function ToolSetupGrid({
           ) : (
             <Settings2 className="h-3.5 w-3.5" />
           )}
-          一键配置所选工具
+          {dt("一键配置所选工具")}
         </Button>
       </div>
 
       {!connection?.connected && (
         <div className="rounded-xl border border-dashed border-amber-500/30 bg-amber-500/[0.055] px-4 py-3 text-[11px] text-amber-800 dark:text-amber-200">
-          请先连接元衡账号，再为工具写入配置。
+          {dt("请先连接元衡账号，再为工具写入配置。")}
         </div>
       )}
 
@@ -544,7 +567,7 @@ export function ToolSetupGrid({
               <div className="flex items-start gap-3">
                 <button
                   type="button"
-                  aria-label={`选择 ${toolLabel(app)}`}
+                  aria-label={dt("选择 {{v0}}", { v0: toolLabel(app) })}
                   aria-pressed={isSelected}
                   disabled={!selectable}
                   className="mt-0.5 text-primary disabled:text-muted-foreground/35"
@@ -583,7 +606,9 @@ export function ToolSetupGrid({
                       <CircleOff className="h-3.5 w-3.5 text-muted-foreground" />
                     )}
                     <span className="truncate text-muted-foreground">
-                      {installed ? version?.version || "桌面应用" : "未检测到"}
+                      {installed
+                        ? version?.version || dt("桌面应用")
+                        : dt("未检测到")}
                     </span>
                   </div>
                 </div>
@@ -598,10 +623,10 @@ export function ToolSetupGrid({
                   )}
                 >
                   {configured
-                    ? "已配置"
+                    ? dt("已配置")
                     : status?.needsUpdate
-                      ? "需更新"
-                      : "待配置"}
+                      ? dt("需更新")
+                      : dt("待配置")}
                 </span>
               </div>
 
@@ -634,7 +659,7 @@ export function ToolSetupGrid({
                       }}
                     >
                       <Play className="h-3 w-3 fill-current" />
-                      打开 Claude Desktop
+                      {dt("打开 Claude Desktop")}
                     </Button>
                     <Button
                       variant="ghost"
@@ -652,7 +677,7 @@ export function ToolSetupGrid({
                           statuses.isFetching && "animate-spin",
                         )}
                       />
-                      重新检测
+                      {dt("重新检测")}
                     </Button>
                   </div>
                 </div>
@@ -668,17 +693,18 @@ export function ToolSetupGrid({
                 <div className="mt-3 rounded-xl bg-muted/45 p-3">
                   <div className="flex items-center justify-between gap-2">
                     <p className="text-[10px] font-semibold">
-                      {isDesktopApp(app) ? "桌面模型" : "终端模型"}
+                      {isDesktopApp(app) ? dt("桌面模型") : dt("终端模型")}
                     </p>
                     <span className="text-[9px] text-muted-foreground">
-                      可选 {availableModels.length} 个 · 点击切换
+                      {dt("可选")}
+                      {availableModels.length} {dt("个 · 点击切换")}
                     </span>
                   </div>
                   <ModelPicker
                     models={availableModels}
                     value={selectedModel}
                     recommended={status.recommendedModel}
-                    label={`${toolLabel(app)} 模型选择`}
+                    label={dt("{{v0}} 模型选择", { v0: toolLabel(app) })}
                     disabled={configure.isPending}
                     onRefresh={refreshModels}
                     onChange={(value) => {
@@ -711,7 +737,7 @@ export function ToolSetupGrid({
                   {availableGroups.length > 0 && (
                     <div className="mt-2 flex items-center gap-2 text-[10px]">
                       <span className="shrink-0 text-muted-foreground">
-                        令牌分组
+                        {dt("令牌分组")}
                       </span>
                       {availableGroups.length === 1 ? (
                         <span className="truncate font-medium">
@@ -721,7 +747,9 @@ export function ToolSetupGrid({
                         </span>
                       ) : (
                         <select
-                          aria-label={`${toolLabel(app)} 令牌分组`}
+                          aria-label={dt("{{v0}} 令牌分组", {
+                            v0: toolLabel(app),
+                          })}
                           className="h-7 min-w-0 flex-1 rounded-md border bg-background px-2 text-[10px]"
                           value={selectedGroup}
                           onClick={(event) => event.stopPropagation()}
@@ -751,12 +779,14 @@ export function ToolSetupGrid({
                   {controlsReasoning && (
                     <div className="mt-2 flex items-center gap-2 text-[10px]">
                       <span className="shrink-0 text-muted-foreground">
-                        推理等级
+                        {dt("推理等级")}
                         {supportedReasoning.length > 0 &&
-                          ` · ${supportedReasoning.length} 档`}
+                          dt(" · {{v0}} 档", { v0: supportedReasoning.length })}
                       </span>
                       <select
-                        aria-label={`${toolLabel(app)} 推理等级`}
+                        aria-label={dt("{{v0}} 推理等级", {
+                          v0: toolLabel(app),
+                        })}
                         className="h-7 min-w-0 flex-1 rounded-md border bg-background px-2 text-[10px]"
                         value={
                           supportedReasoning.length > 0
@@ -775,7 +805,7 @@ export function ToolSetupGrid({
                         }}
                       >
                         {supportedReasoning.length === 0 ? (
-                          <option value="unsupported">不适用</option>
+                          <option value="unsupported">{dt("不适用")}</option>
                         ) : (
                           reasoningOptions.map((level) => (
                             <option key={level} value={level}>
@@ -788,35 +818,38 @@ export function ToolSetupGrid({
                   )}
                   {app === "claude-desktop" && (
                     <p className="mt-2 text-[9px] leading-4 text-amber-700 dark:text-amber-300">
-                      右下角固定显示“元衡
-                      AI”；模型与推理等级在此切换，无需重启。
+                      {dt(
+                        "右下角固定显示“元衡\n                      AI”；模型与推理等级在此切换，无需重启。",
+                      )}
                     </p>
                   )}
                   {app === "codex" && (
                     <p className="mt-2 text-[9px] leading-4 text-muted-foreground">
-                      从元衡启动后，模型会在同一会话的下一条消息自动切换，无需重启。
+                      {dt(
+                        "从元衡启动后，模型会在同一会话的下一条消息自动切换，无需重启。",
+                      )}
                     </p>
                   )}
                   {app === "chatgpt-desktop" && (
                     <p className="mt-2 text-[9px] leading-4 text-muted-foreground">
-                      使用独立桌面配置；已有任务保持原模型，请新建任务。
+                      {dt("使用独立桌面配置；已有任务保持原模型，请新建任务。")}
                     </p>
                   )}
                   {app === "workbuddy" && (
                     <p className="mt-2 text-[9px] leading-4 text-muted-foreground">
-                      写入 WorkBuddy 自定义模型；应用后会重新打开。
+                      {dt("写入 WorkBuddy 自定义模型；应用后会重新打开。")}
                     </p>
                   )}
                 </div>
               ) : (
                 <p className="mt-3 text-[11px] leading-5 text-muted-foreground">
                   {configured
-                    ? "配置已就绪，可直接启动使用。"
+                    ? dt("配置已就绪，可直接启动使用。")
                     : status?.needsUpdate
-                      ? "配置发生变化，点击即可自动恢复。"
+                      ? dt("配置发生变化，点击即可自动恢复。")
                       : installed
-                        ? "元衡会自动选择适合的模型。"
-                        : "安装后即可由元衡自动配置。"}
+                        ? dt("元衡会自动选择适合的模型。")
+                        : dt("安装后即可由元衡自动配置。")}
                 </p>
               )}
 
@@ -827,8 +860,8 @@ export function ToolSetupGrid({
                     className="flex-1"
                     aria-label={
                       DESKTOP_DOWNLOAD_URLS[app]
-                        ? `打开 ${toolLabel(app)} 官方下载页`
-                        : `一键安装 ${toolLabel(app)}`
+                        ? dt("打开 {{v0}} 官方下载页", { v0: toolLabel(app) })
+                        : dt("一键安装 {{v0}}", { v0: toolLabel(app) })
                     }
                     onClick={(event) => {
                       event.stopPropagation();
@@ -836,7 +869,9 @@ export function ToolSetupGrid({
                     }}
                   >
                     <Download className="h-3.5 w-3.5" />
-                    {DESKTOP_DOWNLOAD_URLS[app] ? "官方下载" : "一键安装"}
+                    {DESKTOP_DOWNLOAD_URLS[app]
+                      ? dt("官方下载")
+                      : dt("一键安装")}
                   </Button>
                 ) : (
                   <Button
@@ -847,7 +882,7 @@ export function ToolSetupGrid({
                       !status?.supported ||
                       configure.isPending
                     }
-                    aria-label={`配置 ${toolLabel(app)}`}
+                    aria-label={dt("配置 {{v0}}", { v0: toolLabel(app) })}
                     onClick={(event) => {
                       event.stopPropagation();
                       void configureApps([app]);
@@ -855,12 +890,12 @@ export function ToolSetupGrid({
                   >
                     <Settings2 className="h-3.5 w-3.5" />
                     {modelChanged
-                      ? "应用模型"
+                      ? dt("应用模型")
                       : status?.needsUpdate
-                        ? "自动恢复"
+                        ? dt("自动恢复")
                         : configured
-                          ? "重新配置"
-                          : "配置"}
+                          ? dt("重新配置")
+                          : dt("配置")}
                   </Button>
                 )}
                 <Button
@@ -872,7 +907,7 @@ export function ToolSetupGrid({
                     !status?.supported ||
                     configure.isPending
                   }
-                  aria-label={`启动 ${toolLabel(app)}`}
+                  aria-label={dt("启动 {{v0}}", { v0: toolLabel(app) })}
                   onClick={(event) => {
                     event.stopPropagation();
                     void launchTool(app, isDesktopApp(app));
@@ -881,11 +916,11 @@ export function ToolSetupGrid({
                   <Play className="h-3.5 w-3.5 fill-current" />
                   {!configured || modelChanged
                     ? isDesktopApp(app)
-                      ? "应用并刷新"
-                      : "应用并启动"
+                      ? dt("应用并刷新")
+                      : dt("应用并启动")
                     : isDesktopApp(app)
-                      ? "刷新显示"
-                      : "启动"}
+                      ? dt("刷新显示")
+                      : dt("启动")}
                 </Button>
               </div>
             </article>

@@ -1,6 +1,7 @@
 import { ArrowRight, CreditCard, LoaderCircle, Wallet } from "lucide-react";
 import { useYuanhengTopup } from "@/hooks/useYuanhengTopup";
 import { useYuanhengConnection } from "@/lib/query/yuanheng";
+import { dt } from "./desktopI18n";
 
 interface AccountUsageCardProps {
   onOpenUsage: () => void;
@@ -21,13 +22,13 @@ export function AccountUsageCard({ onOpenUsage }: AccountUsageCardProps) {
     <section className="rounded-2xl border bg-card p-4 shadow-sm">
       <div className="mb-3 flex items-center gap-2">
         <Wallet className="h-4 w-4 text-primary" />
-        <h2 className="text-[13px] font-semibold">账号用量</h2>
+        <h2 className="text-[13px] font-semibold">{dt("账号用量")}</h2>
         <button
           type="button"
           onClick={onOpenUsage}
           className="ml-auto inline-flex items-center gap-0.5 text-[10.5px] text-muted-foreground transition-colors hover:text-foreground"
         >
-          会话与用量
+          {dt("会话与用量")}
           <ArrowRight className="h-3 w-3" />
         </button>
       </div>
@@ -37,7 +38,9 @@ export function AccountUsageCard({ onOpenUsage }: AccountUsageCardProps) {
             ${account.remainingUsd.toFixed(2)}
           </p>
           <p className="mt-0.5 text-[10.5px] text-muted-foreground">
-            剩余额度 · 已用 ${account.usedUsd.toFixed(2)}
+            {dt("剩余额度 · 已用 {{amount}}", {
+              amount: `$${account.usedUsd.toFixed(2)}`,
+            })}
           </p>
         </div>
         <button
@@ -51,7 +54,7 @@ export function AccountUsageCard({ onOpenUsage }: AccountUsageCardProps) {
           ) : (
             <CreditCard className="h-3.5 w-3.5" />
           )}
-          {isOpening ? "打开中" : "充值"}
+          {isOpening ? dt("打开中") : dt("充值")}
         </button>
       </div>
       <div className="mt-3 h-1.5 overflow-hidden rounded-full bg-primary/10">
@@ -61,8 +64,8 @@ export function AccountUsageCard({ onOpenUsage }: AccountUsageCardProps) {
         />
       </div>
       <div className="mt-1.5 flex justify-between text-[10px] tabular-nums text-muted-foreground">
-        <span>已用 {usedPercent}%</span>
-        <span>${total.toFixed(2)} 总额</span>
+        <span>{dt("已用 {{percent}}%", { percent: usedPercent })}</span>
+        <span>{dt("{{amount}} 总额", { amount: `$${total.toFixed(2)}` })}</span>
       </div>
     </section>
   );

@@ -71,10 +71,12 @@ describe("useModelSwitchCenter", () => {
   >;
 
   beforeEach(() => {
+    window.sessionStorage.clear();
     connection = connected(["model-a", "model-b"]);
     statuses = [
       toolStatus("claude", "model-a"),
       toolStatus("codex", "model-a"),
+      toolStatus("chatgpt-desktop", "model-a"),
     ];
     configureResolvers = new Map();
     invokeMock.mockReset();
@@ -258,5 +260,53 @@ describe("useModelSwitchCenter", () => {
     });
 
     expect(result.current.pendingApps.size).toBe(0);
+  });
+
+  it("restarts Codex App after its model catalog configuration changes", async () => {
+    const { wrapper } = createWrapper();
+    const { result } = renderHook(() => useModelSwitchCenter(), { wrapper });
+
+    await waitFor(() => {
+      expect(result.current.rows).toContain("chatgpt-desktop");
+    });
+
+    let configureRequest!: Promise<void>;
+    act(() => {
+      configureRequest = result.current.applyModel(
+        "chatgpt-desktop",
+        "model-b",
+      );
+    });
+    await waitFor(() => {
+      expect(configureResolvers.has("chatgpt-desktop")).toBe(true);
+    });
+    await act(async () => {
+      configureResolvers.get("chatgpt-desktop")?.([
+        {
+          app: "chatgpt-desktop",
+          configured: true,
+          model: "model-b",
+          warnings: [],
+          error: null,
+        },
+      ]);
+      await configureRequest;
+    });
+
+    expect(result.current.restartRequiredApps.has("chatgpt-desktop")).toBe(
+      true,
+    );
+
+    await act(async () => {
+      await result.current.launch("chatgpt-desktop");
+    });
+
+    expect(invokeMock).toHaveBeenCalledWith("launch_tool", {
+      tool: "chatgpt-desktop",
+      restart: true,
+    });
+    expect(result.current.restartRequiredApps.has("chatgpt-desktop")).toBe(
+      false,
+    );
   });
 });

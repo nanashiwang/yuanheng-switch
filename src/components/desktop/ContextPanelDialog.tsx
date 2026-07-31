@@ -3,6 +3,7 @@ import type { YuanhengConnectionStatus } from "@/lib/api/yuanheng";
 import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
 import { DesktopContextPanel } from "./DesktopContextPanel";
 import type { DesktopView } from "./types";
+import { dt } from "./desktopI18n";
 
 interface ContextPanelDialogProps {
   open: boolean;
@@ -25,7 +26,7 @@ export function ContextPanelDialog({
         zIndex="top"
         className="bottom-0 left-auto right-0 top-0 h-screen max-h-none w-[320px] max-w-[88vw] translate-x-0 translate-y-0 overflow-hidden rounded-none border-y-0 border-r-0 p-0 data-[state=closed]:slide-out-to-right data-[state=open]:slide-in-from-right sm:rounded-none"
       >
-        <DialogTitle className="sr-only">当前状态</DialogTitle>
+        <DialogTitle className="sr-only">{dt("当前状态")}</DialogTitle>
         <DesktopContextPanel
           activeApp={activeApp}
           connection={connection}

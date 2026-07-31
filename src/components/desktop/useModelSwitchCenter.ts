@@ -18,6 +18,13 @@ import {
   pickPreferredGroup,
   toolLabel,
 } from "./ToolSetupGrid";
+import {
+  clearRestartRequired,
+  getRestartRequiredApps,
+  markRestartRequired,
+  subscribeRestartRequired,
+} from "./desktopRestartState";
+import { dt } from "./desktopI18n";
 
 export const providerIconOf = (app: YuanhengToolId) =>
   app === "codex" || app === "chatgpt-desktop"
@@ -58,6 +65,9 @@ export function useModelSwitchCenter() {
   const [pendingApps, setPendingApps] = useState<Set<YuanhengToolId>>(
     () => new Set(),
   );
+  const [restartRequiredApps, setRestartRequiredApps] = useState(
+    getRestartRequiredApps,
+  );
   const operationIds = useRef<Partial<Record<YuanhengToolId, number>>>({});
   const operationSequence = useRef(0);
 
@@ -68,6 +78,14 @@ export function useModelSwitchCenter() {
   const statusMap = useMemo(
     () => new Map((statuses.data ?? []).map((item) => [item.app, item])),
     [statuses.data],
+  );
+
+  useEffect(
+    () =>
+      subscribeRestartRequired(() =>
+        setRestartRequiredApps(getRestartRequiredApps()),
+      ),
+    [],
   );
 
   // 后端状态与模型目录变化时同步；正在提交的工具保留乐观选择。
@@ -145,7 +163,7 @@ export function useModelSwitchCenter() {
   const refreshModels = () => {
     if (!connection?.connected || refreshConnection.isPending) return;
     void refreshConnection.mutateAsync().catch(() => {
-      toast.error("网站模型同步失败，已保留上次可用列表");
+      toast.error(dt("网站模型同步失败，已保留上次可用列表"));
     });
   };
 
@@ -192,7 +210,7 @@ export function useModelSwitchCenter() {
     const model =
       patch.model ?? models[app] ?? status?.model ?? status?.recommendedModel;
     if (!model) {
-      toast.error(`${toolLabel(app)} 没有可用模型`);
+      toast.error(dt("{{v0}} 没有可用模型", { v0: toolLabel(app) }));
       return;
     }
     const availableGroups = connection?.modelGroups[model] ?? [];
@@ -230,7 +248,7 @@ export function useModelSwitchCenter() {
         reasoning: { [app]: selectedReasoning },
       });
       const result = results.find((item) => item.app === app);
-      if (!result?.configured) throw new Error(result?.error || "配置失败");
+      if (!result?.configured) throw new Error(result?.error || dt("配置失败"));
       if (!isCurrentOperation(app, operationId)) return;
       setModels((current) => ({
         ...current,
@@ -246,20 +264,25 @@ export function useModelSwitchCenter() {
         ...current,
         [app]: selectedReasoning,
       }));
+      markRestartRequired(app);
       if (app === "codex") {
         const bridgeStatus = await codexBridge.refetch();
         if (!isCurrentOperation(app, operationId)) return;
         if (patch.model) {
           toast.success(
             bridgeStatus.data?.connectedTerminals
-              ? `已选择 ${model}，终端下一条消息自动应用`
-              : `Codex 默认模型已切换到 ${model}`,
+              ? dt("已选择 {{v0}}，终端下一条消息自动应用", { v0: model })
+              : dt("Codex 默认模型已切换到 {{v0}}", { v0: model }),
           );
         } else {
           toast.success(successMessage(model, group));
         }
       } else {
-        toast.success(successMessage(model, group));
+        toast.success(
+          app === "chatgpt-desktop"
+            ? dt("配置已保存；重启 Codex App 后加载新的模型与推理档位")
+            : successMessage(model, group),
+        );
       }
       await queryClient.invalidateQueries({ queryKey: ["yuanheng"] });
     } catch (error) {
@@ -282,7 +305,7 @@ export function useModelSwitchCenter() {
           else delete next[app];
           return next;
         });
-        toast.error(extractErrorMessage(error) || "模型切换失败");
+        toast.error(extractErrorMessage(error) || dt("模型切换失败"));
       }
     } finally {
       finishOperation(app, operationId);
@@ -291,20 +314,22 @@ export function useModelSwitchCenter() {
 
   /** 首页快捷控制：修改后立即写入工具配置。 */
   const applyModel = (app: YuanhengToolId, model: string) =>
-    applySelection(app, { model }, () => `${toolLabel(app)} 已切换到 ${model}`);
+    applySelection(app, { model }, () =>
+      dt("{{v0}} 已切换到 {{v1}}", { v0: toolLabel(app), v1: model }),
+    );
 
   const applyGroup = (app: YuanhengToolId, group: string) =>
-    applySelection(
-      app,
-      { group },
-      (model) => `${toolLabel(app)} 已切换到 ${group} 分组 · ${model}`,
+    applySelection(app, { group }, (model) =>
+      dt("{{v0}} 已切换到 {{v1}} 分组 · {{v2}}", {
+        v0: toolLabel(app),
+        v1: group,
+        v2: model,
+      }),
     );
 
   const applyReasoning = (app: YuanhengToolId, level: YuanhengReasoningLevel) =>
-    applySelection(
-      app,
-      { reasoning: level },
-      (model) => `${toolLabel(app)} 推理等级已更新 · ${model}`,
+    applySelection(app, { reasoning: level }, (model) =>
+      dt("{{v0}} 推理等级已更新 · {{v1}}", { v0: toolLabel(app), v1: model }),
     );
 
   const launch = async (app: YuanhengToolId) => {
@@ -342,7 +367,8 @@ export function useModelSwitchCenter() {
           reasoning: { [app]: normalizedReasoning },
         });
         const result = results.find((item) => item.app === app);
-        if (!result?.configured) throw new Error(result?.error || "配置失败");
+        if (!result?.configured)
+          throw new Error(result?.error || dt("配置失败"));
         if (!isCurrentOperation(app, operationId)) return;
         const configuredModel = result.model;
         if (configuredModel) {
@@ -350,15 +376,18 @@ export function useModelSwitchCenter() {
         }
       }
       if (!isCurrentOperation(app, operationId)) return;
-      await yuanhengApi.launchTool(app, dirty && isDesktopApp(app));
+      const shouldRestart =
+        isDesktopApp(app) && (dirty || restartRequiredApps.has(app));
+      await yuanhengApi.launchTool(app, shouldRestart);
+      if (shouldRestart) clearRestartRequired(app);
       if (!isCurrentOperation(app, operationId)) return;
       if (app === "codex") await codexBridge.refetch();
       if (!isCurrentOperation(app, operationId)) return;
-      toast.success(`${toolLabel(app)} 已启动`);
+      toast.success(dt("{{v0}} 已启动", { v0: toolLabel(app) }));
       await queryClient.invalidateQueries({ queryKey: ["yuanheng"] });
     } catch (error) {
       if (isCurrentOperation(app, operationId)) {
-        toast.error(extractErrorMessage(error) || "启动失败");
+        toast.error(extractErrorMessage(error) || dt("启动失败"));
       }
     } finally {
       finishOperation(app, operationId);
@@ -375,6 +404,7 @@ export function useModelSwitchCenter() {
     groups,
     reasoning,
     pendingApps,
+    restartRequiredApps,
     statusMap,
     codexBridge,
     refreshModels,

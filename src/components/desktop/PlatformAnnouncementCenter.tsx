@@ -21,6 +21,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import { desktopLocale, dt } from "./desktopI18n";
 
 const DISMISSED_ANNOUNCEMENT_KEY =
   "yuanheng.dashboard.announcement-dismissed.v2";
@@ -145,10 +146,10 @@ export function getAnnouncementIdentity(
 }
 
 function formatAnnouncementDate(value: string): string {
-  if (!value) return "平台同步";
+  if (!value) return dt("平台同步");
   const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return "平台同步";
-  return new Intl.DateTimeFormat("zh-CN", {
+  if (Number.isNaN(date.getTime())) return dt("平台同步");
+  return new Intl.DateTimeFormat(desktopLocale(), {
     year: "numeric",
     month: "short",
     day: "numeric",
@@ -186,15 +187,15 @@ function AnnouncementDialog({
         <DialogHeader className="relative pr-14">
           <DialogTitle className="flex items-center gap-2">
             <Megaphone className="h-4.5 w-4.5 text-primary" />
-            平台公告
+            {dt("平台公告")}
           </DialogTitle>
           <DialogDescription>
-            与元衡平台公告中心同步，每分钟自动检查更新
+            {dt("与元衡平台公告中心同步，每分钟自动检查更新")}
           </DialogDescription>
           <button
             type="button"
             onClick={() => onOpenChange(false)}
-            aria-label="关闭公告中心"
+            aria-label={dt("关闭公告中心")}
             className="absolute right-5 top-5 rounded-md p-1 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
           >
             <X className="h-4 w-4" />
@@ -225,7 +226,7 @@ function AnnouncementDialog({
                         meta.badgeClass,
                       )}
                     >
-                      {meta.label}
+                      {dt(meta.label)}
                     </span>
                     <span className="text-[9px] text-muted-foreground">
                       {formatAnnouncementDate(announcement.publishDate)}
@@ -249,7 +250,7 @@ function AnnouncementDialog({
                       TYPE_META[selected.type].badgeClass,
                     )}
                   >
-                    {TYPE_META[selected.type].label}
+                    {dt(TYPE_META[selected.type].label)}
                   </span>
                   <span className="text-[10px] text-muted-foreground">
                     {formatAnnouncementDate(selected.publishDate)}
@@ -298,7 +299,7 @@ export function PlatformAnnouncementCenter() {
     return (
       <div className="flex min-h-10 items-center gap-2.5 rounded-xl border border-border-default bg-card/70 px-3.5 py-2 text-[11px] text-muted-foreground">
         <LoaderCircle className="h-3.5 w-3.5 animate-spin" />
-        <span>正在同步平台公告…</span>
+        <span>{dt("正在同步平台公告…")}</span>
       </div>
     );
   }
@@ -307,14 +308,14 @@ export function PlatformAnnouncementCenter() {
     return (
       <div className="flex min-h-10 items-center gap-2.5 rounded-xl border border-amber-200 bg-amber-50/70 px-3.5 py-2 text-[11px] text-amber-800 dark:border-amber-500/20 dark:bg-amber-500/10 dark:text-amber-200">
         <AlertTriangle className="h-3.5 w-3.5 shrink-0" />
-        <span className="min-w-0 flex-1">平台公告暂时同步失败</span>
+        <span className="min-w-0 flex-1">{dt("平台公告暂时同步失败")}</span>
         <button
           type="button"
           onClick={() => void query.refetch()}
           className="inline-flex items-center gap-1 rounded-md px-1.5 py-1 font-medium hover:bg-amber-500/10"
         >
           <RefreshCw className="h-3 w-3" />
-          重试
+          {dt("重试")}
         </button>
       </div>
     );
@@ -324,9 +325,9 @@ export function PlatformAnnouncementCenter() {
     return (
       <div className="flex min-h-10 items-center gap-2.5 rounded-xl border border-border-default bg-card/70 px-3.5 py-2 text-[11px] text-muted-foreground">
         <Megaphone className="h-3.5 w-3.5" />
-        <span>平台公告</span>
+        <span>{dt("平台公告")}</span>
         <span className="h-3 w-px bg-border-default" />
-        <span>已同步，暂无公告</span>
+        <span>{dt("已同步，暂无公告")}</span>
       </div>
     );
   }
@@ -351,27 +352,27 @@ export function PlatformAnnouncementCenter() {
           )}
         />
         <span className="shrink-0 font-semibold">
-          {isUnread ? meta.label : "平台公告"}
+          {isUnread ? meta.label : dt("平台公告")}
         </span>
         <span className="h-3 w-px shrink-0 bg-current opacity-20" />
         <span className="min-w-0 flex-1 truncate">
           {isUnread
             ? summarizeAnnouncement(latest.content)
-            : `已同步 ${announcements.length} 条公告`}
+            : dt("已同步 {{v0}} 条公告", { v0: announcements.length })}
         </span>
         <button
           type="button"
           onClick={() => setDialogOpen(true)}
           className="inline-flex shrink-0 items-center gap-0.5 rounded-md px-1.5 py-1 font-semibold transition-colors hover:bg-current/5"
         >
-          {isUnread ? "查看详情" : "查看历史"}
+          {isUnread ? dt("查看详情") : dt("查看历史")}
           <ChevronRight className="h-3 w-3" />
         </button>
         {isUnread && (
           <button
             type="button"
             onClick={dismissLatest}
-            aria-label="标记最新公告为已读"
+            aria-label={dt("标记最新公告为已读")}
             className="shrink-0 rounded p-0.5 opacity-60 transition-opacity hover:opacity-100"
           >
             <X className="h-3.5 w-3.5" />

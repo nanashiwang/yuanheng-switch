@@ -7,6 +7,7 @@ import {
   formatTokensShort,
   getResolvedLang,
 } from "@/components/usage/format";
+import { dt } from "./desktopI18n";
 
 /**
  * 今日速览统计带：请求 / Tokens / 成本 / 缓存命中率。
@@ -24,25 +25,25 @@ export function TodayStatsBand() {
       icon: Zap,
       iconClass: "bg-emerald-500/10 text-emerald-600",
       value: summary ? fmtInt(summary.totalRequests, lang) : "--",
-      label: "今日请求",
+      label: dt("今日请求"),
     },
     {
       icon: Database,
       iconClass: "bg-sky-500/10 text-sky-600",
       value: summary ? formatTokensShort(summary.realTotalTokens, lang) : "--",
-      label: "今日 Tokens",
+      label: dt("今日 Tokens"),
     },
     {
       icon: Coins,
       iconClass: "bg-amber-500/10 text-amber-600",
       value: summary ? fmtUsd(summary.totalCost, 2) : "--",
-      label: "今日成本",
+      label: dt("今日成本"),
     },
     {
       icon: DatabaseBackup,
       iconClass: "bg-violet-500/10 text-violet-600",
       value: summary ? `${Math.round(summary.cacheHitRate * 100)}%` : "--",
-      label: "缓存命中率",
+      label: dt("缓存命中率"),
     },
   ];
 

@@ -24,6 +24,7 @@ import { cn } from "@/lib/utils";
 import { toast } from "sonner";
 import type { DesktopView } from "./types";
 import { desktopSection } from "./types";
+import { dt } from "./desktopI18n";
 
 interface DesktopSidebarProps {
   view: DesktopView;
@@ -54,14 +55,16 @@ export function DesktopSidebar({
   const accountName =
     connection?.account?.displayName ||
     connection?.account?.username ||
-    (connection?.userId ? `用户 ${connection.userId}` : "元衡用户");
+    (connection?.userId
+      ? dt("用户 {{id}}", { id: connection.userId })
+      : dt("元衡用户"));
   const balance = connection?.account?.remainingUsd ?? 0;
   const { isOpening, openTopup } = useYuanhengTopup();
 
   const handleOpenWebsite = () => {
     void settingsApi.openExternal(YUANHENG_WEBSITE_URL).catch((error) => {
       console.error("[DesktopSidebar] Failed to open website", error);
-      toast.error("打开官网失败，请稍后重试");
+      toast.error(dt("打开官网失败，请稍后重试"));
     });
   };
 
@@ -91,7 +94,7 @@ export function DesktopSidebar({
           className={cn("h-4 w-4 shrink-0", selected && "text-[#e3aa70]")}
           strokeWidth={1.8}
         />
-        <span className="flex-1">{label}</span>
+        <span className="flex-1">{dt(label)}</span>
       </button>
     );
   };
@@ -105,7 +108,7 @@ export function DesktopSidebar({
         </div>
         <div className="min-w-0">
           <p className="font-display text-[15px] font-semibold tracking-wide">
-            元衡桌面端
+            {dt("元衡桌面端")}
           </p>
           <p className="mt-0.5 text-[10px] tracking-[0.16em] text-slate-500">
             AI WORKSPACE
@@ -115,14 +118,14 @@ export function DesktopSidebar({
 
       <nav className="space-y-1">
         <p className="px-3 pb-1.5 pt-1 text-[10px] font-medium uppercase tracking-[0.18em] text-slate-600">
-          日常使用
+          {dt("日常使用")}
         </p>
         {dailyItems.map(renderItem)}
       </nav>
 
       <nav className="mt-5 space-y-1">
         <p className="px-3 pb-1.5 text-[10px] font-medium uppercase tracking-[0.18em] text-slate-600">
-          专业控制
+          {dt("专业控制")}
         </p>
         {professionalItems.map(renderItem)}
       </nav>
@@ -133,7 +136,7 @@ export function DesktopSidebar({
             type="button"
             onClick={() => onNavigate("network")}
             className="group w-full p-3 text-left"
-            aria-label="账号与余额"
+            aria-label={dt("账号与余额")}
           >
             <span className="flex items-center gap-2.5">
               <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-[#d69554]/15 text-[#e3aa70]">
@@ -145,14 +148,14 @@ export function DesktopSidebar({
                 </span>
                 <span className="mt-0.5 flex items-center gap-1.5 text-[9px] text-emerald-400/80">
                   <span className="h-1.5 w-1.5 rounded-full bg-emerald-400" />
-                  已登录
+                  {dt("已登录")}
                 </span>
               </span>
               <ChevronRight className="h-3.5 w-3.5 text-slate-600 transition-colors group-hover:text-slate-300" />
             </span>
             <span className="mt-3 block border-t border-white/[0.07] pt-2.5">
               <span className="flex items-center gap-1.5 text-[9px] text-slate-500">
-                <WalletCards className="h-3 w-3" /> 可用余额
+                <WalletCards className="h-3 w-3" /> {dt("可用余额")}
               </span>
               <strong className="mt-0.5 block pr-16 font-display text-[17px] font-semibold tracking-[-0.02em] text-white">
                 ${balance.toFixed(2)}
@@ -164,14 +167,14 @@ export function DesktopSidebar({
             onClick={() => void openTopup()}
             disabled={isOpening || !connection?.connected}
             className="absolute bottom-3 right-3 inline-flex h-7 items-center gap-1 rounded-md bg-[#d69554] px-2.5 text-[10px] font-semibold text-[#19120b] transition-colors hover:bg-[#e3aa70] disabled:cursor-wait disabled:opacity-50"
-            aria-label="充值"
+            aria-label={dt("充值")}
           >
             {isOpening ? (
               <LoaderCircle className="h-3 w-3 animate-spin" />
             ) : (
               <CreditCard className="h-3 w-3" />
             )}
-            充值
+            {dt("充值")}
           </button>
         </div>
 
@@ -179,10 +182,10 @@ export function DesktopSidebar({
           type="button"
           onClick={handleOpenWebsite}
           className="group flex h-9 w-full items-center gap-2.5 rounded-lg px-3 text-left text-[11px] font-medium text-slate-500 transition-colors hover:bg-white/[0.07] hover:text-slate-200"
-          aria-label="访问元衡官网"
+          aria-label={dt("访问元衡官网")}
         >
           <Globe className="h-3.5 w-3.5 shrink-0" strokeWidth={1.8} />
-          <span className="flex-1">访问官网</span>
+          <span className="flex-1">{dt("访问官网")}</span>
           <ExternalLink className="h-3 w-3 text-slate-700 transition-colors group-hover:text-slate-400" />
         </button>
 
@@ -192,7 +195,7 @@ export function DesktopSidebar({
           ) : (
             <Wrench className="h-3.5 w-3.5" />
           )}
-          {proxyRunning ? "本地路由运行中" : "本地路由未启动"}
+          {proxyRunning ? dt("本地路由运行中") : dt("本地路由未启动")}
         </div>
       </div>
     </aside>

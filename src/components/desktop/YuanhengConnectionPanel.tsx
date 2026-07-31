@@ -31,6 +31,7 @@ const toolLabel = (app: YuanhengToolId) => {
 };
 import { extractErrorMessage } from "@/utils/errorUtils";
 import { cn } from "@/lib/utils";
+import { dt } from "./desktopI18n";
 
 interface YuanhengConnectionPanelProps {
   compact?: boolean;
@@ -59,28 +60,30 @@ export function YuanhengConnectionPanel({
     setConfirmPassword("");
     if (result.requiresTwoFactor) {
       setRequiresTwoFactor(true);
-      toast.success("账号密码验证通过，请完成两步验证");
+      toast.success(dt("账号密码验证通过，请完成两步验证"));
       return;
     }
     setUsername("");
     setTwoFactorCode("");
     setRequiresTwoFactor(false);
-    toast.success(authMode === "register" ? "注册并登录成功" : "登录成功");
+    toast.success(
+      authMode === "register" ? dt("注册并登录成功") : dt("登录成功"),
+    );
     onConnected?.();
   };
 
   const handleAuthenticate = async () => {
     const normalizedUsername = username.trim();
     if (!normalizedUsername || normalizedUsername.length > 20) {
-      toast.error("用户名不能为空且不能超过 20 个字符");
+      toast.error(dt("用户名不能为空且不能超过 20 个字符"));
       return;
     }
     if (password.length < 8 || password.length > 20) {
-      toast.error("密码长度必须为 8 到 20 个字符");
+      toast.error(dt("密码长度必须为 8 到 20 个字符"));
       return;
     }
     if (authMode === "register" && password !== confirmPassword) {
-      toast.error("两次输入的密码不一致");
+      toast.error(dt("两次输入的密码不一致"));
       return;
     }
     try {
@@ -94,21 +97,21 @@ export function YuanhengConnectionPanel({
     } catch (error) {
       toast.error(
         extractErrorMessage(error) ||
-          (authMode === "register" ? "注册失败" : "登录失败"),
+          (authMode === "register" ? dt("注册失败") : dt("登录失败")),
       );
     }
   };
 
   const handleTwoFactor = async () => {
     if (!twoFactorCode.trim()) {
-      toast.error("请输入两步验证码或备用码");
+      toast.error(dt("请输入两步验证码或备用码"));
       return;
     }
     try {
       const result = await verifyTwoFactor.mutateAsync(twoFactorCode.trim());
       finishAuthentication(result);
     } catch (error) {
-      toast.error(extractErrorMessage(error) || "两步验证失败");
+      toast.error(extractErrorMessage(error) || dt("两步验证失败"));
     }
   };
 
@@ -121,9 +124,9 @@ export function YuanhengConnectionPanel({
   const handleRefresh = async () => {
     try {
       await refresh.mutateAsync();
-      toast.success("元衡数据已同步");
+      toast.success(dt("元衡数据已同步"));
     } catch (error) {
-      toast.error(extractErrorMessage(error) || "同步失败");
+      toast.error(extractErrorMessage(error) || dt("同步失败"));
     }
   };
 
@@ -132,17 +135,19 @@ export function YuanhengConnectionPanel({
       const result = await disconnect.mutateAsync();
       if (result.retainedTools.length > 0) {
         const tools = result.retainedTools.map(toolLabel).join("、");
-        toast.warning(`账号已断开；${tools} 缺少原配置，元衡配置仍保留`);
+        toast.warning(
+          dt("账号已断开；{{v0}} 缺少原配置，元衡配置仍保留", { v0: tools }),
+        );
       } else if (
         result.restoredTools.length > 0 ||
         result.removedTools.length > 0
       ) {
-        toast.success("已断开元衡账号，并恢复工具原配置");
+        toast.success(dt("已断开元衡账号，并恢复工具原配置"));
       } else {
-        toast.success("已断开元衡账号");
+        toast.success(dt("已断开元衡账号"));
       }
     } catch (error) {
-      toast.error(extractErrorMessage(error) || "断开失败");
+      toast.error(extractErrorMessage(error) || dt("断开失败"));
     }
   };
 
@@ -170,19 +175,22 @@ export function YuanhengConnectionPanel({
               <Cloud className="h-5 w-5" />
             </div>
             <p className="mt-4 text-[11px] font-semibold uppercase tracking-[0.18em] text-primary">
-              元衡 API
+              {dt("元衡 API")}
             </p>
             <h2 className="font-display mt-1 text-xl font-semibold">
-              {requiresTwoFactor ? "完成两步验证" : "登录你的元衡账号"}
+              {requiresTwoFactor ? dt("完成两步验证") : dt("登录你的元衡账号")}
             </h2>
             <p className="mt-2 max-w-lg text-[13px] leading-5 text-muted-foreground">
               {requiresTwoFactor
-                ? "输入认证器验证码或备用码，验证成功后即可继续。"
-                : "直接使用账号密码登录或注册。密码不会保存在本机，登录后客户端会自动创建或复用本机专用工具凭据。"}
+                ? dt("输入认证器验证码或备用码，验证成功后即可继续。")
+                : dt(
+                    "直接使用账号密码登录或注册。密码不会保存在本机，登录后客户端会自动创建或复用本机专用工具凭据。",
+                  )}
             </p>
             {!requiresTwoFactor && (
               <p className="mt-3 inline-flex items-center gap-1.5 rounded-full bg-emerald-500/10 px-2.5 py-1 text-[10px] font-medium text-emerald-700 dark:text-emerald-300">
-                <ShieldCheck className="h-3 w-3" /> 账号密码仅用于本次认证
+                <ShieldCheck className="h-3 w-3" />{" "}
+                {dt("账号密码仅用于本次认证")}
               </p>
             )}
           </div>
@@ -197,7 +205,7 @@ export function YuanhengConnectionPanel({
               >
                 <div className="space-y-1.5">
                   <Label htmlFor="yuanheng-two-factor" className="text-[12px]">
-                    两步验证码
+                    {dt("两步验证码")}
                   </Label>
                   <Input
                     id="yuanheng-two-factor"
@@ -205,7 +213,7 @@ export function YuanhengConnectionPanel({
                     autoComplete="one-time-code"
                     value={twoFactorCode}
                     onChange={(event) => setTwoFactorCode(event.target.value)}
-                    placeholder="6 位验证码或备用码"
+                    placeholder={dt("6 位验证码或备用码")}
                     className="h-9"
                   />
                 </div>
@@ -219,7 +227,7 @@ export function YuanhengConnectionPanel({
                   ) : (
                     <ShieldCheck className="h-4 w-4" />
                   )}
-                  验证并登录
+                  {dt("验证并登录")}
                 </Button>
                 <Button
                   type="button"
@@ -231,7 +239,7 @@ export function YuanhengConnectionPanel({
                     setTwoFactorCode("");
                   }}
                 >
-                  返回账号登录
+                  {dt("返回账号登录")}
                 </Button>
               </form>
             ) : (
@@ -251,7 +259,7 @@ export function YuanhengConnectionPanel({
                     aria-pressed={authMode === "login"}
                     onClick={() => switchAuthMode("login")}
                   >
-                    登录
+                    {dt("登录")}
                   </Button>
                   <Button
                     type="button"
@@ -261,26 +269,26 @@ export function YuanhengConnectionPanel({
                     aria-pressed={authMode === "register"}
                     onClick={() => switchAuthMode("register")}
                   >
-                    注册
+                    {dt("注册")}
                   </Button>
                 </div>
                 <div className="space-y-1.5">
                   <Label htmlFor="yuanheng-username" className="text-[12px]">
-                    用户名
+                    {dt("用户名")}
                   </Label>
                   <Input
                     id="yuanheng-username"
                     autoComplete="username"
                     value={username}
                     onChange={(event) => setUsername(event.target.value)}
-                    placeholder="输入元衡用户名"
+                    placeholder={dt("输入元衡用户名")}
                     maxLength={20}
                     className="h-9"
                   />
                 </div>
                 <div className="space-y-1.5">
                   <Label htmlFor="yuanheng-password" className="text-[12px]">
-                    密码
+                    {dt("密码")}
                   </Label>
                   <Input
                     id="yuanheng-password"
@@ -292,7 +300,7 @@ export function YuanhengConnectionPanel({
                     }
                     value={password}
                     onChange={(event) => setPassword(event.target.value)}
-                    placeholder="8 到 20 个字符"
+                    placeholder={dt("8 到 20 个字符")}
                     className="h-9"
                   />
                 </div>
@@ -302,7 +310,7 @@ export function YuanhengConnectionPanel({
                       htmlFor="yuanheng-confirm-password"
                       className="text-[12px]"
                     >
-                      确认密码
+                      {dt("确认密码")}
                     </Label>
                     <Input
                       id="yuanheng-confirm-password"
@@ -312,7 +320,7 @@ export function YuanhengConnectionPanel({
                       onChange={(event) =>
                         setConfirmPassword(event.target.value)
                       }
-                      placeholder="再次输入密码"
+                      placeholder={dt("再次输入密码")}
                       className="h-9"
                     />
                   </div>
@@ -329,7 +337,7 @@ export function YuanhengConnectionPanel({
                   ) : (
                     <LogIn className="h-4 w-4" />
                   )}
-                  {authMode === "register" ? "注册并登录" : "登录"}
+                  {authMode === "register" ? dt("注册并登录") : dt("登录")}
                 </Button>
               </form>
             )}
@@ -342,7 +350,7 @@ export function YuanhengConnectionPanel({
   const accountName =
     status.account?.displayName ||
     status.account?.username ||
-    `用户 ${status.userId}`;
+    dt("用户 {{v0}}", { v0: status.userId });
   return (
     <section className="overflow-hidden rounded-2xl border border-emerald-500/20 bg-card">
       <div className="flex flex-wrap items-center gap-4 border-b border-border/70 bg-emerald-500/[0.055] px-5 py-4">
@@ -359,7 +367,7 @@ export function YuanhengConnectionPanel({
             </span>
           </div>
           <p className="mt-0.5 text-[11px] text-muted-foreground">
-            元衡账号已登录 · 本机工具凭据已就绪
+            {dt("元衡账号已登录 · 本机工具凭据已就绪")}
           </p>
         </div>
         <Button
@@ -371,7 +379,7 @@ export function YuanhengConnectionPanel({
           <RefreshCw
             className={cn("h-3.5 w-3.5", refresh.isPending && "animate-spin")}
           />
-          同步
+          {dt("同步")}
         </Button>
         {!compact && (
           <Button
@@ -381,7 +389,7 @@ export function YuanhengConnectionPanel({
             disabled={disconnect.isPending}
           >
             <LogOut className="h-3.5 w-3.5" />
-            退出登录
+            {dt("退出登录")}
           </Button>
         )}
       </div>

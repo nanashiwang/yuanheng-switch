@@ -31,6 +31,7 @@ function createSwitcher(
     groups: {},
     reasoning: {},
     pendingApps: new Set(),
+    restartRequiredApps: new Set(),
     statusMap: new Map(),
     codexBridge: {} as ModelSwitchCenterState["codexBridge"],
     refreshModels: vi.fn(),

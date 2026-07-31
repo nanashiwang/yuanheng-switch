@@ -17,6 +17,7 @@ import {
   type ModelSwitchCenterState,
 } from "./useModelSwitchCenter";
 import { groupModelsByVendor, modelVendorOf } from "./modelVendors";
+import { dt } from "./desktopI18n";
 
 interface FocusToolCardProps {
   switcher: ModelSwitchCenterState;
@@ -46,7 +47,7 @@ function FocusToolLoadingCard() {
   return (
     <section
       className={focusCardShell}
-      aria-label="正在检测本机工具"
+      aria-label={dt("正在检测本机工具")}
       aria-busy="true"
     >
       <FocusToolDecoration />
@@ -75,7 +76,7 @@ function FocusToolLoadingCard() {
           </div>
         </div>
       </div>
-      <p className="sr-only">正在读取本机工具与配置状态</p>
+      <p className="sr-only">{dt("正在读取本机工具与配置状态")}</p>
     </section>
   );
 }
@@ -98,12 +99,12 @@ function FocusToolStateCard({
           <Icon className="h-5 w-5 text-[#e9b67c]" />
         </span>
         <h2 className="mt-3 font-display text-[16px] font-semibold">
-          {error ? "本机工具检测失败" : "尚未检测到已安装的 AI 工具"}
+          {error ? dt("本机工具检测失败") : dt("尚未检测到已安装的 AI 工具")}
         </h2>
         <p className="mt-1 max-w-sm text-[10.5px] text-white/55">
           {error
-            ? "没有将检测失败误判为未安装，你可以重新检测或进入工具管理。"
-            : "安装或配置工具后，这里会显示当前工具、模型和令牌分组。"}
+            ? dt("没有将检测失败误判为未安装，你可以重新检测或进入工具管理。")
+            : dt("安装或配置工具后，这里会显示当前工具、模型和令牌分组。")}
         </p>
         <div className="mt-4 flex items-center gap-2">
           {error && (
@@ -113,7 +114,7 @@ function FocusToolStateCard({
               className="inline-flex h-8 items-center gap-1.5 rounded-lg border border-white/15 bg-white/[0.08] px-3 text-[11px] font-semibold transition-colors hover:bg-white/[0.13]"
             >
               <RefreshCw className="h-3.5 w-3.5" />
-              重新检测
+              {dt("重新检测")}
             </button>
           )}
           <button
@@ -122,7 +123,7 @@ function FocusToolStateCard({
             className="inline-flex h-8 items-center gap-1.5 rounded-lg bg-[#e9b67c] px-3 text-[11px] font-semibold text-[#163a36] transition-colors hover:bg-[#f3c995]"
           >
             <Wrench className="h-3.5 w-3.5" />
-            {error ? "打开工具管理" : "安装与配置"}
+            {error ? dt("打开工具管理") : dt("安装与配置")}
           </button>
         </div>
       </div>
@@ -148,6 +149,7 @@ export function FocusToolCard({
     groups,
     reasoning,
     pendingApps,
+    restartRequiredApps,
     statusMap,
     refreshModels,
     applyModel,
@@ -192,6 +194,7 @@ export function FocusToolCard({
 
   const pending = pendingApps.has(app);
   const configured = Boolean(status?.configured);
+  const restartRequired = restartRequiredApps.has(app);
   const selectedVendor =
     vendorGroups.find((vendor) => vendor.id === selectedVendors[app]) ??
     vendorGroups.find((vendor) => vendor.id === currentVendorId) ??
@@ -229,14 +232,14 @@ export function FocusToolCard({
         </span>
         <div className="min-w-0">
           <p className="text-[10px] font-semibold uppercase tracking-[0.18em] text-white/50">
-            当前工具
+            {dt("当前工具")}
           </p>
           <p className="mt-0.5 flex items-center gap-2 font-display text-[17px] font-semibold">
             {toolLabel(app)}
             {configured && (
               <span className="inline-flex items-center gap-1 rounded-full bg-emerald-400/15 px-2 py-0.5 text-[10px] font-normal text-emerald-300">
                 <CheckCircle2 className="h-2.5 w-2.5" />
-                已配置
+                {dt("已配置")}
               </span>
             )}
           </p>
@@ -244,6 +247,11 @@ export function FocusToolCard({
         <button
           type="button"
           disabled={pending}
+          aria-label={
+            restartRequired
+              ? dt("重启并应用 {{v0}}", { v0: toolLabel(app) })
+              : dt("启动 {{v0}}", { v0: toolLabel(app) })
+          }
           onClick={() => void launch(app)}
           className="ml-auto inline-flex h-[34px] items-center gap-1.5 rounded-[10px] bg-[#e9b67c] px-4 text-[12px] font-semibold text-[#163a36] transition-colors hover:bg-[#f3c995] disabled:opacity-60"
         >
@@ -252,38 +260,40 @@ export function FocusToolCard({
           ) : (
             <Play className="h-3.5 w-3.5 fill-current" />
           )}
-          启动
+          {restartRequired ? dt("重启并应用") : dt("启动")}
         </button>
       </div>
 
       <div className="relative mt-4 flex flex-wrap items-baseline gap-x-3 gap-y-1">
-        <span className="text-[11px] text-white/55">当前模型</span>
+        <span className="text-[11px] text-white/55">{dt("当前模型")}</span>
         <span className="font-display text-2xl font-semibold tabular-nums tracking-tight">
-          {current ?? "未选择"}
+          {current ?? dt("未选择")}
         </span>
         {currentGroup && (
           <span className="rounded-full bg-white/10 px-2 py-0.5 text-[10px] text-white/75">
-            {currentGroup} 分组
+            {currentGroup} {dt("分组")}
           </span>
         )}
         {currentReasoning !== "auto" && (
           <span className="rounded-full bg-white/10 px-2 py-0.5 text-[10px] text-white/75">
-            {currentReasoning} 推理
+            {currentReasoning} {dt("推理")}
           </span>
         )}
       </div>
 
       <div className="relative mt-4 rounded-xl border border-white/10 bg-black/10 p-3">
         <div className="mb-2.5 flex items-center justify-between gap-3">
-          <p className="text-[10px] font-semibold text-white/75">快捷切换</p>
+          <p className="text-[10px] font-semibold text-white/75">
+            {dt("快捷切换")}
+          </p>
           <p className="text-[9.5px] text-white/45">
-            先选供应商，再选模型；修改后立即生效
+            {dt("先选供应商，再选模型；修改后立即生效")}
           </p>
         </div>
         <div className="grid gap-2 sm:grid-cols-[minmax(116px,.8fr)_minmax(0,1.35fr)_minmax(108px,.8fr)]">
           <label className="min-w-0">
             <span className="mb-1 block text-[9px] font-medium text-white/50">
-              1 · 模型供应商
+              {dt("1 · 模型供应商")}
             </span>
             <div className="relative">
               {selectedVendor && (
@@ -295,7 +305,7 @@ export function FocusToolCard({
                 />
               )}
               <select
-                aria-label={`${toolLabel(app)} 模型供应商`}
+                aria-label={dt("{{v0}} 模型供应商", { v0: toolLabel(app) })}
                 value={selectedVendor?.id ?? ""}
                 disabled={pending || vendorGroups.length === 0}
                 className="h-8 w-full min-w-0 appearance-none rounded-md border border-white/15 bg-white/[0.08] pl-8 pr-7 text-[10.5px] text-white shadow-sm outline-none [color-scheme:dark] transition-colors hover:bg-white/[0.12] focus:border-[#e9b67c]/70 disabled:cursor-not-allowed disabled:opacity-60"
@@ -318,16 +328,22 @@ export function FocusToolCard({
 
           <label className="min-w-0">
             <span className="mb-1 block text-[9px] font-medium text-white/50">
-              2 · 细分模型
+              {dt("2 · 细分模型")}
             </span>
             <ModelPicker
               models={selectedVendor?.models ?? []}
               value={visibleModel}
               recommended={recommendedModel}
-              label={`${toolLabel(app)} ${selectedVendor?.label ?? ""}模型`}
+              label={dt("{{v0}} {{v1}}模型", {
+                v0: toolLabel(app),
+                v1: selectedVendor?.label ?? "",
+              })}
               disabled={pending || !selectedVendor}
               triggerLabel={
-                visibleModel ?? `选择 ${selectedVendor?.label ?? "供应商"}模型`
+                visibleModel ??
+                dt("选择 {{v0}}模型", {
+                  v0: selectedVendor?.label ?? dt("供应商"),
+                })
               }
               className="mt-0 h-8 border-white/15 bg-white/[0.08] text-[10.5px] text-white shadow-sm hover:bg-white/[0.12]"
               onRefresh={refreshModels}
@@ -337,18 +353,20 @@ export function FocusToolCard({
 
           <label className="min-w-0">
             <span className="mb-1 block text-[9px] font-medium text-white/50">
-              3 · 令牌分组
+              {dt("3 · 令牌分组")}
             </span>
             <div className="relative">
               <select
-                aria-label={`${toolLabel(app)} 当前工具令牌分组`}
+                aria-label={dt("{{v0}} 当前工具令牌分组", {
+                  v0: toolLabel(app),
+                })}
                 value={selectedGroup ?? ""}
                 disabled={pending || availableGroups.length <= 1}
                 className="h-8 w-full min-w-0 appearance-none rounded-md border border-white/15 bg-white/[0.08] pl-2 pr-7 text-[10.5px] text-white shadow-sm outline-none [color-scheme:dark] transition-colors hover:bg-white/[0.12] focus:border-[#e9b67c]/70 disabled:cursor-not-allowed disabled:opacity-60"
                 onChange={(event) => void applyGroup(app, event.target.value)}
               >
                 {availableGroups.length === 0 && (
-                  <option value="">账号默认</option>
+                  <option value="">{dt("账号默认")}</option>
                 )}
                 {availableGroups.map((group) => {
                   const option = groupMap.get(group);

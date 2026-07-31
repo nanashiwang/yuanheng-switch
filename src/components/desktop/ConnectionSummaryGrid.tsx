@@ -9,6 +9,7 @@ import type { YuanhengConnectionStatus } from "@/lib/api/yuanheng";
 import type { SettingsFormState } from "@/hooks/useSettings";
 import { useProxyStatus } from "@/hooks/useProxyStatus";
 import { cn } from "@/lib/utils";
+import { dt } from "./desktopI18n";
 
 interface ConnectionSummaryGridProps {
   connection?: YuanhengConnectionStatus;
@@ -23,34 +24,40 @@ export function ConnectionSummaryGrid({
   const items = [
     {
       icon: Cable,
-      label: "元衡连接",
-      value: connection?.connected ? "已连接" : "未连接",
+      label: dt("元衡连接"),
+      value: connection?.connected ? dt("已连接") : dt("未连接"),
       detail:
-        connection?.account?.displayName || connection?.baseUrl || "远程服务",
+        connection?.account?.displayName ||
+        connection?.baseUrl ||
+        dt("远程服务"),
       active: Boolean(connection?.connected),
     },
     {
       icon: Network,
-      label: "本地路由",
-      value: isRunning ? "运行中" : "未启动",
+      label: dt("本地路由"),
+      value: isRunning ? dt("运行中") : dt("未启动"),
       detail:
-        isRunning && status?.port ? `127.0.0.1:${status.port}` : "请求直连上游",
+        isRunning && status?.port
+          ? `127.0.0.1:${status.port}`
+          : dt("请求直连上游"),
       active: isRunning,
     },
     {
       icon: Route,
-      label: "应用接管",
-      value: isTakeoverActive ? "已启用" : "未启用",
-      detail: isTakeoverActive ? "已接管至少一个 AI 工具" : "应用配置保持原状",
+      label: dt("应用接管"),
+      value: isTakeoverActive ? dt("已启用") : dt("未启用"),
+      detail: isTakeoverActive
+        ? dt("已接管至少一个 AI 工具")
+        : dt("应用配置保持原状"),
       active: Boolean(isTakeoverActive),
     },
     {
       icon: ShieldCheck,
-      label: "故障转移",
-      value: settings.enableFailoverToggle ? "已启用" : "未启用",
+      label: dt("故障转移"),
+      value: settings.enableFailoverToggle ? dt("已启用") : dt("未启用"),
       detail: settings.enableFailoverToggle
-        ? "可按应用配置候选线路"
-        : "仅使用当前线路",
+        ? dt("可按应用配置候选线路")
+        : dt("仅使用当前线路"),
       active: Boolean(settings.enableFailoverToggle),
     },
   ];

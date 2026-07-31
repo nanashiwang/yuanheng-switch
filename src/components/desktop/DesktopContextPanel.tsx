@@ -27,6 +27,7 @@ import {
 } from "@/components/usage/format";
 import { cn } from "@/lib/utils";
 import type { DesktopView } from "./types";
+import { dt } from "./desktopI18n";
 
 interface DesktopContextPanelProps {
   activeApp: AppId;
@@ -59,25 +60,31 @@ export function DesktopContextPanel({
 
   const stats = [
     {
-      label: "请求数",
-      value: summary ? `${fmtInt(summary.totalRequests, lang)} 次` : "--",
+      label: dt("请求数"),
+      value: summary
+        ? dt("{{v0}} 次", { v0: fmtInt(summary.totalRequests, lang) })
+        : "--",
       icon: Activity,
     },
     {
-      label: "Token 总量",
+      label: dt("Token 总量"),
       value: summary
         ? `${formatTokensShort(summary.realTotalTokens, lang)} Tokens`
         : "--",
       icon: Database,
     },
     {
-      label: "估算成本",
-      value: summary ? `约 ${fmtUsd(summary.totalCost, 2)}` : "--",
+      label: dt("估算成本"),
+      value: summary
+        ? dt("约 {{v0}}", { v0: fmtUsd(summary.totalCost, 2) })
+        : "--",
       icon: Coins,
     },
     {
-      label: "缓存率",
-      value: summary ? `${Math.round(summary.cacheHitRate * 100)}% 命中` : "--",
+      label: dt("缓存率"),
+      value: summary
+        ? dt("{{v0}}% 命中", { v0: Math.round(summary.cacheHitRate * 100) })
+        : "--",
       icon: Gauge,
     },
   ];
@@ -96,7 +103,7 @@ export function DesktopContextPanel({
               Context
             </p>
             <h2 className="mt-0.5 font-display text-sm font-semibold">
-              当前状态
+              {dt("当前状态")}
             </h2>
           </div>
           <span
@@ -113,7 +120,7 @@ export function DesktopContextPanel({
                 connection?.connected ? "bg-emerald-500" : "bg-slate-400",
               )}
             />
-            {connection?.connected ? "在线" : "离线"}
+            {connection?.connected ? dt("在线") : dt("离线")}
           </span>
         </div>
 
@@ -132,7 +139,7 @@ export function DesktopContextPanel({
             </span>
             <span className="min-w-0 flex-1">
               <span className="block text-[10px] text-muted-foreground">
-                焦点应用
+                {dt("焦点应用")}
               </span>
               <strong className="mt-0.5 block truncate text-sm">
                 {APP_ICON_MAP[activeApp].label}
@@ -145,24 +152,27 @@ export function DesktopContextPanel({
         <section className="mt-3 rounded-2xl border bg-card p-4 shadow-sm">
           <div className="flex items-center justify-between">
             <span className="flex items-center gap-2 text-[10px] text-muted-foreground">
-              <WalletCards className="h-3.5 w-3.5" /> 可用余额
+              <WalletCards className="h-3.5 w-3.5" /> {dt("可用余额")}
             </span>
             <button
               type="button"
               onClick={() => onNavigate("usage")}
               className="text-[9px] font-medium text-primary hover:underline"
             >
-              查看用量
+              {dt("查看用量")}
             </button>
           </div>
           <p className="mt-2 font-display text-2xl font-semibold tabular-nums">
-            {balance == null ? "--" : `余额 $${balance.toFixed(2)}`}
+            {balance == null
+              ? "--"
+              : dt("余额 ${{v0}}", { v0: balance.toFixed(2) })}
           </p>
         </section>
 
         <section className="mt-3 overflow-hidden rounded-2xl border bg-card shadow-sm">
           <header className="flex items-center gap-2 border-b px-4 py-3 text-[11px] font-semibold">
-            <CircleDollarSign className="h-4 w-4 text-primary" /> 今日速览
+            <CircleDollarSign className="h-4 w-4 text-primary" />{" "}
+            {dt("今日速览")}
           </header>
           <div className="grid grid-cols-2">
             {stats.map(({ label, value, icon: Icon }, index) => (
@@ -190,38 +200,38 @@ export function DesktopContextPanel({
 
         <section className="mt-3 rounded-2xl border bg-card p-4 shadow-sm">
           <div className="flex items-center justify-between">
-            <h3 className="text-[11px] font-semibold">连接状态</h3>
+            <h3 className="text-[11px] font-semibold">{dt("连接状态")}</h3>
             <button
               type="button"
               onClick={() => onNavigate("network")}
               className="text-[9px] text-primary hover:underline"
             >
-              管理
+              {dt("管理")}
             </button>
           </div>
           <div className="mt-3 space-y-3">
             <StatusRow
               icon={Network}
-              label="元衡服务"
-              value={connection?.connected ? "已连接" : "未连接"}
+              label={dt("元衡服务")}
+              value={connection?.connected ? dt("已连接") : dt("未连接")}
               active={Boolean(connection?.connected)}
             />
             <StatusRow
               icon={Route}
-              label="本地路由"
+              label={dt("本地路由")}
               value={
                 isRunning
                   ? status?.port
-                    ? `运行中 · ${status.port}`
-                    : "运行中"
-                  : "未启动"
+                    ? dt("运行中 · {{v0}}", { v0: status.port })
+                    : dt("运行中")
+                  : dt("未启动")
               }
               active={isRunning}
             />
             <StatusRow
               icon={Bot}
-              label="应用接管"
-              value={isTakeoverActive ? "已启用" : "未启用"}
+              label={dt("应用接管")}
+              value={isTakeoverActive ? dt("已启用") : dt("未启用")}
               active={Boolean(isTakeoverActive)}
             />
           </div>
@@ -230,12 +240,12 @@ export function DesktopContextPanel({
         <section className="mt-3 grid grid-cols-2 gap-2">
           <QuickLink
             icon={Activity}
-            label="用量"
+            label={dt("用量")}
             onClick={() => onNavigate("usage")}
           />
           <QuickLink
             icon={Settings}
-            label="设置"
+            label={dt("设置")}
             onClick={() => onNavigate("settings")}
           />
         </section>

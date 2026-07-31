@@ -27,6 +27,7 @@ import {
 } from "@/components/ui/command";
 import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
 import type { DesktopView } from "./types";
+import { dt } from "./desktopI18n";
 
 interface GlobalCommandPaletteProps {
   open: boolean;
@@ -91,7 +92,7 @@ export function GlobalCommandPalette({
     onOpenChange(false);
     void Promise.resolve(action()).catch((error) => {
       console.error("[GlobalCommandPalette] Command failed", error);
-      toast.error("操作失败，请稍后重试");
+      toast.error(dt("操作失败，请稍后重试"));
     });
   };
 
@@ -102,40 +103,44 @@ export function GlobalCommandPalette({
         closeOnInteractOutside
         className="max-w-[620px] overflow-hidden rounded-2xl p-0"
       >
-        <DialogTitle className="sr-only">快捷操作</DialogTitle>
+        <DialogTitle className="sr-only">{dt("快捷操作")}</DialogTitle>
         <Command className="rounded-none">
           <CommandInput
             autoFocus
             className="h-12"
-            placeholder="搜索页面、工具或操作..."
+            placeholder={dt("搜索页面、工具或操作...")}
           />
           <CommandList className="max-h-[430px] p-2">
-            <CommandEmpty>没有找到匹配的操作</CommandEmpty>
-            <CommandGroup heading="页面导航">
+            <CommandEmpty>{dt("没有找到匹配的操作")}</CommandEmpty>
+            <CommandGroup heading={dt("页面导航")}>
               {pages.map(({ view, label, description, icon: Icon }) => (
                 <CommandItem
                   key={view}
-                  value={`${label} ${description}`}
+                  value={`${dt(label)} ${dt(description)}`}
                   onSelect={() => run(() => onNavigate(view))}
                   className="rounded-lg px-3 py-2.5"
                 >
                   <Icon className="text-muted-foreground" />
                   <span className="flex-1">
-                    <span className="block text-xs font-medium">{label}</span>
+                    <span className="block text-xs font-medium">
+                      {dt(label)}
+                    </span>
                     <span className="block text-[10px] text-muted-foreground">
-                      {description}
+                      {dt(description)}
                     </span>
                   </span>
                 </CommandItem>
               ))}
             </CommandGroup>
-            <CommandGroup heading="切换当前工具">
+            <CommandGroup heading={dt("切换当前工具")}>
               {(Object.keys(APP_ICON_MAP) as AppId[])
                 .filter((app) => visibleApps[app] !== false)
                 .map((app) => (
                   <CommandItem
                     key={app}
-                    value={`切换工具 ${APP_ICON_MAP[app].label}`}
+                    value={dt("切换工具 {{v0}}", {
+                      v0: APP_ICON_MAP[app].label,
+                    })}
                     onSelect={() => run(() => onSetActiveApp(app))}
                     className="rounded-lg px-3 py-2.5"
                   >
@@ -149,43 +154,43 @@ export function GlobalCommandPalette({
                     </span>
                     {activeApp === app && (
                       <span className="text-[10px] font-medium text-primary">
-                        当前
+                        {dt("当前")}
                       </span>
                     )}
                   </CommandItem>
                 ))}
             </CommandGroup>
-            <CommandGroup heading="快捷操作">
+            <CommandGroup heading={dt("快捷操作")}>
               <CommandItem
-                value="充值 余额 topup"
+                value={dt("充值 余额 topup")}
                 onSelect={() => run(openTopup)}
                 className="rounded-lg px-3 py-2.5"
               >
                 <CreditCard />
-                <span className="text-xs">充值账户余额</span>
+                <span className="text-xs">{dt("充值账户余额")}</span>
               </CommandItem>
               <CommandItem
-                value="官网 website"
+                value={dt("官网 website")}
                 onSelect={() =>
                   run(() => settingsApi.openExternal(YUANHENG_WEBSITE_URL))
                 }
                 className="rounded-lg px-3 py-2.5"
               >
                 <Globe />
-                <span className="text-xs">访问元衡官网</span>
+                <span className="text-xs">{dt("访问元衡官网")}</span>
               </CommandItem>
               <CommandItem
-                value="检查更新 update"
+                value={dt("检查更新 update")}
                 onSelect={() => run(() => settingsApi.checkUpdates())}
                 className="rounded-lg px-3 py-2.5"
               >
                 <RefreshCw />
-                <span className="text-xs">检查客户端更新</span>
+                <span className="text-xs">{dt("检查客户端更新")}</span>
               </CommandItem>
             </CommandGroup>
           </CommandList>
           <div className="flex items-center justify-between border-t bg-muted/20 px-4 py-2 text-[10px] text-muted-foreground">
-            <span>↑↓ 选择 · Enter 执行 · Esc 关闭</span>
+            <span>{dt("↑↓ 选择 · Enter 执行 · Esc 关闭")}</span>
             <kbd className="rounded border bg-background px-1.5 py-0.5 font-mono">
               ⌘K
             </kbd>

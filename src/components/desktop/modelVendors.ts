@@ -1,3 +1,4 @@
+import { dt } from "./desktopI18n";
 export interface ModelVendorGroup {
   id: string;
   label: string;
@@ -318,17 +319,17 @@ export function modelVendorOf(model: string): Omit<ModelVendorGroup, "models"> {
   for (const segment of segments) {
     const vendor = VENDOR_BY_ALIAS.get(segment);
     if (vendor) {
-      return { id: vendor.id, label: vendor.label, icon: vendor.icon };
+      return { id: vendor.id, label: dt(vendor.label), icon: vendor.icon };
     }
   }
 
   for (const vendor of MODEL_VENDOR_DEFINITIONS) {
     if (vendor.patterns.some((pattern) => pattern.test(modelName))) {
-      return { id: vendor.id, label: vendor.label, icon: vendor.icon };
+      return { id: vendor.id, label: dt(vendor.label), icon: vendor.icon };
     }
   }
 
-  return { id: "other", label: "其他模型", icon: "models" };
+  return { id: "other", label: dt("其他模型"), icon: "models" };
 }
 
 export function groupModelsByVendor(models: string[]): ModelVendorGroup[] {

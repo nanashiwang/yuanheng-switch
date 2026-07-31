@@ -17,6 +17,7 @@ import { APP_ICON_MAP } from "@/config/appConfig";
 import { Button } from "@/components/ui/button";
 import { PageHeader } from "./PageHeader";
 import type { DesktopView } from "./types";
+import { dt } from "./desktopI18n";
 
 interface CapabilityCenterProps {
   activeApp: AppId;
@@ -33,7 +34,7 @@ export function CapabilityCenter({ activeApp, onOpen }: CapabilityCenterProps) {
   const cards = [
     {
       title: "Skills",
-      description: "给 AI 工具安装可复用的专业能力",
+      description: dt("给 AI 工具安装可复用的专业能力"),
       value: skills.length,
       icon: Wrench,
       color: "bg-[#d69554]/10 text-[#bd7736]",
@@ -41,7 +42,7 @@ export function CapabilityCenter({ activeApp, onOpen }: CapabilityCenterProps) {
     },
     {
       title: "MCP",
-      description: "连接文件、数据库和外部服务",
+      description: dt("连接文件、数据库和外部服务"),
       value: Object.keys(mcpServers).length,
       icon: Boxes,
       color: "bg-emerald-500/10 text-emerald-600",
@@ -49,7 +50,7 @@ export function CapabilityCenter({ activeApp, onOpen }: CapabilityCenterProps) {
     },
     {
       title: "Prompts",
-      description: "按工具维护系统提示词和指令",
+      description: dt("按工具维护系统提示词和指令"),
       value: Object.keys(prompts).length,
       icon: BookOpenText,
       color: "bg-sky-500/10 text-sky-600",
@@ -57,7 +58,7 @@ export function CapabilityCenter({ activeApp, onOpen }: CapabilityCenterProps) {
     },
     {
       title: "Agents",
-      description: "自治代理编排能力仍在建设中",
+      description: dt("自治代理编排能力仍在建设中"),
       value: 0,
       icon: Bot,
       color: "bg-slate-500/10 text-slate-500",
@@ -69,15 +70,18 @@ export function CapabilityCenter({ activeApp, onOpen }: CapabilityCenterProps) {
     <div className="mx-auto flex h-full w-full max-w-[1120px] flex-col overflow-hidden px-7 pt-6">
       <PageHeader
         eyebrow="Capability Center"
-        title="能力中心"
-        description={`统一管理 ${APP_ICON_MAP[activeApp].label} 的 Skills、MCP、提示词与 Agent 能力。`}
+        title={dt("能力中心")}
+        description={dt(
+          "统一管理 {{v0}} 的 Skills、MCP、提示词与 Agent 能力。",
+          { v0: APP_ICON_MAP[activeApp].label },
+        )}
         actions={
           <Button
             variant="outline"
             size="sm"
             onClick={() => onOpen("skillsDiscovery")}
           >
-            <Compass className="h-4 w-4" /> 发现能力
+            <Compass className="h-4 w-4" /> {dt("发现能力")}
           </Button>
         }
       />
@@ -91,11 +95,12 @@ export function CapabilityCenter({ activeApp, onOpen }: CapabilityCenterProps) {
             </span>
             <div className="min-w-0 flex-1">
               <h2 className="font-display text-base font-semibold">
-                全局能力配置
+                {dt("全局能力配置")}
               </h2>
               <p className="mt-1 text-[11px] text-muted-foreground">
-                当前管理 {APP_ICON_MAP[activeApp].label}
-                ，启用状态直接同步到对应工具。
+                {dt("当前管理")}
+                {APP_ICON_MAP[activeApp].label}
+                {dt("，启用状态直接同步到对应工具。")}
               </p>
             </div>
             <span className="rounded-full bg-primary/10 px-3 py-1 text-[10px] font-semibold text-primary">
@@ -133,7 +138,7 @@ export function CapabilityCenter({ activeApp, onOpen }: CapabilityCenterProps) {
               </div>
               <div className="mt-5 rounded-lg bg-muted/55 px-3 py-2">
                 <p className="text-[9px] uppercase tracking-wider text-muted-foreground">
-                  已配置
+                  {dt("已配置")}
                 </p>
                 <p className="mt-0.5 font-display text-lg font-semibold">
                   {card.value}
@@ -150,7 +155,7 @@ export function CapabilityCenter({ activeApp, onOpen }: CapabilityCenterProps) {
         >
           <PackageCheck className="h-4 w-4 text-primary" />
           <span className="flex-1 text-[11px] text-muted-foreground">
-            从技能仓库发现并安装新能力；安装后可按工具启用。
+            {dt("从技能仓库发现并安装新能力；安装后可按工具启用。")}
           </span>
           <ArrowRight className="h-3.5 w-3.5 text-muted-foreground" />
         </button>

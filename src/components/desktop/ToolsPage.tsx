@@ -1,5 +1,6 @@
 import type { AppId } from "@/lib/api";
 import { PageHeader } from "./PageHeader";
+import { dt } from "./desktopI18n";
 import { ToolSetupGrid } from "./ToolSetupGrid";
 
 interface ToolsPageProps {
@@ -17,8 +18,10 @@ export function ToolsPage({
     <div className="mx-auto flex h-full w-full max-w-[1120px] flex-col overflow-hidden px-7 pt-6">
       <PageHeader
         eyebrow="Install & Maintenance"
-        title="工具管理"
-        description="安装、检测和修复本机 AI 工具；日常模型切换请在工作台完成。"
+        title={dt("工具管理")}
+        description={dt(
+          "安装、检测和修复本机 AI 工具；日常模型切换请在工作台完成。",
+        )}
       />
       <div className="min-h-0 flex-1 overflow-y-auto pb-8">
         <ToolSetupGrid

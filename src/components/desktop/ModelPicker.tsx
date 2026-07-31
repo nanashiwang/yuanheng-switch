@@ -15,6 +15,7 @@ import {
 } from "@/components/ui/popover";
 import { cn } from "@/lib/utils";
 import { sortModelNames } from "./modelVendors";
+import { dt } from "./desktopI18n";
 
 export function ModelPicker({
   models,
@@ -66,7 +67,7 @@ export function ModelPicker({
           onClick={(event) => event.stopPropagation()}
         >
           <span className="truncate">
-            {triggerLabel ?? (value || "选择模型")}
+            {triggerLabel ?? (value || dt("选择模型"))}
           </span>
           <ChevronsUpDown className="h-3.5 w-3.5 shrink-0 opacity-50" />
         </button>
@@ -78,11 +79,13 @@ export function ModelPicker({
         onClick={(event) => event.stopPropagation()}
       >
         <Command>
-          <CommandInput placeholder="搜索网站可用模型..." />
+          <CommandInput placeholder={dt("搜索网站可用模型...")} />
           <CommandList className="max-h-[320px]">
-            <CommandEmpty>没有找到匹配的模型</CommandEmpty>
+            <CommandEmpty>{dt("没有找到匹配的模型")}</CommandEmpty>
             <CommandGroup
-              heading={`当前/推荐优先 · 新版本在前 · 共 ${orderedModels.length} 个`}
+              heading={dt("当前/推荐优先 · 新版本在前 · 共 {{count}} 个", {
+                count: orderedModels.length,
+              })}
             >
               {orderedModels.map((model) => (
                 <CommandItem
@@ -102,12 +105,12 @@ export function ModelPicker({
                   <span className="min-w-0 flex-1 truncate">{model}</span>
                   {model === value && (
                     <span className="shrink-0 text-[9px] font-medium text-primary">
-                      当前
+                      {dt("当前")}
                     </span>
                   )}
                   {model === recommended && (
                     <span className="shrink-0 text-[9px] text-emerald-600">
-                      推荐
+                      {dt("推荐")}
                     </span>
                   )}
                 </CommandItem>

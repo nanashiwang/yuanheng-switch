@@ -16,6 +16,7 @@ import {
   providerIconOf,
   type ModelSwitchCenterState,
 } from "./useModelSwitchCenter";
+import { dt } from "./desktopI18n";
 
 const controlsReasoning = (app: YuanhengToolId) =>
   app === "claude-desktop" || app === "codex" || app === "chatgpt-desktop";
@@ -39,6 +40,7 @@ export function ModelSwitchCenter({
     groups,
     reasoning,
     pendingApps,
+    restartRequiredApps,
     statusMap,
     codexBridge,
     refreshModels,
@@ -55,9 +57,11 @@ export function ModelSwitchCenter({
     return (
       <section className="flex min-h-40 flex-col items-center justify-center gap-2 rounded-2xl border bg-card p-6 text-center shadow-sm">
         <Settings2 className="h-5 w-5 text-muted-foreground" />
-        <p className="text-[13px] font-medium">连接元衡后即可在此切换模型</p>
+        <p className="text-[13px] font-medium">
+          {dt("连接元衡后即可在此切换模型")}
+        </p>
         <p className="text-[11px] text-muted-foreground">
-          模型目录与可用分组来自你的元衡账号。
+          {dt("模型目录与可用分组来自你的元衡账号。")}
         </p>
       </section>
     );
@@ -67,14 +71,16 @@ export function ModelSwitchCenter({
     return (
       <section
         className="flex min-h-40 flex-col rounded-2xl border bg-card p-4 shadow-sm"
-        aria-label="正在检测本机工具"
+        aria-label={dt("正在检测本机工具")}
         aria-busy="true"
       >
         <div className="flex items-center justify-between px-1 pb-3">
           <div>
-            <h2 className="font-display text-base font-semibold">快捷控制台</h2>
+            <h2 className="font-display text-base font-semibold">
+              {dt("快捷控制台")}
+            </h2>
             <p className="mt-0.5 text-[11px] text-muted-foreground">
-              正在读取本机工具与配置状态
+              {dt("正在读取本机工具与配置状态")}
             </p>
           </div>
           <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
@@ -108,9 +114,9 @@ export function ModelSwitchCenter({
     return (
       <section className="flex min-h-40 flex-col items-center justify-center gap-2 rounded-2xl border bg-card p-6 text-center shadow-sm">
         <AlertTriangle className="h-5 w-5 text-amber-500" />
-        <p className="text-[13px] font-medium">本机工具检测失败</p>
+        <p className="text-[13px] font-medium">{dt("本机工具检测失败")}</p>
         <p className="text-[11px] text-muted-foreground">
-          检测失败不会再显示成“未安装”，请重新检测。
+          {dt("检测失败不会再显示成“未安装”，请重新检测。")}
         </p>
         <Button
           variant="outline"
@@ -119,7 +125,7 @@ export function ModelSwitchCenter({
           onClick={() => void retryBootstrap()}
         >
           <RefreshCw className="h-3.5 w-3.5" />
-          重新检测
+          {dt("重新检测")}
         </Button>
       </section>
     );
@@ -129,29 +135,32 @@ export function ModelSwitchCenter({
     <section className="flex flex-col rounded-2xl border bg-card p-4 shadow-sm">
       <div className="flex items-center justify-between px-1 pb-3">
         <div>
-          <h2 className="font-display text-base font-semibold">快捷控制台</h2>
+          <h2 className="font-display text-base font-semibold">
+            {dt("快捷控制台")}
+          </h2>
           <p className="mt-0.5 text-[11px] text-muted-foreground">
-            直接调整模型、令牌分组和推理等级
+            {dt("直接调整模型、令牌分组和推理等级")}
           </p>
         </div>
         {bootstrapRefreshing && (
           <Loader2
             className="ml-auto h-3.5 w-3.5 animate-spin text-muted-foreground"
-            aria-label="正在核验工具状态"
+            aria-label={dt("正在核验工具状态")}
           />
         )}
         <Button variant="ghost" size="sm" onClick={onOpenTools}>
-          安装与维护 <ArrowRight className="h-3.5 w-3.5" />
+          {dt("安装与维护")}
+          <ArrowRight className="h-3.5 w-3.5" />
         </Button>
       </div>
 
       {bootstrapPhase === "empty" || rows.length === 0 ? (
         <div className="flex min-h-32 flex-col items-center justify-center gap-3 rounded-xl border border-dashed text-center">
           <p className="text-[12px] text-muted-foreground">
-            未检测到已安装的 AI 工具
+            {dt("未检测到已安装的 AI 工具")}
           </p>
           <Button variant="outline" size="sm" onClick={onOpenTools}>
-            去安装与配置
+            {dt("去安装与配置")}
           </Button>
         </div>
       ) : (
@@ -194,16 +203,23 @@ export function ModelSwitchCenter({
                 : "auto";
             const showReasoning =
               controlsReasoning(app) && supportedReasoning.length > 0;
+            const restartRequired = restartRequiredApps.has(app);
             const codexStatus = (() => {
               if (app !== "codex" || !codexBridge.data?.connectedTerminals)
                 return null;
               if (codexBridge.data.pendingTerminals > 0) {
-                return `待 ${codexBridge.data.pendingTerminals} 个终端下一条消息应用`;
+                return dt("待 {{v0}} 个终端下一条消息应用", {
+                  v0: codexBridge.data.pendingTerminals,
+                });
               }
               if (codexBridge.data.appliedTerminals > 0) {
-                return `已应用 ${codexBridge.data.model ?? models.codex}`;
+                return dt("已应用 {{v0}}", {
+                  v0: codexBridge.data.model ?? models.codex,
+                });
               }
-              return `已连接 ${codexBridge.data.connectedTerminals} 个终端`;
+              return dt("已连接 {{v0}} 个终端", {
+                v0: codexBridge.data.connectedTerminals,
+              });
             })();
             return (
               <div key={app} className="rounded-xl border bg-background/60 p-3">
@@ -227,11 +243,13 @@ export function ModelSwitchCenter({
                         <>
                           <CheckCircle2 className="h-3 w-3 shrink-0 text-emerald-500" />
                           <span className="truncate">
-                            {codexStatus ?? "配置已生效"}
+                            {restartRequired
+                              ? dt("需要重启以加载模型目录")
+                              : (codexStatus ?? dt("配置已生效"))}
                           </span>
                         </>
                       ) : (
-                        "待配置"
+                        dt("待配置")
                       )}
                     </p>
                   </div>
@@ -240,8 +258,16 @@ export function ModelSwitchCenter({
                     size="sm"
                     className="h-8 shrink-0 px-3 text-[11px]"
                     disabled={pending}
-                    aria-label={`启动 ${toolLabel(app)}`}
-                    title={`启动 ${toolLabel(app)}`}
+                    aria-label={
+                      restartRequired
+                        ? dt("重启并应用 {{v0}}", { v0: toolLabel(app) })
+                        : dt("启动 {{v0}}", { v0: toolLabel(app) })
+                    }
+                    title={
+                      restartRequired
+                        ? dt("重启并应用 {{v0}}", { v0: toolLabel(app) })
+                        : dt("启动 {{v0}}", { v0: toolLabel(app) })
+                    }
                     onClick={() => void launch(app)}
                   >
                     {pending ? (
@@ -249,20 +275,20 @@ export function ModelSwitchCenter({
                     ) : (
                       <Play className="h-3.5 w-3.5 fill-current" />
                     )}
-                    启动
+                    {restartRequired ? dt("重启并应用") : dt("启动")}
                   </Button>
                 </div>
 
                 <div className="mt-2.5 grid gap-2 sm:grid-cols-[minmax(0,1.55fr)_minmax(92px,.8fr)_minmax(92px,.8fr)]">
                   <label className="min-w-0">
                     <span className="mb-1 block text-[9px] font-medium text-muted-foreground">
-                      模型
+                      {dt("模型")}
                     </span>
                     <ModelPicker
                       models={connection.models}
                       value={selectedModel}
                       recommended={status?.recommendedModel}
-                      label={`${toolLabel(app)} 模型选择`}
+                      label={dt("{{v0}} 模型选择", { v0: toolLabel(app) })}
                       disabled={pending}
                       className="mt-0 h-8"
                       onRefresh={refreshModels}
@@ -272,10 +298,12 @@ export function ModelSwitchCenter({
 
                   <label className="min-w-0">
                     <span className="mb-1 block text-[9px] font-medium text-muted-foreground">
-                      令牌分组
+                      {dt("令牌分组")}
                     </span>
                     <select
-                      aria-label={`${toolLabel(app)} 快捷令牌分组`}
+                      aria-label={dt("{{v0}} 快捷令牌分组", {
+                        v0: toolLabel(app),
+                      })}
                       className="h-8 w-full min-w-0 rounded-md border bg-background px-2 text-[10px] shadow-sm disabled:cursor-not-allowed disabled:opacity-60"
                       value={selectedGroup ?? ""}
                       disabled={pending || availableGroups.length <= 1}
@@ -284,7 +312,7 @@ export function ModelSwitchCenter({
                       }
                     >
                       {availableGroups.length === 0 && (
-                        <option value="">账号默认</option>
+                        <option value="">{dt("账号默认")}</option>
                       )}
                       {availableGroups.map((group) => {
                         const option = groupMap.get(group);
@@ -300,10 +328,12 @@ export function ModelSwitchCenter({
 
                   <label className="min-w-0">
                     <span className="mb-1 block text-[9px] font-medium text-muted-foreground">
-                      推理等级
+                      {dt("推理等级")}
                     </span>
                     <select
-                      aria-label={`${toolLabel(app)} 快捷推理等级`}
+                      aria-label={dt("{{v0}} 快捷推理等级", {
+                        v0: toolLabel(app),
+                      })}
                       className="h-8 w-full min-w-0 rounded-md border bg-background px-2 text-[10px] shadow-sm disabled:cursor-not-allowed disabled:opacity-60"
                       value={showReasoning ? selectedReasoning : "unsupported"}
                       disabled={pending || !showReasoning}
@@ -315,7 +345,7 @@ export function ModelSwitchCenter({
                       }
                     >
                       {!showReasoning ? (
-                        <option value="unsupported">不适用</option>
+                        <option value="unsupported">{dt("不适用")}</option>
                       ) : (
                         reasoningOptions.map((level) => (
                           <option key={level} value={level}>
