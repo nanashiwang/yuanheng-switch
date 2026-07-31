@@ -4,10 +4,13 @@ import { YuanhengConnectionPanel } from "./YuanhengConnectionPanel";
 import { PageHeader } from "./PageHeader";
 import { ProxyTabContent } from "@/components/settings/ProxyTabContent";
 import { useSettings, type SettingsFormState } from "@/hooks/useSettings";
+import { useYuanhengConnection } from "@/lib/query/yuanheng";
+import { ConnectionSummaryGrid } from "./ConnectionSummaryGrid";
 
 export function ConnectionCenter() {
   const { settings, isLoading, updateSettings, autoSaveSettings } =
     useSettings();
+  const { data: connection } = useYuanhengConnection();
 
   const handleAutoSave = async (updates: Partial<SettingsFormState>) => {
     if (!settings) return false;
@@ -22,7 +25,7 @@ export function ConnectionCenter() {
   };
 
   return (
-    <div className="mx-auto flex h-full w-full max-w-[1120px] flex-col overflow-hidden px-7 pt-6">
+    <div className="desktop-page mx-auto flex h-full w-full max-w-[1120px] flex-col overflow-hidden px-7 pt-6">
       <PageHeader
         eyebrow="Connection & Routing"
         title="连接与路由"
@@ -31,7 +34,16 @@ export function ConnectionCenter() {
       <div className="mx-auto min-h-0 w-full max-w-[880px] flex-1 overflow-y-auto pb-8">
         <YuanhengConnectionPanel />
 
-        <div className="mb-4 mt-6 flex items-start gap-3">
+        {settings && (
+          <div className="mt-5">
+            <ConnectionSummaryGrid
+              connection={connection}
+              settings={settings}
+            />
+          </div>
+        )}
+
+        <div className="mb-4 mt-2 flex items-start gap-3">
           <span className="flex h-9 w-9 items-center justify-center rounded-xl bg-primary/10 text-primary">
             <Route className="h-4 w-4" />
           </span>

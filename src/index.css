@@ -274,3 +274,28 @@ input[type="password"]::-ms-clear {
     flex: 1 1 0%;
   }
 }
+
+/* Desktop density preference: compact keeps controls readable while reducing page chrome. */
+html[data-ui-density="compact"] .desktop-page {
+  padding-left: 1.25rem;
+  padding-right: 1.25rem;
+  padding-top: 1rem;
+}
+
+html[data-ui-density="compact"] .desktop-stack {
+  gap: 0.75rem;
+}
+
+.settings-section-content > .settings-row,
+.settings-section-content > section,
+.settings-section-content > div {
+  padding-top: 1rem;
+  padding-bottom: 1rem;
+}
+
+html[data-ui-density="compact"] .settings-section-content > .settings-row,
+html[data-ui-density="compact"] .settings-section-content > section,
+html[data-ui-density="compact"] .settings-section-content > div {
+  padding-top: 0.75rem;
+  padding-bottom: 0.75rem;
+}

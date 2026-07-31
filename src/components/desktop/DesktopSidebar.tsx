@@ -77,16 +77,21 @@ export function DesktopSidebar({
         type="button"
         onClick={() => onNavigate(id)}
         className={cn(
-          "group flex h-9 w-full items-center gap-2.5 rounded-lg px-3 text-left text-[13px] font-medium transition-colors",
+          "group relative flex h-9 w-full items-center gap-2.5 rounded-lg px-3 text-left text-[13px] font-medium transition-colors",
           selected
-            ? "bg-white text-slate-950 shadow-sm"
+            ? "bg-white/[0.095] text-white shadow-[inset_0_0_0_1px_rgba(255,255,255,0.035)]"
             : "text-slate-400 hover:bg-white/[0.07] hover:text-white",
         )}
         aria-current={selected ? "page" : undefined}
       >
-        <Icon className="h-4 w-4 shrink-0" strokeWidth={1.8} />
+        {selected && (
+          <span className="absolute bottom-2.5 left-0 top-2.5 w-0.5 rounded-full bg-[#d69554]" />
+        )}
+        <Icon
+          className={cn("h-4 w-4 shrink-0", selected && "text-[#e3aa70]")}
+          strokeWidth={1.8}
+        />
         <span className="flex-1">{label}</span>
-        {selected && <ChevronRight className="h-3.5 w-3.5 text-slate-400" />}
       </button>
     );
   };

@@ -16,6 +16,9 @@ import {
   ScrollText,
   HardDriveDownload,
   FlaskConical,
+  MonitorCog,
+  PanelTop,
+  Workflow,
 } from "lucide-react";
 import { toast } from "sonner";
 import {
@@ -52,6 +55,8 @@ import { UsageDashboard } from "@/components/usage/UsageDashboard";
 import { LogConfigPanel } from "@/components/settings/LogConfigPanel";
 import { AuthCenterPanel } from "@/components/settings/AuthCenterPanel";
 import { CodexAuthSettings } from "@/components/settings/CodexAuthSettings";
+import { DensitySettings } from "@/components/settings/DensitySettings";
+import { SettingsSectionCard } from "@/components/settings/SettingsSectionCard";
 import { useInstalledSkills } from "@/hooks/useSkills";
 import { useSettings } from "@/hooks/useSettings";
 import { useImportExport } from "@/hooks/useImportExport";
@@ -214,7 +219,7 @@ export function SettingsPage({
   const isBusy = useMemo(() => isLoading && !settings, [isLoading, settings]);
 
   return (
-    <div className="mx-auto flex h-full w-full max-w-[1120px] flex-col overflow-hidden px-7 pt-6">
+    <div className="desktop-page mx-auto flex h-full w-full max-w-[1120px] flex-col overflow-hidden px-7 pt-6">
       <PageHeader
         eyebrow="Settings"
         title={t("settings.title", { defaultValue: "设置" })}
@@ -260,42 +265,63 @@ export function SettingsPage({
                     transition={{ duration: 0.3 }}
                     className="space-y-6"
                   >
-                    <LanguageSettings
-                      value={settings.language}
-                      onChange={(lang) => handleAutoSave({ language: lang })}
-                    />
-                    <ThemeSettings />
-                    <AppVisibilitySettings
-                      settings={settings}
-                      onChange={handleAutoSave}
-                    />
-                    <SkillStorageLocationSettings
-                      value={settings.skillStorageLocation ?? "cc_switch"}
-                      installedCount={installedSkills?.length ?? 0}
-                      onMigrated={(location) =>
-                        updateSettings({ skillStorageLocation: location })
-                      }
-                    />
-                    <SkillSyncMethodSettings
-                      value={settings.skillSyncMethod ?? "auto"}
-                      onChange={(method) =>
-                        handleAutoSave({ skillSyncMethod: method })
-                      }
-                    />
-                    <CodexAuthSettings
-                      settings={settings}
-                      onChange={handleAutoSave}
-                    />
-                    <WindowSettings
-                      settings={settings}
-                      onChange={handleAutoSave}
-                    />
-                    <TerminalSettings
-                      value={settings.preferredTerminal}
-                      onChange={(terminal) =>
-                        handleAutoSave({ preferredTerminal: terminal })
-                      }
-                    />
+                    <SettingsSectionCard
+                      title="外观与语言"
+                      description="统一管理界面语言、主题和内容密度。"
+                      icon={PanelTop}
+                    >
+                      <LanguageSettings
+                        value={settings.language}
+                        onChange={(lang) => handleAutoSave({ language: lang })}
+                      />
+                      <ThemeSettings />
+                      <DensitySettings />
+                    </SettingsSectionCard>
+
+                    <SettingsSectionCard
+                      title="工具与能力"
+                      description="控制可见应用、Skill 存储方式和 Codex 认证。"
+                      icon={Workflow}
+                    >
+                      <AppVisibilitySettings
+                        settings={settings}
+                        onChange={handleAutoSave}
+                      />
+                      <SkillStorageLocationSettings
+                        value={settings.skillStorageLocation ?? "cc_switch"}
+                        installedCount={installedSkills?.length ?? 0}
+                        onMigrated={(location) =>
+                          updateSettings({ skillStorageLocation: location })
+                        }
+                      />
+                      <SkillSyncMethodSettings
+                        value={settings.skillSyncMethod ?? "auto"}
+                        onChange={(method) =>
+                          handleAutoSave({ skillSyncMethod: method })
+                        }
+                      />
+                      <CodexAuthSettings
+                        settings={settings}
+                        onChange={handleAutoSave}
+                      />
+                    </SettingsSectionCard>
+
+                    <SettingsSectionCard
+                      title="桌面体验"
+                      description="设置窗口行为与首选终端。"
+                      icon={MonitorCog}
+                    >
+                      <WindowSettings
+                        settings={settings}
+                        onChange={handleAutoSave}
+                      />
+                      <TerminalSettings
+                        value={settings.preferredTerminal}
+                        onChange={(terminal) =>
+                          handleAutoSave({ preferredTerminal: terminal })
+                        }
+                      />
+                    </SettingsSectionCard>
                   </motion.div>
                 ) : null}
               </TabsContent>

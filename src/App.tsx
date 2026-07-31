@@ -16,6 +16,7 @@ import {
   Minus,
   Plus,
   Search,
+  PanelRight,
   Settings,
   X,
 } from "lucide-react";
@@ -38,6 +39,7 @@ import {
 import { useTauriEvent } from "@/hooks/useTauriEvent";
 import { useUsageCacheBridge } from "@/hooks/useUsageCacheBridge";
 import { useProxyStatus } from "@/hooks/useProxyStatus";
+import { useUiDensity } from "@/hooks/useUiDensity";
 import { useScanUnmanagedSkills } from "@/hooks/useSkills";
 import { cn } from "@/lib/utils";
 
@@ -70,6 +72,9 @@ import AgentsDefaultsPanel from "@/components/openclaw/AgentsDefaultsPanel";
 import HermesMemoryPanel from "@/components/hermes/HermesMemoryPanel";
 
 import { DesktopSidebar } from "@/components/desktop/DesktopSidebar";
+import { DesktopContextPanel } from "@/components/desktop/DesktopContextPanel";
+import { ContextPanelDialog } from "@/components/desktop/ContextPanelDialog";
+import { GlobalCommandPalette } from "@/components/desktop/GlobalCommandPalette";
 import { WorkspaceDashboard } from "@/components/desktop/WorkspaceDashboard";
 import { ToolsPage } from "@/components/desktop/ToolsPage";
 import { CapabilityCenter } from "@/components/desktop/CapabilityCenter";
@@ -215,6 +220,8 @@ function App() {
   const [envConflicts, setEnvConflicts] = useState<EnvConflict[]>([]);
   const [showEnvBanner, setShowEnvBanner] = useState(false);
   const [isWindowMaximized, setIsWindowMaximized] = useState(false);
+  const [commandPaletteOpen, setCommandPaletteOpen] = useState(false);
+  const [contextPanelOpen, setContextPanelOpen] = useState(false);
 
   const promptPanelRef = useRef<any>(null);
   const mcpPanelRef = useRef<any>(null);
@@ -229,6 +236,7 @@ function App() {
   const { isRunning: isProxyRunning } = useProxyStatus();
 
   useUsageCacheBridge();
+  useUiDensity();
 
   const visibleApps: VisibleApps = settingsData?.visibleApps ?? {
     claude: true,
@@ -344,6 +352,11 @@ function App() {
 
   useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key.toLowerCase() === "k" && (event.metaKey || event.ctrlKey)) {
+        event.preventDefault();
+        setCommandPaletteOpen((current) => !current);
+        return;
+      }
       if (event.key === "," && (event.metaKey || event.ctrlKey)) {
         event.preventDefault();
         navigate("settings");
@@ -767,6 +780,28 @@ function App() {
                     )}
                   </DropdownMenuContent>
                 </DropdownMenu>
+                <button
+                  type="button"
+                  onClick={() => setCommandPaletteOpen(true)}
+                  className="hidden h-8 items-center gap-2 rounded-lg border bg-background px-2.5 text-[10px] text-muted-foreground shadow-sm transition-colors hover:bg-muted hover:text-foreground md:flex"
+                  title="快捷操作 (⌘K)"
+                >
+                  <Search className="h-3.5 w-3.5" />
+                  <span>快捷操作</span>
+                  <kbd className="rounded border bg-muted/70 px-1 py-0.5 font-mono text-[9px]">
+                    ⌘K
+                  </kbd>
+                </button>
+                <Button
+                  variant="outline"
+                  size="icon"
+                  onClick={() => setContextPanelOpen(true)}
+                  className="min-[1320px]:hidden"
+                  title="当前状态"
+                  aria-label="打开当前状态面板"
+                >
+                  <PanelRight className="h-4 w-4" />
+                </Button>
                 <LanguageSwitcher />
                 <ModeToggle />
                 <Button
@@ -804,8 +839,30 @@ function App() {
               {renderContent()}
             </main>
           </section>
+          <DesktopContextPanel
+            activeApp={activeApp}
+            connection={yuanhengConnection}
+            onNavigate={navigate}
+            className="hidden min-[1320px]:flex"
+          />
         </div>
       )}
+
+      <GlobalCommandPalette
+        open={commandPaletteOpen}
+        onOpenChange={setCommandPaletteOpen}
+        activeApp={activeApp}
+        visibleApps={visibleApps}
+        onNavigate={navigate}
+        onSetActiveApp={persistActiveApp}
+      />
+      <ContextPanelDialog
+        open={contextPanelOpen}
+        onOpenChange={setContextPanelOpen}
+        activeApp={activeApp}
+        connection={yuanhengConnection}
+        onNavigate={navigate}
+      />
 
       {yuanhengConnection?.connected && (
         <>
