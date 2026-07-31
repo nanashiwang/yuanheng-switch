@@ -16,6 +16,9 @@ export { yuanhengApi } from "./yuanheng";
 export type {
   YuanhengConnectionStatus,
   YuanhengAccount,
+  YuanhengAnnouncement,
+  YuanhengAnnouncementFeed,
+  YuanhengAnnouncementType,
   YuanhengToolStatus,
   YuanhengToolConfigureResult,
   YuanhengDiagnosticCheck,

@@ -25,6 +25,7 @@ import {
   upsertMcpServer,
   deleteMcpServer,
   configureYuanhengTools,
+  getYuanhengAnnouncements,
   getYuanhengConnection,
   getYuanhengToolStatuses,
   recordToolLaunch,
@@ -73,6 +74,9 @@ export const handlers = [
   ),
   http.post(`${TAURI_ENDPOINT}/get_yuanheng_announcement`, () =>
     success(getYuanhengConnection().announcement),
+  ),
+  http.post(`${TAURI_ENDPOINT}/get_yuanheng_announcements`, () =>
+    success(getYuanhengAnnouncements()),
   ),
   http.post(`${TAURI_ENDPOINT}/get_codex_session_bridge_status`, () =>
     success({

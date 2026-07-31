@@ -17,6 +17,27 @@ export interface YuanhengGroupOption {
   ratio: number | null;
 }
 
+export type YuanhengAnnouncementType =
+  | "default"
+  | "ongoing"
+  | "success"
+  | "warning"
+  | "error";
+
+export interface YuanhengAnnouncement {
+  id: string;
+  content: string;
+  extra: string | null;
+  publishDate: string;
+  type: YuanhengAnnouncementType;
+}
+
+export interface YuanhengAnnouncementFeed {
+  enabled: boolean;
+  announcements: YuanhengAnnouncement[];
+  source: "platform" | "legacy";
+}
+
 export interface YuanhengConnectionStatus {
   connected: boolean;
   baseUrl: string;
@@ -125,6 +146,10 @@ export const yuanhengApi = {
 
   getAnnouncement(): Promise<string | null> {
     return invoke("get_yuanheng_announcement");
+  },
+
+  getAnnouncements(): Promise<YuanhengAnnouncementFeed> {
+    return invoke("get_yuanheng_announcements");
   },
 
   login(username: string, password: string): Promise<YuanhengAuthResult> {

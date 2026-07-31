@@ -1,5 +1,6 @@
 import type { AppId } from "@/lib/api/types";
 import type {
+  YuanhengAnnouncementFeed,
   YuanhengConnectionStatus,
   YuanhengReasoningLevel,
   YuanhengToolId,
@@ -243,6 +244,11 @@ const emptyToolStatuses = (): YuanhengToolStatus[] =>
   }));
 
 let yuanhengConnectionState = disconnectedYuanheng();
+let yuanhengAnnouncementFeed: YuanhengAnnouncementFeed = {
+  enabled: false,
+  announcements: [],
+  source: "platform",
+};
 let yuanhengToolStatuses = emptyToolStatuses();
 let configuredToolCalls: YuanhengToolId[][] = [];
 let configuredToolGroupCalls: Partial<Record<YuanhengToolId, string>>[] = [];
@@ -321,6 +327,11 @@ export const resetProviderState = () => {
     hermes: {},
   };
   yuanhengConnectionState = disconnectedYuanheng();
+  yuanhengAnnouncementFeed = {
+    enabled: false,
+    announcements: [],
+    source: "platform",
+  };
   yuanhengToolStatuses = emptyToolStatuses();
   configuredToolCalls = [];
   configuredToolGroupCalls = [];
@@ -332,10 +343,34 @@ export const resetProviderState = () => {
 export const getYuanhengConnection = () =>
   deepClone(yuanhengConnectionState) as YuanhengConnectionStatus;
 
+export const getYuanhengAnnouncements = () =>
+  deepClone(yuanhengAnnouncementFeed) as YuanhengAnnouncementFeed;
+
+export const setYuanhengAnnouncements = (feed: YuanhengAnnouncementFeed) => {
+  yuanhengAnnouncementFeed = deepClone(feed) as YuanhengAnnouncementFeed;
+};
+
 export const setYuanhengConnection = (
   status: Partial<YuanhengConnectionStatus>,
 ) => {
   yuanhengConnectionState = { ...disconnectedYuanheng(), ...status };
+  if (Object.prototype.hasOwnProperty.call(status, "announcement")) {
+    yuanhengAnnouncementFeed = status.announcement
+      ? {
+          enabled: true,
+          announcements: [
+            {
+              id: "legacy",
+              content: status.announcement,
+              extra: null,
+              publishDate: "",
+              type: "default",
+            },
+          ],
+          source: "legacy",
+        }
+      : { enabled: false, announcements: [], source: "platform" };
+  }
   const models = yuanhengConnectionState.models;
   yuanhengToolStatuses = emptyToolStatuses().map((item) => {
     const preferred =

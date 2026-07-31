@@ -83,6 +83,25 @@ pub struct YuanhengGroupOption {
     pub ratio: Option<f64>,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct YuanhengAnnouncement {
+    pub id: String,
+    pub content: String,
+    pub extra: Option<String>,
+    pub publish_date: String,
+    #[serde(rename = "type")]
+    pub announcement_type: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct YuanhengAnnouncementFeed {
+    pub enabled: bool,
+    pub announcements: Vec<YuanhengAnnouncement>,
+    pub source: String,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct YuanhengAuthResult {
@@ -466,9 +485,123 @@ fn parse_announcement_response(value: &Value) -> Option<String> {
         .map(str::to_string)
 }
 
-async fn fetch_announcement(client: &reqwest::Client) -> Result<Option<String>, String> {
+fn announcement_id(value: Option<&Value>, index: usize) -> String {
+    value
+        .and_then(|id| {
+            id.as_str()
+                .map(str::to_string)
+                .or_else(|| id.as_i64().map(|id| id.to_string()))
+                .or_else(|| id.as_u64().map(|id| id.to_string()))
+        })
+        .filter(|id| !id.trim().is_empty())
+        .unwrap_or_else(|| format!("platform-{}", index + 1))
+}
+
+fn parse_platform_announcements(value: &Value) -> Option<YuanhengAnnouncementFeed> {
+    let data = value.get("data")?.as_object()?;
+    let enabled = data
+        .get("announcements_enabled")
+        .and_then(Value::as_bool)
+        .unwrap_or(true);
+
+    if !enabled {
+        return Some(YuanhengAnnouncementFeed {
+            enabled: false,
+            announcements: Vec::new(),
+            source: "platform".to_string(),
+        });
+    }
+
+    let items = data.get("announcements")?.as_array()?;
+    let mut announcements = items
+        .iter()
+        .enumerate()
+        .filter_map(|(index, item)| {
+            let content = item.get("content")?.as_str()?.trim();
+            if content.is_empty() {
+                return None;
+            }
+            let extra = item
+                .get("extra")
+                .and_then(Value::as_str)
+                .map(str::trim)
+                .filter(|extra| !extra.is_empty())
+                .map(str::to_string);
+            let publish_date = item
+                .get("publishDate")
+                .and_then(Value::as_str)
+                .map(str::trim)
+                .unwrap_or_default()
+                .to_string();
+            let announcement_type = item
+                .get("type")
+                .and_then(Value::as_str)
+                .filter(|kind| {
+                    matches!(
+                        *kind,
+                        "default" | "ongoing" | "success" | "warning" | "error"
+                    )
+                })
+                .unwrap_or("default")
+                .to_string();
+
+            Some(YuanhengAnnouncement {
+                id: announcement_id(item.get("id"), index),
+                content: content.to_string(),
+                extra,
+                publish_date,
+                announcement_type,
+            })
+        })
+        .collect::<Vec<_>>();
+    announcements.sort_by(|left, right| {
+        let timestamp = |value: &str| {
+            chrono::DateTime::parse_from_rfc3339(value)
+                .map(|date| date.timestamp_millis())
+                .unwrap_or(i64::MIN)
+        };
+        timestamp(&right.publish_date).cmp(&timestamp(&left.publish_date))
+    });
+    announcements.truncate(20);
+
+    Some(YuanhengAnnouncementFeed {
+        enabled: true,
+        announcements,
+        source: "platform".to_string(),
+    })
+}
+
+async fn fetch_legacy_announcement(client: &reqwest::Client) -> Result<Option<String>, String> {
     let value = fetch_json(client, &format!("{BASE_URL}/api/notice"), None, None).await?;
     Ok(parse_announcement_response(&value))
+}
+
+async fn fetch_announcements(client: &reqwest::Client) -> Result<YuanhengAnnouncementFeed, String> {
+    match fetch_json(client, &format!("{BASE_URL}/api/status"), None, None).await {
+        Ok(value) => {
+            if let Some(feed) = parse_platform_announcements(&value) {
+                return Ok(feed);
+            }
+        }
+        Err(error) => log::warn!("元衡结构化公告同步失败，尝试旧公告接口: {error}"),
+    }
+
+    let legacy = fetch_legacy_announcement(client).await?;
+    Ok(YuanhengAnnouncementFeed {
+        enabled: legacy.is_some(),
+        announcements: legacy
+            .map(|content| {
+                vec![YuanhengAnnouncement {
+                    id: "legacy".to_string(),
+                    content,
+                    extra: None,
+                    publish_date: String::new(),
+                    announcement_type: "default".to_string(),
+                }]
+            })
+            .unwrap_or_default(),
+        source: "legacy".to_string(),
+    })
 }
 
 fn session_cookie_for_webview(raw: &str) -> Result<Cookie<'static>, String> {
@@ -744,8 +877,11 @@ async fn sync_connection(
         groups.dedup();
     }
 
-    let notice = match fetch_announcement(client).await {
-        Ok(notice) => notice,
+    let notice = match fetch_announcements(client).await {
+        Ok(feed) => feed
+            .announcements
+            .first()
+            .map(|announcement| announcement.content.clone()),
         Err(error) => {
             log::warn!("元衡平台公告同步失败: {error}");
             None
@@ -2347,7 +2483,12 @@ pub fn get_yuanheng_connection(
 
 #[tauri::command]
 pub async fn get_yuanheng_announcement() -> Result<Option<String>, String> {
-    fetch_announcement(&yuanheng_client()?).await
+    fetch_legacy_announcement(&yuanheng_client()?).await
+}
+
+#[tauri::command]
+pub async fn get_yuanheng_announcements() -> Result<YuanhengAnnouncementFeed, String> {
+    fetch_announcements(&yuanheng_client()?).await
 }
 
 #[tauri::command]
@@ -3082,6 +3223,58 @@ mod tests {
         );
         assert_eq!(parse_announcement_response(&json!({ "data": " " })), None);
         assert_eq!(parse_announcement_response(&json!({ "data": null })), None);
+    }
+
+    #[test]
+    fn parses_structured_platform_announcements() {
+        let feed = parse_platform_announcements(&json!({
+            "data": {
+                "announcements_enabled": true,
+                "announcements": [
+                    {
+                        "id": 34,
+                        "content": "  分组名称调整  ",
+                        "extra": "  以平台实时显示为准  ",
+                        "publishDate": "2026-07-28T02:41:25.745Z",
+                        "type": "warning"
+                    },
+                    {
+                        "id": "35",
+                        "content": "新模型上线",
+                        "extra": "",
+                        "publishDate": "2026-07-29T02:41:25.745Z",
+                        "type": "unknown"
+                    }
+                ]
+            }
+        }))
+        .expect("structured feed");
+
+        assert!(feed.enabled);
+        assert_eq!(feed.source, "platform");
+        assert_eq!(feed.announcements.len(), 2);
+        assert_eq!(feed.announcements[0].id, "35");
+        assert_eq!(feed.announcements[0].content, "新模型上线");
+        assert_eq!(feed.announcements[0].announcement_type, "default");
+        assert_eq!(feed.announcements[1].id, "34");
+        assert_eq!(
+            feed.announcements[1].extra.as_deref(),
+            Some("以平台实时显示为准")
+        );
+        assert_eq!(feed.announcements[1].announcement_type, "warning");
+    }
+
+    #[test]
+    fn respects_disabled_platform_announcements() {
+        let feed = parse_platform_announcements(&json!({
+            "data": {
+                "announcements_enabled": false
+            }
+        }))
+        .expect("disabled feed");
+
+        assert!(!feed.enabled);
+        assert!(feed.announcements.is_empty());
     }
 
     struct TestHome {

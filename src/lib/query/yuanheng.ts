@@ -4,7 +4,7 @@ import type { YuanhengReasoningLevel, YuanhengToolId } from "@/lib/api";
 
 export const yuanhengKeys = {
   connection: ["yuanheng", "connection"] as const,
-  announcement: ["yuanheng", "announcement"] as const,
+  announcements: ["yuanheng", "announcements"] as const,
   tools: ["yuanheng", "tools"] as const,
   diagnostics: ["yuanheng", "diagnostics"] as const,
   codexBridge: ["yuanheng", "codex-bridge"] as const,
@@ -18,12 +18,12 @@ export function useYuanhengConnection() {
   });
 }
 
-export function useYuanhengAnnouncement(enabled = true) {
+export function useYuanhengAnnouncements() {
   return useQuery({
-    queryKey: yuanhengKeys.announcement,
-    queryFn: () => yuanhengApi.getAnnouncement(),
-    enabled,
-    retry: 1,
+    queryKey: yuanhengKeys.announcements,
+    queryFn: () => yuanhengApi.getAnnouncements(),
+    retry: 2,
+    staleTime: 30_000,
     refetchInterval: 60_000,
     refetchOnWindowFocus: "always",
   });

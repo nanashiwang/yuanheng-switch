@@ -1,12 +1,7 @@
-import { useState } from "react";
-import { ArrowRight, Blocks, Megaphone, ServerCog, X } from "lucide-react";
+import { ArrowRight, Blocks, ServerCog } from "lucide-react";
 import { useInstalledSkills } from "@/hooks/useSkills";
 import { useAllMcpServers } from "@/hooks/useMcp";
-import {
-  useYuanhengAnnouncement,
-  useYuanhengConnection,
-  useYuanhengToolStatuses,
-} from "@/lib/query/yuanheng";
+import { useYuanhengToolStatuses } from "@/lib/query/yuanheng";
 import type { YuanhengToolId } from "@/lib/api";
 import type { DesktopView } from "./types";
 import { useModelSwitchCenter } from "./useModelSwitchCenter";
@@ -15,33 +10,7 @@ import { ModelSwitchCenter } from "./ModelSwitchCenter";
 import { AccountUsageCard } from "./AccountUsageCard";
 import { TodayStatsBand } from "./TodayStatsBand";
 import { YuanhengHealthCard } from "./YuanhengHealthCard";
-
-const NOTICE_DISMISS_KEY = "yuanheng.dashboard.notice-dismissed";
-const NOTICE_SUMMARY_LIMIT = 220;
-
-export function summarizeAnnouncement(raw: string): string {
-  const source = raw.trim();
-  if (!source) return "";
-  if (!/<[a-z][\s\S]*>/i.test(source) || typeof DOMParser === "undefined") {
-    return source.slice(0, NOTICE_SUMMARY_LIMIT);
-  }
-
-  const document = new DOMParser().parseFromString(source, "text/html");
-  document
-    .querySelectorAll("style, script, noscript, template")
-    .forEach((node) => node.remove());
-
-  const parts = Array.from(document.querySelectorAll("h1, h2, h3, p"))
-    .map((node) => node.textContent?.replace(/\s+/g, " ").trim() ?? "")
-    .filter(Boolean);
-  const summary = (
-    parts.length > 0 ? parts.slice(0, 2).join(" · ") : document.body.textContent
-  )
-    ?.replace(/\s+/g, " ")
-    .trim();
-
-  return (summary || "").slice(0, NOTICE_SUMMARY_LIMIT);
-}
+import { PlatformAnnouncementCenter } from "./PlatformAnnouncementCenter";
 
 interface WorkspaceDashboardProps {
   focusApp?: YuanhengToolId;
@@ -53,51 +22,16 @@ export function WorkspaceDashboard({
   onNavigate,
 }: WorkspaceDashboardProps) {
   const switcher = useModelSwitchCenter();
-  const { data: connection } = useYuanhengConnection();
-  const announcementQuery = useYuanhengAnnouncement(connection?.connected);
   const { data: toolStatuses = [] } = useYuanhengToolStatuses();
   const { data: skills = [] } = useInstalledSkills();
   const { data: mcpServers = {} } = useAllMcpServers();
   const configuredTools = toolStatuses.filter((item) => item.configured);
 
-  const announcement = connection?.connected
-    ? announcementQuery.isSuccess
-      ? announcementQuery.data
-      : connection.announcement
-    : null;
-  const announcementSummary = announcement
-    ? summarizeAnnouncement(announcement)
-    : "";
-  const [dismissedNotice, setDismissedNotice] = useState<string | null>(() =>
-    sessionStorage.getItem(NOTICE_DISMISS_KEY),
-  );
-  const showNotice = Boolean(
-    announcement && announcementSummary && announcement !== dismissedNotice,
-  );
-  const dismissNotice = () => {
-    if (!announcement) return;
-    sessionStorage.setItem(NOTICE_DISMISS_KEY, announcement);
-    setDismissedNotice(announcement);
-  };
-
   return (
     <div className="mx-auto flex h-full w-full max-w-[1120px] flex-col gap-3.5 overflow-y-auto px-7 pb-8 pt-4">
       <h1 className="sr-only">工作台</h1>
 
-      {showNotice && announcement && (
-        <div className="flex animate-rise-in items-center gap-2.5 rounded-xl border border-amber-200 bg-amber-100/70 px-3.5 py-2 text-[11.5px] text-amber-800 dark:border-amber-500/20 dark:bg-amber-500/10 dark:text-amber-300">
-          <Megaphone className="h-3.5 w-3.5 shrink-0" />
-          <span className="min-w-0 flex-1">{announcementSummary}</span>
-          <button
-            type="button"
-            onClick={dismissNotice}
-            aria-label="关闭公告"
-            className="shrink-0 rounded p-0.5 text-amber-700/60 transition-colors hover:text-amber-800 dark:hover:text-amber-200"
-          >
-            <X className="h-3.5 w-3.5" />
-          </button>
-        </div>
-      )}
+      <PlatformAnnouncementCenter />
 
       <div className="grid animate-rise-in items-start gap-4 lg:grid-cols-[1.58fr_1fr]">
         <FocusToolCard
