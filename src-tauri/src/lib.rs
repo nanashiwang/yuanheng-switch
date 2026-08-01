@@ -1171,10 +1171,17 @@ pub fn run() {
                 let state = app_handle.state::<AppState>();
                 let configured_takeover =
                     !enabled_proxy_apps_on_startup(&state.db).await.is_empty();
+                let managed_codex_routes =
+                    commands::managed_codex_routes_require_core(state.db.as_ref());
+                let managed_desktop_route =
+                    commands::managed_chatgpt_desktop_route_active(state.db.as_ref());
 
                 // Managed Core 正常跨 GUI 退出存活，启用中的接管配置不是崩溃残留。
-                // 只有未配置接管时仍发现备份/占位符，才执行旧版残留恢复。
-                if !state.proxy_service.uses_managed_core() || !configured_takeover {
+                // 只有明确配置过 ChatGPT Desktop 的独立路由才拥有 Codex Live；终端
+                // profile 不能阻止旧版误写的 /chatgpt-desktop/v1 残留被自动恢复。
+                if !state.proxy_service.uses_managed_core()
+                    || (!configured_takeover && !managed_desktop_route)
+                {
                     let has_backups = match state.db.has_any_live_backup().await {
                         Ok(v) => v,
                         Err(e) => {
@@ -1194,6 +1201,14 @@ pub fn run() {
                     }
                 }
 
+                if managed_codex_routes {
+                    // 启动路径走完整 ensure_running：版本不一致时仅在无活跃连接时
+                    // 无感升级；存在 SSE 时保留旧 Core，不切断当前 Codex 会话。
+                    if let Err(error) = state.proxy_service.start().await {
+                        log::warn!("恢复元衡 Codex 独立路由 Core 失败: {error}");
+                    }
+                }
+
                 initialize_common_config_snippets(&state);
 
                 // 确保独立 Core 存活，并校验各应用的 Live 接管配置。
@@ -1207,11 +1222,14 @@ pub fn run() {
                     interval.tick().await;
                     loop {
                         interval.tick().await;
-                        if db_for_core_maintenance
+                        let takeover_active = db_for_core_maintenance
                             .is_live_takeover_active()
                             .await
-                            .unwrap_or(false)
-                        {
+                            .unwrap_or(false);
+                        let managed_codex_routes = commands::managed_codex_routes_require_core(
+                            db_for_core_maintenance.as_ref(),
+                        );
+                        if takeover_active || managed_codex_routes {
                             if let Err(error) = proxy_for_maintenance.maintain_managed_core().await {
                                 log::warn!("YuanHeng Core 健康巡检恢复失败: {error}");
                             }

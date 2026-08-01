@@ -1329,6 +1329,39 @@ fn codex_terminal_profile_path() -> std::path::PathBuf {
     crate::services::codex_session_bridge::codex_session_profile_path()
 }
 
+fn managed_codex_surface_route_active(
+    db: &crate::database::Database,
+    surface: CodexSurface,
+) -> bool {
+    let provider = db
+        .get_provider_by_id(MANAGED_PROVIDER_ID, surface.namespace())
+        .ok()
+        .flatten();
+    if !provider
+        .as_ref()
+        .is_some_and(|provider| codex_surface_matches(provider, surface))
+    {
+        return false;
+    }
+
+    let route = match surface {
+        CodexSurface::Terminal => std::fs::read_to_string(codex_terminal_profile_path()).ok(),
+        CodexSurface::Desktop => crate::codex_config::read_codex_config_text().ok(),
+    };
+    route
+        .and_then(|config| crate::codex_config::extract_codex_base_url(&config))
+        .is_some_and(|url| url.contains(&format!("/{}/v1", surface.route_prefix())))
+}
+
+pub(crate) fn managed_chatgpt_desktop_route_active(db: &crate::database::Database) -> bool {
+    managed_codex_surface_route_active(db, CodexSurface::Desktop)
+}
+
+pub(crate) fn managed_codex_routes_require_core(db: &crate::database::Database) -> bool {
+    managed_codex_surface_route_active(db, CodexSurface::Terminal)
+        || managed_chatgpt_desktop_route_active(db)
+}
+
 fn managed_codex_provider_for_namespace(
     state: &AppState,
     namespace: &str,
@@ -1425,51 +1458,63 @@ fn codex_surface_route_config(
     .map_err(|error| error.to_string())
 }
 
-async fn write_codex_surface_configs(state: &AppState) -> Result<(), String> {
-    let terminal = managed_codex_provider_for_namespace(state, AppType::Codex.as_str())?
-        .ok_or_else(|| "Codex 终端配置不存在".to_string())?;
-    let desktop = managed_codex_provider_for_namespace(state, CHATGPT_DESKTOP_NAMESPACE)?
-        .ok_or_else(|| "ChatGPT Desktop 配置不存在".to_string())?;
+fn write_codex_surface_config_at_origin(
+    state: &AppState,
+    surface: CodexSurface,
+    proxy_origin: &str,
+) -> Result<(), String> {
+    let provider =
+        managed_codex_provider_for_namespace(state, surface.namespace())?.ok_or_else(|| {
+            match surface {
+                CodexSurface::Terminal => "Codex 终端配置不存在".to_string(),
+                CodexSurface::Desktop => "ChatGPT Desktop 配置不存在".to_string(),
+            }
+        })?;
+    let catalog_settings = combined_codex_catalog_settings(state)?;
+    let route = codex_surface_route_config(
+        &provider,
+        &format!("{proxy_origin}/{}/v1", surface.route_prefix()),
+        &catalog_settings,
+        surface,
+    )?;
+
+    match surface {
+        CodexSurface::Terminal => {
+            // 终端桥接只读取独立 profile，不能改写 Codex App 正在使用的 Live 配置。
+            crate::config::write_text_file(&codex_terminal_profile_path(), &route)
+                .map_err(|error| format!("写入 Codex 终端独立配置失败: {error}"))?;
+            log::info!("Codex 终端独立路由已更新，未改写 Codex App Live 配置");
+            Ok(())
+        }
+        CodexSurface::Desktop => {
+            let current_live = crate::codex_config::read_codex_config_text().unwrap_or_default();
+            let merged = crate::services::provider::update_toml_common_config_snippet(
+                &current_live,
+                &route,
+                true,
+            )
+            .map_err(|error| error.to_string())?;
+            let reasoning = provider_reasoning(&provider).unwrap_or_else(|| "auto".to_string());
+            let merged = if reasoning == "auto" {
+                set_codex_reasoning_field(&merged, None)?
+            } else {
+                merged
+            };
+            crate::codex_config::write_codex_live_config_atomic(Some(&merged))
+                .map_err(|error| format!("写入 ChatGPT Desktop 独立配置失败: {error}"))?;
+            log::info!("ChatGPT Desktop Live 路由已更新");
+            Ok(())
+        }
+    }
+}
+
+async fn write_codex_surface_config(state: &AppState, surface: CodexSurface) -> Result<(), String> {
     let proxy_status = state.proxy_service.get_status().await?;
     if !proxy_status.running || proxy_status.port == 0 {
         return Err("本地模型路由尚未启动".to_string());
     }
     let proxy_origin = format!("http://127.0.0.1:{}", proxy_status.port);
-    let catalog_settings = combined_codex_catalog_settings(state)?;
-
-    let terminal_config = codex_surface_route_config(
-        &terminal,
-        &format!(
-            "{proxy_origin}/{}/v1",
-            CodexSurface::Terminal.route_prefix()
-        ),
-        &catalog_settings,
-        CodexSurface::Terminal,
-    )?;
-    crate::config::write_text_file(&codex_terminal_profile_path(), &terminal_config)
-        .map_err(|error| format!("写入 Codex 终端独立配置失败: {error}"))?;
-
-    let desktop_route = codex_surface_route_config(
-        &desktop,
-        &format!("{proxy_origin}/{}/v1", CodexSurface::Desktop.route_prefix()),
-        &catalog_settings,
-        CodexSurface::Desktop,
-    )?;
-    let current_live = crate::codex_config::read_codex_config_text().unwrap_or_default();
-    let merged = crate::services::provider::update_toml_common_config_snippet(
-        &current_live,
-        &desktop_route,
-        true,
-    )
-    .map_err(|error| error.to_string())?;
-    let desktop_reasoning = provider_reasoning(&desktop).unwrap_or_else(|| "auto".to_string());
-    let merged = if desktop_reasoning == "auto" {
-        set_codex_reasoning_field(&merged, None)?
-    } else {
-        merged
-    };
-    crate::codex_config::write_codex_live_config_atomic(Some(&merged))
-        .map_err(|error| format!("写入 ChatGPT Desktop 独立配置失败: {error}"))
+    write_codex_surface_config_at_origin(state, surface, &proxy_origin)
 }
 
 fn set_codex_available_models(provider: &mut Provider, selected: &str, models: &[String]) {
@@ -1499,8 +1544,8 @@ async fn configure_codex_surface(
     group: &str,
     reasoning: &str,
 ) -> Result<YuanhengToolConfigureResult, String> {
-    // Both surfaces eventually write Codex's live config, so preserve the
-    // original provider before either one is configured for the first time.
+    // Desktop 会改写 Codex Live 配置；终端虽然只写独立 profile，仍需保留
+    // 原始 Codex 状态，便于统一关闭元衡接管时恢复。
     remember_tool_state(state, &AppType::Codex)?;
 
     let mut selected = managed_provider(&AppType::Codex, token, model, group, reasoning)?;
@@ -1532,7 +1577,7 @@ async fn configure_codex_surface(
     save_managed_codex_provider(state, CHATGPT_DESKTOP_NAMESPACE, &desktop)?;
     crate::settings::set_current_provider(&AppType::Codex, Some(MANAGED_PROVIDER_ID))
         .map_err(|error| error.to_string())?;
-    write_codex_surface_configs(state).await?;
+    write_codex_surface_config(state, surface).await?;
 
     Ok(YuanhengToolConfigureResult {
         app: surface.namespace().to_string(),
@@ -3902,6 +3947,134 @@ mod tests {
             crate::codex_config::YUANHENG_DESKTOP_MODEL_CATALOG_FILENAME
         )
         .exists());
+    }
+
+    #[test]
+    #[serial]
+    fn writing_terminal_surface_does_not_rewrite_codex_app_live_config() {
+        let (_home, state) = isolated_state();
+        let mut terminal = managed_provider(
+            &AppType::Codex,
+            "terminal-token",
+            "gpt-5.6-sol",
+            "premium",
+            "high",
+        )
+        .unwrap();
+        terminal.settings_config["yuanhengSurface"] = json!("terminal");
+        let mut desktop =
+            managed_provider(&AppType::Codex, "desktop-token", "k3", "default", "auto").unwrap();
+        desktop.settings_config["yuanhengSurface"] = json!("desktop");
+        save_managed_codex_provider(&state, AppType::Codex.as_str(), &terminal).unwrap();
+        save_managed_codex_provider(&state, CHATGPT_DESKTOP_NAMESPACE, &desktop).unwrap();
+
+        let original_live = concat!(
+            "model_provider = \"official\"\n",
+            "model = \"gpt-official\"\n",
+            "[model_providers.official]\n",
+            "name = \"Official\"\n",
+            "base_url = \"https://api.openai.com/v1\"\n",
+            "wire_api = \"responses\"\n",
+        );
+        crate::codex_config::write_codex_live_config_atomic(Some(original_live)).unwrap();
+        assert!(!managed_codex_routes_require_core(state.db.as_ref()));
+
+        write_codex_surface_config_at_origin(
+            &state,
+            CodexSurface::Terminal,
+            "http://127.0.0.1:15721",
+        )
+        .unwrap();
+
+        assert_eq!(
+            crate::codex_config::read_codex_config_text().unwrap(),
+            original_live
+        );
+        let terminal_profile = std::fs::read_to_string(codex_terminal_profile_path()).unwrap();
+        assert!(terminal_profile.contains("/codex/v1"));
+        assert!(!terminal_profile.contains("/chatgpt-desktop/v1"));
+        assert!(managed_codex_routes_require_core(state.db.as_ref()));
+    }
+
+    #[test]
+    #[serial]
+    fn writing_desktop_surface_only_updates_codex_app_live_config() {
+        let (_home, state) = isolated_state();
+        let mut terminal = managed_provider(
+            &AppType::Codex,
+            "terminal-token",
+            "gpt-5.6-sol",
+            "premium",
+            "high",
+        )
+        .unwrap();
+        terminal.settings_config["yuanhengSurface"] = json!("terminal");
+        let mut desktop =
+            managed_provider(&AppType::Codex, "desktop-token", "k3", "default", "auto").unwrap();
+        desktop.settings_config["yuanhengSurface"] = json!("desktop");
+        save_managed_codex_provider(&state, AppType::Codex.as_str(), &terminal).unwrap();
+        save_managed_codex_provider(&state, CHATGPT_DESKTOP_NAMESPACE, &desktop).unwrap();
+        crate::config::write_text_file(
+            &codex_terminal_profile_path(),
+            "model_provider = \"terminal-sentinel\"\n",
+        )
+        .unwrap();
+        crate::codex_config::write_codex_live_config_atomic(Some(
+            "model_provider = \"official\"\nmodel = \"gpt-official\"\n",
+        ))
+        .unwrap();
+        assert!(!managed_codex_routes_require_core(state.db.as_ref()));
+
+        write_codex_surface_config_at_origin(
+            &state,
+            CodexSurface::Desktop,
+            "http://127.0.0.1:15721",
+        )
+        .unwrap();
+
+        let live = crate::codex_config::read_codex_config_text().unwrap();
+        assert!(live.contains("/chatgpt-desktop/v1"));
+        assert!(live.contains("model = \"k3\""));
+        assert_eq!(
+            std::fs::read_to_string(codex_terminal_profile_path()).unwrap(),
+            "model_provider = \"terminal-sentinel\"\n"
+        );
+        assert!(managed_codex_routes_require_core(state.db.as_ref()));
+    }
+
+    #[test]
+    #[serial]
+    fn legacy_terminal_clone_does_not_claim_codex_app_live_route() {
+        let (_home, state) = isolated_state();
+        let mut terminal = managed_provider(
+            &AppType::Codex,
+            "terminal-token",
+            "gpt-5.6-sol",
+            "premium",
+            "high",
+        )
+        .unwrap();
+        terminal.settings_config["yuanhengSurface"] = json!("terminal");
+        save_managed_codex_provider(&state, AppType::Codex.as_str(), &terminal).unwrap();
+        save_managed_codex_provider(&state, CHATGPT_DESKTOP_NAMESPACE, &terminal).unwrap();
+        crate::config::write_text_file(
+            &codex_terminal_profile_path(),
+            r#"model_provider = "yuanheng"
+[model_providers.yuanheng]
+base_url = "http://127.0.0.1:15721/codex/v1"
+"#,
+        )
+        .unwrap();
+        crate::codex_config::write_codex_live_config_atomic(Some(
+            r#"model_provider = "yuanheng"
+[model_providers.yuanheng]
+base_url = "http://127.0.0.1:15721/chatgpt-desktop/v1"
+"#,
+        ))
+        .unwrap();
+
+        assert!(managed_codex_routes_require_core(state.db.as_ref()));
+        assert!(!managed_chatgpt_desktop_route_active(state.db.as_ref()));
     }
 
     #[test]
