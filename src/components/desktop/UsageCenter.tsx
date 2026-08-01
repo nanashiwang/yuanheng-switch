@@ -55,7 +55,7 @@ export function UsageCenter({
     <div className="flex h-full min-h-0 flex-col overflow-hidden px-7 pt-6">
       <div className="mx-auto w-full max-w-[1120px]">
         <PageHeader
-          eyebrow="Sessions & Usage"
+          eyebrow={dt("会话与用量")}
           title={dt("会话与用量")}
           description={dt("本地请求、会话历史和元衡余额集中在同一处查看。")}
           actions={

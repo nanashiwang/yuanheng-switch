@@ -221,7 +221,7 @@ export function SettingsPage({
   return (
     <div className="desktop-page mx-auto flex h-full w-full max-w-[1120px] flex-col overflow-hidden px-7 pt-6">
       <PageHeader
-        eyebrow="Settings"
+        eyebrow={t("settings.title", { defaultValue: "设置" })}
         title={t("settings.title", { defaultValue: "设置" })}
         description={t("settings.pageDescription", {
           defaultValue: "主题、语言、目录、同步与高级选项。",
@@ -266,8 +266,10 @@ export function SettingsPage({
                     className="space-y-6"
                   >
                     <SettingsSectionCard
-                      title="外观与语言"
-                      description="统一管理界面语言、主题和内容密度。"
+                      title={t("settings.appearanceAndLanguage")}
+                      description={t(
+                        "settings.appearanceAndLanguageDescription",
+                      )}
                       icon={PanelTop}
                     >
                       <LanguageSettings
@@ -279,8 +281,10 @@ export function SettingsPage({
                     </SettingsSectionCard>
 
                     <SettingsSectionCard
-                      title="工具与能力"
-                      description="控制可见应用、Skill 存储方式和 Codex 认证。"
+                      title={t("settings.toolsAndCapabilities")}
+                      description={t(
+                        "settings.toolsAndCapabilitiesDescription",
+                      )}
                       icon={Workflow}
                     >
                       <AppVisibilitySettings
@@ -307,8 +311,8 @@ export function SettingsPage({
                     </SettingsSectionCard>
 
                     <SettingsSectionCard
-                      title="桌面体验"
-                      description="设置窗口行为与首选终端。"
+                      title={t("settings.desktopExperience")}
+                      description={t("settings.desktopExperienceDescription")}
                       icon={MonitorCog}
                     >
                       <WindowSettings

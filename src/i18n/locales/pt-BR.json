@@ -7,13 +7,29 @@
     "title": "Configurações",
     "language": "Idioma",
     "languageHint": "Escolha o idioma de exibição do aplicativo.",
-    "saveFailedGeneric": "Não foi possível salvar. Tente novamente."
+    "saveFailedGeneric": "Não foi possível salvar. Tente novamente.",
+    "pageDescription": "Temas, idioma, diretórios, sincronização e opções avançadas.",
+    "appearanceAndLanguage": "Aparência e idioma",
+    "appearanceAndLanguageDescription": "Gerencie o idioma da interface, o tema e a densidade do conteúdo em um só lugar.",
+    "toolsAndCapabilities": "Ferramentas e recursos",
+    "toolsAndCapabilitiesDescription": "Gerencie os aplicativos visíveis, o armazenamento de Skills e a autenticação do Codex.",
+    "desktopExperience": "Experiência no desktop",
+    "desktopExperienceDescription": "Configure o comportamento das janelas e o terminal preferido.",
+    "interfaceDensity": "Densidade da interface",
+    "interfaceDensityDescription": "Ajuste o espaçamento e a densidade das informações. As alterações são aplicadas imediatamente.",
+    "densityComfortable": "Confortável",
+    "densityComfortableDescription": "Mais espaço para o uso diário",
+    "densityCompact": "Compacta",
+    "densityCompactDescription": "Reduz o espaço para mostrar mais conteúdo"
   },
   "desktop": {
     "toolbar": {
       "language": "Alterar idioma",
       "settings": "Configurações",
-      "switchTool": "Alterar ferramenta atual"
+      "switchTool": "Alterar ferramenta atual",
+      "quickActions": "Ações rápidas",
+      "currentStatus": "Status atual",
+      "openCurrentStatusPanel": "Abrir o painel de status atual"
     },
     "window": {
       "minimize": "Minimizar janela",
@@ -57,6 +73,15 @@
     "prompts": {
       "description": "Gerencie modelos de prompts reutilizáveis.",
       "add": "Adicionar prompt"
+    },
+    "agents": {
+      "description": "A orquestração de agentes está em desenvolvimento; as configurações inacabadas ficam ocultas por enquanto.",
+      "comingSoon": "Em breve",
+      "comingSoonDescription": "O gerenciamento de agentes está em desenvolvimento. Recursos autônomos mais avançados estão a caminho."
     }
+  },
+  "deeplink": {
+    "providerImportRemoved": "A importação de provedores foi removida",
+    "providerImportRemovedDescription": "As conexões agora são gerenciadas pela sua conta YuanHeng, portanto os provedores não podem mais ser adicionados pelo aplicativo para desktop."
   }
 }

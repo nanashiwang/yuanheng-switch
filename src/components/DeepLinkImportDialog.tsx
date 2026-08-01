@@ -37,8 +37,8 @@ export function DeepLinkImportDialog() {
       (event) => {
         // Older app instances can still forward a provider link during upgrade.
         if ((event.payload.resource as string) === "provider") {
-          toast.error("供应商导入已移除", {
-            description: "连接由元衡账号统一管理，不再在桌面端添加供应商。",
+          toast.error(t("deeplink.providerImportRemoved"), {
+            description: t("deeplink.providerImportRemovedDescription"),
           });
           return;
         }

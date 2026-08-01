@@ -17,7 +17,7 @@ export function ToolsPage({
   return (
     <div className="mx-auto flex h-full w-full max-w-[1120px] flex-col overflow-hidden px-7 pt-6">
       <PageHeader
-        eyebrow="Install & Maintenance"
+        eyebrow={dt("安装与维护")}
         title={dt("工具管理")}
         description={dt(
           "安装、检测和修复本机 AI 工具；日常模型切换请在工作台完成。",

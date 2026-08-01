@@ -7,13 +7,29 @@
     "title": "Einstellungen",
     "language": "Sprache",
     "languageHint": "Wähle die Anzeigesprache der App.",
-    "saveFailedGeneric": "Speichern fehlgeschlagen. Bitte erneut versuchen."
+    "saveFailedGeneric": "Speichern fehlgeschlagen. Bitte erneut versuchen.",
+    "pageDescription": "Design, Sprache, Verzeichnisse, Synchronisierung und erweiterte Optionen.",
+    "appearanceAndLanguage": "Darstellung und Sprache",
+    "appearanceAndLanguageDescription": "Verwalte Oberflächensprache, Design und Inhaltsdichte zentral.",
+    "toolsAndCapabilities": "Werkzeuge und Funktionen",
+    "toolsAndCapabilitiesDescription": "Verwalte sichtbare Apps, den Skills-Speicher und die Codex-Authentifizierung.",
+    "desktopExperience": "Desktop-Erlebnis",
+    "desktopExperienceDescription": "Konfiguriere Fensterverhalten und bevorzugtes Terminal.",
+    "interfaceDensity": "Oberflächendichte",
+    "interfaceDensityDescription": "Passe Abstände und Informationsdichte an. Änderungen gelten sofort.",
+    "densityComfortable": "Komfortabel",
+    "densityComfortableDescription": "Großzügigere Abstände für den Alltag",
+    "densityCompact": "Kompakt",
+    "densityCompactDescription": "Weniger Abstände für mehr Inhalt"
   },
   "desktop": {
     "toolbar": {
       "language": "Sprache wechseln",
       "settings": "Einstellungen",
-      "switchTool": "Aktuelles Werkzeug wechseln"
+      "switchTool": "Aktuelles Werkzeug wechseln",
+      "quickActions": "Schnellaktionen",
+      "currentStatus": "Aktueller Status",
+      "openCurrentStatusPanel": "Aktuelles Statusfeld öffnen"
     },
     "window": {
       "minimize": "Fenster minimieren",
@@ -57,6 +73,15 @@
     "prompts": {
       "description": "Wiederverwendbare Prompt-Vorlagen verwalten.",
       "add": "Prompt hinzufügen"
+    },
+    "agents": {
+      "description": "Die Agenten-Orchestrierung wird entwickelt; unfertige Einstellungen bleiben vorerst ausgeblendet.",
+      "comingSoon": "Demnächst verfügbar",
+      "comingSoonDescription": "Die Agentenverwaltung wird entwickelt. Leistungsfähigere autonome Funktionen folgen."
     }
+  },
+  "deeplink": {
+    "providerImportRemoved": "Der Anbieterimport wurde entfernt",
+    "providerImportRemovedDescription": "Verbindungen werden jetzt über dein YuanHeng-Konto verwaltet; Anbieter können nicht mehr in der Desktop-App hinzugefügt werden."
   }
 }

@@ -712,8 +712,8 @@
       "showProfileSwitcherDescription": "在主頁面頂部顯示專案切換入口"
     },
     "skillStorage": {
-      "title": "Skills 儲存位置",
-      "description": "選擇 YuanHeng Switch 存放 Skills 主副本的目錄",
+      "title": "技能儲存位置",
+      "description": "選擇 YuanHeng Switch 存放技能主副本的目錄",
       "ccSwitch": "YuanHeng Switch",
       "unified": "~/.agents/skills",
       "ccSwitchHint": "技能儲存在 ~/.yuanheng-switch/skills/，由 YuanHeng Switch 統一管理並同步至各應用程式。",
@@ -724,8 +724,8 @@
       "migrationPartial": "遷移了 {{migrated}} 個技能，{{errors}} 個失敗，請查看日誌"
     },
     "skillSync": {
-      "title": "Skills 同步方式",
-      "description": "選擇 Skills 的檔案同步策略",
+      "title": "技能同步方式",
+      "description": "選擇技能的檔案同步策略",
       "symlink": "軟連結",
       "copy": "檔案複製",
       "symlinkHint": "軟連結節省磁碟空間並支援即時同步。注意：Windows 可能需要管理員權限或開啟開發者模式"
@@ -872,7 +872,7 @@
     "saving": "正在儲存...",
     "globalProxy": {
       "label": "全域代理伺服器",
-      "hint": "代理所有請求（API、Skills 下載等）。開啟本地路由時，應用程式的請求也會經過此代理伺服器。留空表示直連。",
+      "hint": "代理所有請求（API、技能下載等）。開啟本地路由時，應用程式的請求也會經過此代理伺服器。留空表示直連。",
       "username": "使用者名稱（選填）",
       "password": "密碼（選填）",
       "test": "測試連線",
@@ -898,7 +898,20 @@
       "defaultCostMultiplierRequired": "預設倍率不能為空",
       "defaultCostMultiplierInvalid": "預設倍率格式不正確"
     },
-    "saveFailedGeneric": "儲存失敗，請重試"
+    "saveFailedGeneric": "儲存失敗，請重試",
+    "pageDescription": "主題、語言、目錄、同步與進階選項。",
+    "appearanceAndLanguage": "外觀與語言",
+    "appearanceAndLanguageDescription": "統一管理介面語言、主題與內容密度。",
+    "toolsAndCapabilities": "工具與能力",
+    "toolsAndCapabilitiesDescription": "控制可見應用程式、技能儲存方式與 Codex 驗證。",
+    "desktopExperience": "桌面體驗",
+    "desktopExperienceDescription": "設定視窗行為與首選終端機。",
+    "interfaceDensity": "介面密度",
+    "interfaceDensityDescription": "調整頁面留白與資訊密度，修改後立即生效。",
+    "densityComfortable": "舒適",
+    "densityComfortableDescription": "較寬鬆的間距，適合日常使用",
+    "densityCompact": "緊湊",
+    "densityCompactDescription": "減少留白，同一畫面顯示更多內容"
   },
   "apps": {
     "claude": "Claude",
@@ -1040,7 +1053,7 @@
     "aggregatorApiKeyHint": "只需填寫 API Key，請求位址已預設",
     "thirdPartyApiKeyHint": "只需填寫 API Key，請求位址已預設",
     "customApiKeyHint": "自訂設定需手動填寫所有必要欄位",
-    "omoHint": "OMO 設定管理 Agent 模型指派，相容 oh-my-openagent.jsonc / oh-my-opencode.jsonc",
+    "omoHint": "OMO 設定管理代理模型指派，相容 oh-my-openagent.jsonc / oh-my-opencode.jsonc",
     "officialHint": "官方供應商使用瀏覽器登入，無需設定 API Key",
     "providerKeyStatusLoading": "正在載入供應商識別碼狀態，請稍後再試",
     "getApiKey": "取得 API Key",
@@ -1979,18 +1992,18 @@
   },
   "profiles": {
     "switcherTooltip": {
-      "claude": "專案：一鍵切換 Claude Code 的供應商 / MCP / Skills / 記憶檔案",
+      "claude": "專案：一鍵切換 Claude Code 的供應商 / MCP / 技能 / 記憶檔案",
       "claude-desktop": "專案：一鍵切換 Claude Desktop 的供應商",
-      "codex": "專案：一鍵切換 Codex 的供應商 / MCP / Skills / 記憶檔案"
+      "codex": "專案：一鍵切換 Codex 的供應商 / MCP / 技能 / 記憶檔案"
     },
     "none": "不使用專案",
     "searchPlaceholder": "搜尋專案",
     "empty": "尚無專案",
     "createFromCurrent": "新建專案",
     "createDescription": {
-      "claude": "把 Claude Code 目前的供應商、MCP、Skills、記憶檔案儲存為一個專案，之後可一鍵切換。",
+      "claude": "把 Claude Code 目前的供應商、MCP、技能、記憶檔案儲存為一個專案，之後可一鍵切換。",
       "claude-desktop": "把 Claude Desktop 目前的供應商儲存為一個專案，之後可一鍵切換。",
-      "codex": "把 Codex 目前的供應商、MCP、Skills 和記憶檔案設定儲存為一個專案，之後可一鍵切換。"
+      "codex": "把 Codex 目前的供應商、MCP、技能和記憶檔案設定儲存為一個專案，之後可一鍵切換。"
     },
     "manage": "管理專案…",
     "manageTitle": "管理專案",
@@ -2016,10 +2029,10 @@
     "title": "工作區檔案管理",
     "manage": "工作區",
     "files": {
-      "agents": "Agent 操作指令和規則",
-      "soul": "Agent 人格和溝通風格",
+      "agents": "代理操作指令和規則",
+      "soul": "代理人格和溝通風格",
       "user": "使用者檔案和偏好",
-      "identity": "Agent 名稱和頭像",
+      "identity": "代理名稱和頭像",
       "tools": "本地工具文件",
       "memory": "長期記憶和決策紀錄",
       "heartbeat": "心跳執行清單",
@@ -2126,7 +2139,7 @@
       "loadFailed": "讀取工具權限失敗"
     },
     "agents": {
-      "title": "Agents 設定",
+      "title": "代理設定",
       "description": "管理 openclaw.json 中的 agents.defaults 設定（預設模型、執行參數等）",
       "modelSection": "模型設定",
       "primaryModel": "預設模型",
@@ -2144,14 +2157,14 @@
       "maxConcurrent": "最大並行數",
       "legacyTimeoutTitle": "檢測到舊版逾時欄位",
       "legacyTimeoutDescription": "目前設定仍在使用 agents.defaults.timeout。儲存本頁面時會遷移為 timeoutSeconds。",
-      "saveSuccess": "Agents 設定已儲存",
-      "saveFailed": "儲存 Agents 設定失敗",
-      "loadFailed": "讀取 Agents 設定失敗"
+      "saveSuccess": "代理設定已儲存",
+      "saveFailed": "儲存代理設定失敗",
+      "loadFailed": "讀取代理設定失敗"
     },
     "health": {
       "title": "檢測到 OpenClaw 設定警告",
       "invalidToolsProfile": "tools.profile 使用了不受支援的值。OpenClaw 目前只支援 minimal、coding、messaging、full。",
-      "legacyTimeout": "agents.defaults.timeout 已廢棄。開啟並儲存 Agents 面板即可遷移至 timeoutSeconds。",
+      "legacyTimeout": "agents.defaults.timeout 已廢棄。開啟並儲存代理面板即可遷移至 timeoutSeconds。",
       "stringifiedEnvVars": "env.vars 應為物件，但目前值看起來像被字串化或已損壞。",
       "stringifiedShellEnv": "env.shellEnv 應為物件，但目前值看起來像被字串化或已損壞。",
       "parseFailed": "openclaw.json 不是合法 JSON5。請先修復檔案，再透過這裡編輯。"
@@ -2207,7 +2220,7 @@
     },
     "memory": {
       "title": "記憶管理",
-      "agentTab": "Agent 記憶 (MEMORY.md)",
+      "agentTab": "代理記憶 (MEMORY.md)",
       "userTab": "使用者畫像 (USER.md)",
       "usage": "已用 {{current}} / {{limit}} 字元",
       "overLimit": "已超過上限，Hermes 下次載入時會截斷",
@@ -2393,8 +2406,8 @@
     "restoreFromBackup": {
       "button": "從備份中還原",
       "title": "從備份中還原",
-      "description": "選擇一個 Skills 備份，將檔案還原至本地並重新加入目前清單。",
-      "empty": "暫無可還原的 Skills 備份",
+      "description": "選擇一個技能備份，將檔案還原至本地並重新加入目前清單。",
+      "empty": "暫無可還原的技能備份",
       "createdAt": "備份時間",
       "path": "備份路徑",
       "restore": "還原",
@@ -2430,15 +2443,15 @@
     "importPromptDescription": "請確認是否匯入此系統提示詞",
     "importMcp": "匯入 MCP Servers",
     "importMcpDescription": "請確認是否匯入這些 MCP Servers",
-    "importSkill": "新增 Skill 儲存庫",
-    "importSkillDescription": "請確認是否新增此 Skill 儲存庫",
+    "importSkill": "新增技能儲存庫",
+    "importSkillDescription": "請確認是否新增此技能儲存庫",
     "promptImportSuccess": "提示詞匯入成功",
     "promptImportSuccessDescription": "已匯入提示詞：{{name}}",
     "mcpImportSuccess": "MCP Servers 匯入成功",
     "mcpImportSuccessDescription": "成功匯入 {{count}} 個伺服器",
     "mcpPartialSuccess": "部分匯入成功",
     "mcpPartialSuccessDescription": "成功：{{success}}，失敗：{{failed}}",
-    "skillImportSuccess": "Skill 儲存庫新增成功",
+    "skillImportSuccess": "技能儲存庫新增成功",
     "skillImportSuccessDescription": "已新增儲存庫：{{repo}}",
     "app": "應用程式類型",
     "providerName": "供應商名稱",
@@ -2481,13 +2494,13 @@
       "enabledWarning": "匯入後將立即啟用此提示詞，其他提示詞將被停用"
     },
     "skill": {
-      "title": "新增 Claude Skill 儲存庫",
+      "title": "新增 Claude 技能儲存庫",
       "repo": "GitHub 儲存庫",
       "directory": "目標目錄",
       "branch": "分支",
-      "skillsPath": "Skills 路徑",
-      "hint": "此操作將新增 Skill 儲存庫至清單。",
-      "hintDetail": "新增後，您可以在 Skills 管理介面中選擇安裝具體的 Skill。"
+      "skillsPath": "技能路徑",
+      "hint": "此操作將新增技能儲存庫至清單。",
+      "hintDetail": "新增後，您可以在技能管理介面中選擇安裝具體的技能。"
     },
     "usageScript": "用量查詢",
     "usageScriptEnabled": "已啟用",
@@ -2495,7 +2508,9 @@
     "usageApiKey": "用量 API Key",
     "usageBaseUrl": "用量查詢位址",
     "usageAutoInterval": "自動查詢",
-    "usageAutoIntervalValue": "每 {{minutes}} 分鐘"
+    "usageAutoIntervalValue": "每 {{minutes}} 分鐘",
+    "providerImportRemoved": "供應商匯入功能已移除",
+    "providerImportRemovedDescription": "連線現由元衡帳號統一管理，桌面應用程式不再新增供應商。"
   },
   "iconPicker": {
     "search": "搜尋圖示",
@@ -2521,10 +2536,10 @@
     "success": "設定遷移成功",
     "skillsSuccess": "已自動匯入 {{count}} 個技能至統一管理",
     "skillsFailed": "自動匯入技能失敗",
-    "skillsFailedDescription": "請開啟 Skills 頁面點擊「匯入現有」手動匯入（或重新啟動後再試）。"
+    "skillsFailedDescription": "請開啟技能頁面點擊「匯入現有」手動匯入（或重新啟動後再試）。"
   },
   "agents": {
-    "title": "Agent"
+    "title": "代理"
   },
   "health": {
     "operational": "正常",
@@ -2836,11 +2851,11 @@
     "editProfile": "編輯 OMO 設定",
     "newProfile": "新增 OMO 設定",
     "profileName": "名稱",
-    "mainAgents": "主 Agent",
-    "subAgents": "子 Agent",
+    "mainAgents": "主要代理",
+    "subAgents": "子代理",
     "categories": "分類",
-    "customAgents": "自訂 Agent",
-    "noCustomAgents": "暫無自訂 Agent",
+    "customAgents": "自訂代理",
+    "noCustomAgents": "暫無自訂代理",
     "otherFields": "其他設定",
     "globalConfig": "OMO 全域設定",
     "globalConfigShort": "OMO 設定",
@@ -2913,15 +2928,15 @@
     "saveGlobalConfig": "儲存全域設定",
     "schemaUrl": "$schema",
     "resetDefault": "還原預設",
-    "sisyphusAgentConfig": "Sisyphus Agent 設定",
-    "disabledAgents": "Agents",
-    "disabledAgentsPlaceholder": "停用的 Agents",
+    "sisyphusAgentConfig": "Sisyphus 代理設定",
+    "disabledAgents": "代理",
+    "disabledAgentsPlaceholder": "停用的代理",
     "disabledMcps": "MCPs",
     "disabledMcpsPlaceholder": "停用的 MCPs",
     "disabledHooks": "Hooks",
     "disabledHooksPlaceholder": "停用的 Hooks",
-    "disabledSkills": "Skills",
-    "disabledSkillsPlaceholder": "停用的 Skills",
+    "disabledSkills": "技能",
+    "disabledSkillsPlaceholder": "停用的技能",
     "advancedLsp": "LSP 設定",
     "advancedExperimental": "實驗性功能",
     "advancedBackgroundTask": "背景任務",
@@ -3064,7 +3079,10 @@
     "toolbar": {
       "language": "切換語言",
       "settings": "設定",
-      "switchTool": "切換目前工具"
+      "switchTool": "切換目前工具",
+      "quickActions": "快捷操作",
+      "currentStatus": "目前狀態",
+      "openCurrentStatusPanel": "開啟目前狀態面板"
     },
     "window": {
       "minimize": "最小化視窗",
@@ -3090,6 +3108,11 @@
     "prompts": {
       "description": "管理可重複使用的提示詞範本。",
       "add": "新增提示詞"
+    },
+    "agents": {
+      "description": "代理編排功能仍在開發中，目前不顯示尚未完成的設定。",
+      "comingSoon": "即將推出",
+      "comingSoonDescription": "代理管理功能正在開發中，敬請期待更強大的自主能力。"
     }
   }
 }

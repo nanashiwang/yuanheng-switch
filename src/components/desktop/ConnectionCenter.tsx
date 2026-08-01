@@ -28,7 +28,7 @@ export function ConnectionCenter() {
   return (
     <div className="desktop-page mx-auto flex h-full w-full max-w-[1120px] flex-col overflow-hidden px-7 pt-6">
       <PageHeader
-        eyebrow="Connection & Routing"
+        eyebrow={dt("连接与路由")}
         title={dt("连接与路由")}
         description={dt(
           "元衡账号负责远程权限和模型目录，本地路由负责接管、健康检查与故障转移。",

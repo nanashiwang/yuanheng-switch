@@ -1,36 +1,40 @@
 import { AlignJustify, Rows3 } from "lucide-react";
+import { useTranslation } from "react-i18next";
 import { useUiDensity, type UiDensity } from "@/hooks/useUiDensity";
 import { cn } from "@/lib/utils";
 
 const options: Array<{
   value: UiDensity;
-  label: string;
-  description: string;
+  labelKey: string;
+  descriptionKey: string;
   icon: typeof Rows3;
 }> = [
   {
     value: "comfortable",
-    label: "舒适",
-    description: "更宽松的间距，适合日常使用",
+    labelKey: "settings.densityComfortable",
+    descriptionKey: "settings.densityComfortableDescription",
     icon: Rows3,
   },
   {
     value: "compact",
-    label: "紧凑",
-    description: "减少留白，同屏显示更多内容",
+    labelKey: "settings.densityCompact",
+    descriptionKey: "settings.densityCompactDescription",
     icon: AlignJustify,
   },
 ];
 
 export function DensitySettings() {
+  const { t } = useTranslation();
   const { density, setDensity } = useUiDensity();
 
   return (
     <section className="settings-row space-y-3 py-4">
       <header>
-        <h3 className="text-sm font-medium">界面密度</h3>
+        <h3 className="text-sm font-medium">
+          {t("settings.interfaceDensity")}
+        </h3>
         <p className="mt-1 text-xs text-muted-foreground">
-          调整页面留白与信息密度，修改后立即生效。
+          {t("settings.interfaceDensityDescription")}
         </p>
       </header>
       <div className="grid gap-2 sm:grid-cols-2">
@@ -53,10 +57,10 @@ export function DensitySettings() {
               <Icon className="h-4 w-4 shrink-0" />
               <span>
                 <span className="block text-xs font-semibold">
-                  {option.label}
+                  {t(option.labelKey)}
                 </span>
                 <span className="mt-0.5 block text-[10px] opacity-75">
-                  {option.description}
+                  {t(option.descriptionKey)}
                 </span>
               </span>
             </button>

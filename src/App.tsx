@@ -552,8 +552,8 @@ function App() {
       case "mcp":
         return (
           <DetailFrame
-            title="MCP"
-            description="管理工具与本地或远程服务的连接。"
+            title={t("desktop.views.mcp")}
+            description={t("desktop.mcp.description")}
             onBack={() => navigate("capabilities")}
             actions={
               <>
@@ -562,8 +562,7 @@ function App() {
                   size="sm"
                   onClick={() => mcpPanelRef.current?.openImport()}
                 >
-                  <Download className="h-3.5 w-3.5" />{" "}
-                  {t("desktop.skills.import")}已有配置
+                  <Download className="h-3.5 w-3.5" /> {t("desktop.mcp.import")}
                 </Button>
                 <Button
                   size="sm"
@@ -583,8 +582,8 @@ function App() {
       case "prompts":
         return (
           <DetailFrame
-            title="Prompts"
-            description={`管理 ${APP_ICON_MAP[activeApp].label} 的全局提示词。`}
+            title={t("desktop.views.prompts")}
+            description={t("desktop.prompts.description")}
             onBack={() => navigate("capabilities")}
             actions={
               <Button
@@ -606,8 +605,8 @@ function App() {
       case "agents":
         return (
           <DetailFrame
-            title="Agents"
-            description="Agent 编排正在建设中，当前不展示尚未实现的配置。"
+            title={t("desktop.views.agents")}
+            description={t("desktop.agents.description")}
             onBack={() => navigate("capabilities")}
           >
             <AgentsPanel onOpenChange={() => navigate("capabilities")} />
@@ -784,10 +783,10 @@ function App() {
                   type="button"
                   onClick={() => setCommandPaletteOpen(true)}
                   className="hidden h-8 items-center gap-2 rounded-lg border bg-background px-2.5 text-[10px] text-muted-foreground shadow-sm transition-colors hover:bg-muted hover:text-foreground md:flex"
-                  title="快捷操作 (⌘K)"
+                  title={`${t("desktop.toolbar.quickActions")} (⌘K)`}
                 >
                   <Search className="h-3.5 w-3.5" />
-                  <span>快捷操作</span>
+                  <span>{t("desktop.toolbar.quickActions")}</span>
                   <kbd className="rounded border bg-muted/70 px-1 py-0.5 font-mono text-[9px]">
                     ⌘K
                   </kbd>
@@ -797,8 +796,8 @@ function App() {
                   size="icon"
                   onClick={() => setContextPanelOpen(true)}
                   className="min-[1320px]:hidden"
-                  title="当前状态"
-                  aria-label="打开当前状态面板"
+                  title={t("desktop.toolbar.currentStatus")}
+                  aria-label={t("desktop.toolbar.openCurrentStatusPanel")}
                 >
                   <PanelRight className="h-4 w-4" />
                 </Button>

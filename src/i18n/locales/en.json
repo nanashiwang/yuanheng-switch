@@ -897,7 +897,20 @@
       "defaultCostMultiplierRequired": "Default multiplier is required",
       "defaultCostMultiplierInvalid": "Invalid multiplier format"
     },
-    "saveFailedGeneric": "Save failed, please try again"
+    "saveFailedGeneric": "Save failed, please try again",
+    "pageDescription": "Themes, language, directories, sync, and advanced options.",
+    "appearanceAndLanguage": "Appearance & Language",
+    "appearanceAndLanguageDescription": "Manage the interface language, theme, and content density in one place.",
+    "toolsAndCapabilities": "Tools & Capabilities",
+    "toolsAndCapabilitiesDescription": "Manage visible apps, Skills storage, and Codex authentication.",
+    "desktopExperience": "Desktop Experience",
+    "desktopExperienceDescription": "Configure window behavior and the preferred terminal.",
+    "interfaceDensity": "Interface Density",
+    "interfaceDensityDescription": "Adjust page spacing and information density. Changes apply immediately.",
+    "densityComfortable": "Comfortable",
+    "densityComfortableDescription": "Roomier spacing for everyday use",
+    "densityCompact": "Compact",
+    "densityCompactDescription": "Reduce spacing to show more content at once"
   },
   "apps": {
     "claude": "Claude",
@@ -2493,7 +2506,9 @@
     "usageApiKey": "Usage API Key",
     "usageBaseUrl": "Usage Query URL",
     "usageAutoInterval": "Auto Query",
-    "usageAutoIntervalValue": "Every {{minutes}} minutes"
+    "usageAutoIntervalValue": "Every {{minutes}} minutes",
+    "providerImportRemoved": "Provider import has been removed",
+    "providerImportRemovedDescription": "Connections are now managed through your YuanHeng account, so providers can no longer be added from the desktop app."
   },
   "iconPicker": {
     "search": "Search Icons",
@@ -3062,7 +3077,10 @@
     "toolbar": {
       "language": "Change language",
       "settings": "Settings",
-      "switchTool": "Switch current tool"
+      "switchTool": "Switch current tool",
+      "quickActions": "Quick Actions",
+      "currentStatus": "Current Status",
+      "openCurrentStatusPanel": "Open the current status panel"
     },
     "window": {
       "minimize": "Minimize window",
@@ -3088,6 +3106,11 @@
     "prompts": {
       "description": "Manage reusable prompt templates.",
       "add": "Add prompt"
+    },
+    "agents": {
+      "description": "Agent orchestration is under development; unfinished settings are hidden for now.",
+      "comingSoon": "Coming Soon",
+      "comingSoonDescription": "Agent management is under development. More powerful autonomous capabilities are on the way."
     }
   }
 }

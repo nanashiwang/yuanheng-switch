@@ -83,7 +83,7 @@ export const DESKTOP_ZH_TW: Record<string, string> = {
   按工具维护系统提示词和指令: "按工具維護系統提示詞和指令",
   自治代理编排能力仍在建设中: "自治代理編排能力仍在建設中",
   "统一管理 {{app}} 的 Skills、MCP、提示词与 Agent 能力。":
-    "統一管理 {{app}} 的 Skills、MCP、提示詞與 Agent 能力。",
+    "統一管理 {{app}} 的技能、MCP、提示詞與代理能力。",
   "{{count}} 个已就绪": "{{count}} 個已就緒",
   正在检测本机工具: "正在偵測本機工具",
   本机工具检测失败: "本機工具偵測失敗",
@@ -313,7 +313,7 @@ export const DESKTOP_ZH_TW: Record<string, string> = {
   "已用 {{percent}}%": "已用 {{percent}}%",
   "{{amount}} 总额": "{{amount}} 總額",
   "统一管理 {{v0}} 的 Skills、MCP、提示词与 Agent 能力。":
-    "統一管理 {{v0}} 的 Skills、MCP、提示詞與 Agent 能力。",
+    "統一管理 {{v0}} 的技能、MCP、提示詞與代理能力。",
   发现能力: "發現能力",
   全局能力配置: "全域能力設定",
   当前管理: "目前管理",

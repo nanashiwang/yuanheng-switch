@@ -22,6 +22,11 @@ describe("desktopI18n", () => {
     expect(dt("账号与余额")).toBe("帳號與餘額");
     expect(dt("当前模型")).toBe("目前模型");
     expect(dt("设置")).toBe("設定");
+    expect(
+      dt("统一管理 {{v0}} 的 Skills、MCP、提示词与 Agent 能力。", {
+        v0: "Codex",
+      }),
+    ).toBe("統一管理 Codex 的技能、MCP、提示詞與代理能力。");
   });
 
   it("繁体中文支持动态桌面提示", async () => {
@@ -51,6 +56,8 @@ describe("desktopI18n", () => {
     expect(zhTW.desktop.views.skills).toBe("技能");
     expect(zhTW.desktop.views.prompts).toBe("提示詞");
     expect(zhTW.desktop.views.agents).toBe("代理");
+    expect(zhTW.settings.skillStorage.title).toBe("技能儲存位置");
+    expect(zhTW.settings.skillSync.title).toBe("技能同步方式");
     expect(zhTW.workspace.manage).toBe("工作區");
     expect(zhTW.usage.input).toBe("輸入");
     expect(zhTW.usage.output).toBe("輸出");

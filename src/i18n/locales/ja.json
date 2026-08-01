@@ -897,7 +897,20 @@
       "defaultCostMultiplierRequired": "デフォルト倍率は必須です",
       "defaultCostMultiplierInvalid": "デフォルト倍率の形式が正しくありません"
     },
-    "saveFailedGeneric": "保存に失敗しました。もう一度お試しください"
+    "saveFailedGeneric": "保存に失敗しました。もう一度お試しください",
+    "pageDescription": "テーマ、言語、ディレクトリ、同期、高度なオプション。",
+    "appearanceAndLanguage": "外観と言語",
+    "appearanceAndLanguageDescription": "インターフェース言語、テーマ、コンテンツ密度をまとめて管理します。",
+    "toolsAndCapabilities": "ツールと機能",
+    "toolsAndCapabilitiesDescription": "表示するアプリ、Skills の保存先、Codex 認証を管理します。",
+    "desktopExperience": "デスクトップ体験",
+    "desktopExperienceDescription": "ウィンドウの動作と優先ターミナルを設定します。",
+    "interfaceDensity": "表示密度",
+    "interfaceDensityDescription": "ページの余白と情報密度を調整します。変更はすぐに反映されます。",
+    "densityComfortable": "ゆったり",
+    "densityComfortableDescription": "日常利用に適した広めの間隔",
+    "densityCompact": "コンパクト",
+    "densityCompactDescription": "余白を減らしてより多くの内容を表示"
   },
   "apps": {
     "claude": "Claude",
@@ -2493,7 +2506,9 @@
     "usageApiKey": "使用量 API キー",
     "usageBaseUrl": "使用量クエリ URL",
     "usageAutoInterval": "自動クエリ",
-    "usageAutoIntervalValue": "{{minutes}} 分ごと"
+    "usageAutoIntervalValue": "{{minutes}} 分ごと",
+    "providerImportRemoved": "プロバイダーのインポートは廃止されました",
+    "providerImportRemovedDescription": "接続は YuanHeng アカウントで一元管理されるため、デスクトップアプリからプロバイダーを追加できません。"
   },
   "iconPicker": {
     "search": "アイコンを検索",
@@ -3062,7 +3077,10 @@
     "toolbar": {
       "language": "言語を切り替える",
       "settings": "設定",
-      "switchTool": "現在のツールを切り替える"
+      "switchTool": "現在のツールを切り替える",
+      "quickActions": "クイック操作",
+      "currentStatus": "現在の状態",
+      "openCurrentStatusPanel": "現在の状態パネルを開く"
     },
     "window": {
       "minimize": "ウィンドウを最小化",
@@ -3088,6 +3106,11 @@
     "prompts": {
       "description": "再利用可能なプロンプトテンプレートを管理します。",
       "add": "プロンプトを追加"
+    },
+    "agents": {
+      "description": "エージェントのオーケストレーション機能は開発中のため、未完成の設定は現在表示していません。",
+      "comingSoon": "近日公開",
+      "comingSoonDescription": "エージェント管理機能は開発中です。より強力な自律機能にご期待ください。"
     }
   }
 }

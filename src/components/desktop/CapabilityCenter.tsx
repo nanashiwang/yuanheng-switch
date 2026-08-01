@@ -1,4 +1,5 @@
 import { useQuery } from "@tanstack/react-query";
+import { useTranslation } from "react-i18next";
 import {
   ArrowRight,
   Bot,
@@ -25,6 +26,7 @@ interface CapabilityCenterProps {
 }
 
 export function CapabilityCenter({ activeApp, onOpen }: CapabilityCenterProps) {
+  const { t } = useTranslation();
   const { data: skills = [] } = useInstalledSkills();
   const { data: mcpServers = {} } = useAllMcpServers();
   const { data: prompts = {} } = useQuery({
@@ -33,7 +35,7 @@ export function CapabilityCenter({ activeApp, onOpen }: CapabilityCenterProps) {
   });
   const cards = [
     {
-      title: "Skills",
+      title: t("desktop.views.skills"),
       description: dt("给 AI 工具安装可复用的专业能力"),
       value: skills.length,
       icon: Wrench,
@@ -41,7 +43,7 @@ export function CapabilityCenter({ activeApp, onOpen }: CapabilityCenterProps) {
       view: "skills" as const,
     },
     {
-      title: "MCP",
+      title: t("desktop.views.mcp"),
       description: dt("连接文件、数据库和外部服务"),
       value: Object.keys(mcpServers).length,
       icon: Boxes,
@@ -49,7 +51,7 @@ export function CapabilityCenter({ activeApp, onOpen }: CapabilityCenterProps) {
       view: "mcp" as const,
     },
     {
-      title: "Prompts",
+      title: t("desktop.views.prompts"),
       description: dt("按工具维护系统提示词和指令"),
       value: Object.keys(prompts).length,
       icon: BookOpenText,
@@ -57,7 +59,7 @@ export function CapabilityCenter({ activeApp, onOpen }: CapabilityCenterProps) {
       view: "prompts" as const,
     },
     {
-      title: "Agents",
+      title: t("desktop.views.agents"),
       description: dt("自治代理编排能力仍在建设中"),
       value: 0,
       icon: Bot,
@@ -69,7 +71,7 @@ export function CapabilityCenter({ activeApp, onOpen }: CapabilityCenterProps) {
   return (
     <div className="mx-auto flex h-full w-full max-w-[1120px] flex-col overflow-hidden px-7 pt-6">
       <PageHeader
-        eyebrow="Capability Center"
+        eyebrow={dt("能力中心")}
         title={dt("能力中心")}
         description={dt(
           "统一管理 {{v0}} 的 Skills、MCP、提示词与 Agent 能力。",

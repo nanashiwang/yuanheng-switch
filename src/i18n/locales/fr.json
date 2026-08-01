@@ -7,13 +7,29 @@
     "title": "Paramètres",
     "language": "Langue",
     "languageHint": "Choisissez la langue d’affichage de l’application.",
-    "saveFailedGeneric": "Échec de l’enregistrement. Réessayez."
+    "saveFailedGeneric": "Échec de l’enregistrement. Réessayez.",
+    "pageDescription": "Thèmes, langue, répertoires, synchronisation et options avancées.",
+    "appearanceAndLanguage": "Apparence et langue",
+    "appearanceAndLanguageDescription": "Gérez la langue de l’interface, le thème et la densité du contenu au même endroit.",
+    "toolsAndCapabilities": "Outils et capacités",
+    "toolsAndCapabilitiesDescription": "Gérez les applications visibles, le stockage des Skills et l’authentification Codex.",
+    "desktopExperience": "Expérience de bureau",
+    "desktopExperienceDescription": "Configurez le comportement des fenêtres et le terminal préféré.",
+    "interfaceDensity": "Densité de l’interface",
+    "interfaceDensityDescription": "Ajustez l’espacement et la densité des informations. Les changements s’appliquent immédiatement.",
+    "densityComfortable": "Confortable",
+    "densityComfortableDescription": "Un espacement plus généreux pour un usage quotidien",
+    "densityCompact": "Compacte",
+    "densityCompactDescription": "Réduit l’espacement pour afficher plus de contenu"
   },
   "desktop": {
     "toolbar": {
       "language": "Changer de langue",
       "settings": "Paramètres",
-      "switchTool": "Changer l’outil actuel"
+      "switchTool": "Changer l’outil actuel",
+      "quickActions": "Actions rapides",
+      "currentStatus": "État actuel",
+      "openCurrentStatusPanel": "Ouvrir le panneau d’état actuel"
     },
     "window": {
       "minimize": "Réduire la fenêtre",
@@ -57,6 +73,15 @@
     "prompts": {
       "description": "Gérez les modèles de prompts réutilisables.",
       "add": "Ajouter un prompt"
+    },
+    "agents": {
+      "description": "L’orchestration des agents est en cours de développement ; les réglages inachevés restent masqués pour le moment.",
+      "comingSoon": "Bientôt disponible",
+      "comingSoonDescription": "La gestion des agents est en cours de développement. Des capacités autonomes plus puissantes arrivent bientôt."
     }
+  },
+  "deeplink": {
+    "providerImportRemoved": "L’importation des fournisseurs a été supprimée",
+    "providerImportRemovedDescription": "Les connexions sont désormais gérées depuis votre compte YuanHeng ; les fournisseurs ne peuvent plus être ajoutés depuis l’application de bureau."
   }
 }

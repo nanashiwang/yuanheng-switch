@@ -182,3 +182,53 @@ jobs:
           generateReleaseNotes: true
           updaterJsonPreferNsis: true
           args: --target ${{ matrix.target }} --bundles ${{ matrix.bundles }}
+
+  mirror-desktop-update:
+    name: Mirror release to YuanHeng platform
+    needs: build
+    if: startsWith(github.ref, 'refs/tags/')
+    runs-on: ubuntu-22.04
+    timeout-minutes: 30
+    env:
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      DESKTOP_UPDATE_PUBLISH_URL: ${{ secrets.DESKTOP_UPDATE_PUBLISH_URL }}
+      DESKTOP_UPDATE_PUBLISH_TOKEN: ${{ secrets.DESKTOP_UPDATE_PUBLISH_TOKEN }}
+    steps:
+      - name: Mirror signed updater assets
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ -z "$DESKTOP_UPDATE_PUBLISH_URL" || -z "$DESKTOP_UPDATE_PUBLISH_TOKEN" ]]; then
+            echo "Desktop update mirror secrets are not configured; keeping GitHub-only updates."
+            exit 0
+          fi
+
+          VERSION="${GITHUB_REF_NAME#v}"
+          mkdir -p release-assets
+          gh release download "$GITHUB_REF_NAME" \
+            --repo "$GITHUB_REPOSITORY" \
+            --dir release-assets
+          test -s release-assets/latest.json
+
+          while IFS= read -r -d '' file; do
+            filename="$(basename "$file")"
+            encoded_filename="$(python3 -c 'import sys, urllib.parse; print(urllib.parse.quote(sys.argv[1], safe=""))' "$filename")"
+            curl --fail-with-body --silent --show-error \
+              --retry 5 --retry-all-errors \
+              --connect-timeout 20 --max-time 1800 \
+              --request PUT \
+              --header "Authorization: Bearer $DESKTOP_UPDATE_PUBLISH_TOKEN" \
+              --header "Content-Type: application/octet-stream" \
+              --data-binary "@$file" \
+              "${DESKTOP_UPDATE_PUBLISH_URL%/}/${VERSION}/${encoded_filename}"
+          done < <(find release-assets -maxdepth 1 -type f ! -name latest.json -print0)
+
+          # The manifest is published last so clients never observe a partial release.
+          curl --fail-with-body --silent --show-error \
+            --retry 5 --retry-all-errors \
+            --connect-timeout 20 --max-time 120 \
+            --request PUT \
+            --header "Authorization: Bearer $DESKTOP_UPDATE_PUBLISH_TOKEN" \
+            --header "Content-Type: application/json" \
+            --data-binary @release-assets/latest.json \
+            "${DESKTOP_UPDATE_PUBLISH_URL%/}/latest.json"

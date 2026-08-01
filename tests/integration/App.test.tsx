@@ -838,9 +838,9 @@ describe("App integration with MSW", { timeout: 15_000 }, () => {
 
     await waitFor(() =>
       expect(toastErrorMock).toHaveBeenCalledWith(
-        "供应商导入已移除",
+        "deeplink.providerImportRemoved",
         expect.objectContaining({
-          description: expect.stringContaining("元衡账号统一管理"),
+          description: "deeplink.providerImportRemovedDescription",
         }),
       ),
     );

@@ -7,13 +7,29 @@
     "title": "설정",
     "language": "언어",
     "languageHint": "앱의 표시 언어를 선택합니다.",
-    "saveFailedGeneric": "저장하지 못했습니다. 다시 시도해 주세요."
+    "saveFailedGeneric": "저장하지 못했습니다. 다시 시도해 주세요.",
+    "pageDescription": "테마, 언어, 디렉터리, 동기화 및 고급 옵션.",
+    "appearanceAndLanguage": "모양 및 언어",
+    "appearanceAndLanguageDescription": "인터페이스 언어, 테마 및 콘텐츠 밀도를 한곳에서 관리합니다.",
+    "toolsAndCapabilities": "도구 및 기능",
+    "toolsAndCapabilitiesDescription": "표시할 앱, Skills 저장 위치 및 Codex 인증을 관리합니다.",
+    "desktopExperience": "데스크톱 환경",
+    "desktopExperienceDescription": "창 동작과 기본 터미널을 설정합니다.",
+    "interfaceDensity": "인터페이스 밀도",
+    "interfaceDensityDescription": "페이지 여백과 정보 밀도를 조정합니다. 변경 사항은 즉시 적용됩니다.",
+    "densityComfortable": "편안하게",
+    "densityComfortableDescription": "일상 사용에 적합한 넉넉한 간격",
+    "densityCompact": "간결하게",
+    "densityCompactDescription": "여백을 줄여 한 화면에 더 많은 내용 표시"
   },
   "desktop": {
     "toolbar": {
       "language": "언어 변경",
       "settings": "설정",
-      "switchTool": "현재 도구 변경"
+      "switchTool": "현재 도구 변경",
+      "quickActions": "빠른 작업",
+      "currentStatus": "현재 상태",
+      "openCurrentStatusPanel": "현재 상태 패널 열기"
     },
     "window": {
       "minimize": "창 최소화",
@@ -57,6 +73,15 @@
     "prompts": {
       "description": "재사용 가능한 프롬프트 템플릿을 관리합니다.",
       "add": "프롬프트 추가"
+    },
+    "agents": {
+      "description": "에이전트 오케스트레이션 기능을 개발 중이며, 아직 완성되지 않은 설정은 표시하지 않습니다.",
+      "comingSoon": "곧 제공 예정",
+      "comingSoonDescription": "에이전트 관리 기능을 개발 중입니다. 더 강력한 자율 기능을 기대해 주세요."
     }
+  },
+  "deeplink": {
+    "providerImportRemoved": "공급자 가져오기가 제거되었습니다",
+    "providerImportRemovedDescription": "연결은 YuanHeng 계정에서 통합 관리되므로 데스크톱 앱에서 공급자를 추가할 수 없습니다."
   }
 }
