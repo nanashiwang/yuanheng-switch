@@ -1,13 +1,36 @@
 #![allow(non_snake_case)]
 
+use std::time::Duration;
 use tauri::{AppHandle, Emitter, Manager};
-use tauri_plugin_updater::UpdaterExt;
+use tauri_plugin_updater::{Update, UpdaterExt};
 
 /// 应用更新下载进度（通过 `update-download-progress` 事件发给前端）。
 #[derive(Clone, serde::Serialize)]
 struct UpdateDownloadProgress {
     downloaded: u64,
     total: Option<u64>,
+}
+
+#[derive(Clone, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AppUpdateMetadata {
+    current_version: String,
+    available_version: String,
+    notes: Option<String>,
+    pub_date: Option<String>,
+}
+
+async fn find_app_update(app: &AppHandle, timeout: Duration) -> Result<Option<Update>, String> {
+    let mut builder = app.updater_builder().timeout(timeout);
+    if let Some(proxy) = crate::services::updater_proxy::resolve_updater_proxy() {
+        builder = builder.proxy(proxy);
+    }
+    builder
+        .build()
+        .map_err(|e| format!("初始化更新器失败: {e}"))?
+        .check()
+        .await
+        .map_err(|e| format!("检查更新失败: {e}"))
 }
 
 fn merge_settings_for_save(
@@ -197,16 +220,7 @@ pub async fn restart_app(app: AppHandle) -> Result<bool, String> {
 /// 这里把退出清理、安装和重启串在同一个后端流程中，避免依赖旧前端继续执行。
 #[tauri::command]
 pub async fn install_update_and_restart(app: AppHandle) -> Result<bool, String> {
-    let updater = app
-        .updater_builder()
-        .build()
-        .map_err(|e| format!("初始化更新器失败: {e}"))?;
-
-    let Some(update) = updater
-        .check()
-        .await
-        .map_err(|e| format!("检查更新失败: {e}"))?
-    else {
+    let Some(update) = find_app_update(&app, Duration::from_secs(30)).await? else {
         return Ok(false);
     };
 
@@ -267,6 +281,29 @@ pub async fn install_update_and_restart(app: AppHandle) -> Result<bool, String> 
     }
 }
 
+/// 检查桌面应用更新并返回更新提示所需的元数据。
+#[tauri::command]
+pub async fn check_desktop_update(
+    app: AppHandle,
+    timeout_ms: Option<u64>,
+) -> Result<Option<AppUpdateMetadata>, String> {
+    let timeout = Duration::from_millis(timeout_ms.unwrap_or(30_000));
+    Ok(find_app_update(&app, timeout).await?.map(|update| {
+        let pub_date = update
+            .raw_json
+            .get("pub_date")
+            .and_then(|value| value.as_str())
+            .map(str::to_owned)
+            .or_else(|| update.date.map(|date| date.to_string()));
+        AppUpdateMetadata {
+            current_version: update.current_version,
+            available_version: update.version,
+            notes: update.body,
+            pub_date,
+        }
+    }))
+}
+
 /// 检查是否有可用的应用更新，返回可用的新版本号（无更新时返回 None）。
 ///
 /// 数据库版本过新的恢复界面用它判断：升级应用能否解决问题。若返回 None，说明
@@ -274,15 +311,9 @@ pub async fn install_update_and_restart(app: AppHandle) -> Result<bool, String> 
 /// 升级无法解决，而不是让其反复尝试。
 #[tauri::command]
 pub async fn check_app_update_available(app: AppHandle) -> Result<Option<String>, String> {
-    let updater = app
-        .updater_builder()
-        .build()
-        .map_err(|e| format!("初始化更新器失败: {e}"))?;
-    let update = updater
-        .check()
-        .await
-        .map_err(|e| format!("检查更新失败: {e}"))?;
-    Ok(update.map(|u| u.version))
+    Ok(find_app_update(&app, Duration::from_secs(30))
+        .await?
+        .map(|update| update.version))
 }
 
 /// 获取 app_config_dir 覆盖配置 (从 Store)
