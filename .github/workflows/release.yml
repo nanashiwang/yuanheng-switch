@@ -183,9 +183,47 @@ jobs:
           updaterJsonPreferNsis: true
           args: --target ${{ matrix.target }} --bundles ${{ matrix.bundles }}
 
+  finalize-updater-manifest:
+    name: Publish updater manifest
+    needs: build
+    if: startsWith(github.ref, 'refs/tags/')
+    runs-on: ubuntu-22.04
+    timeout-minutes: 10
+    env:
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+    steps:
+      - name: Replace rate-limited API asset URLs
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p release-assets
+          gh release download "$GITHUB_REF_NAME" \
+            --repo "$GITHUB_REPOSITORY" \
+            --pattern latest.json \
+            --dir release-assets
+          gh api "repos/$GITHUB_REPOSITORY/releases/tags/$GITHUB_REF_NAME" \
+            > release-assets/release.json
+
+          jq --slurpfile release release-assets/release.json '
+            ($release[0].assets
+              | map({ key: .url, value: .browser_download_url })
+              | from_entries) as $asset_urls
+            | .platforms |= with_entries(
+                .value.url = ($asset_urls[.value.url] // .value.url)
+              )
+          ' release-assets/latest.json > release-assets/latest.rewritten.json
+
+          test "$(jq -r '.version' release-assets/latest.rewritten.json)" = "${GITHUB_REF_NAME#v}"
+          jq -e 'all(.platforms[].url; contains("/releases/download/"))' \
+            release-assets/latest.rewritten.json > /dev/null
+          mv release-assets/latest.rewritten.json release-assets/latest.json
+          gh release upload "$GITHUB_REF_NAME" release-assets/latest.json \
+            --repo "$GITHUB_REPOSITORY" \
+            --clobber
+
   mirror-desktop-update:
     name: Mirror release to YuanHeng platform
-    needs: build
+    needs: finalize-updater-manifest
     if: startsWith(github.ref, 'refs/tags/')
     runs-on: ubuntu-22.04
     timeout-minutes: 30
