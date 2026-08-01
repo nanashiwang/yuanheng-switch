@@ -2,17 +2,19 @@ import tauriConfig from "../../src-tauri/tauri.conf.json";
 
 const githubReleaseManifest =
   "https://github.com/nanashiwang/yuanheng-switch/releases/latest/download/latest.json";
+const yuanHengReleaseManifest =
+  "https://cn.meta-api.vip/desktop/update/latest.json";
 
 describe("desktop updater config", () => {
-  it("uses a JSON release manifest as the primary endpoint", () => {
+  it("uses the YuanHeng mirror as the primary endpoint", () => {
     expect(tauriConfig.plugins.updater.endpoints[0]).toBe(
-      githubReleaseManifest,
+      yuanHengReleaseManifest,
     );
   });
 
-  it("does not include the YuanHeng SPA fallback route", () => {
-    expect(tauriConfig.plugins.updater.endpoints).not.toContain(
-      "https://cn.meta-api.vip/desktop/update/latest.json",
+  it("keeps GitHub releases as the fallback endpoint", () => {
+    expect(tauriConfig.plugins.updater.endpoints[1]).toBe(
+      githubReleaseManifest,
     );
   });
 });
