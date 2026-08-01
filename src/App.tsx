@@ -472,7 +472,7 @@ function App() {
       case "skills":
         return (
           <DetailFrame
-            title="Skills"
+            title={t("desktop.views.skills")}
             description={t("desktop.skills.description")}
             onBack={() => navigate("capabilities")}
             actions={

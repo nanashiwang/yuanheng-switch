@@ -27,6 +27,10 @@ describe("desktopI18n", () => {
         v0: "Codex",
       }),
     ).toBe("統一管理 Codex 的技能、MCP、提示詞與代理能力。");
+    expect(dt("今日 Tokens")).toBe("今日權杖");
+    expect(dt("{{v0}} 个技能 · {{v1}} 个 MCP", { v0: 2, v1: 3 })).toBe(
+      "2 個技能 · 3 個 MCP",
+    );
   });
 
   it("繁体中文支持动态桌面提示", async () => {
@@ -58,6 +62,7 @@ describe("desktopI18n", () => {
     expect(zhTW.desktop.views.agents).toBe("代理");
     expect(zhTW.settings.skillStorage.title).toBe("技能儲存位置");
     expect(zhTW.settings.skillSync.title).toBe("技能同步方式");
+    expect(zhTW.usage.tokens).toBe("權杖");
     expect(zhTW.workspace.manage).toBe("工作區");
     expect(zhTW.usage.input).toBe("輸入");
     expect(zhTW.usage.output).toBe("輸出");

@@ -62,7 +62,10 @@ export function WorkspaceDashboard({
             {[
               {
                 title: dt("能力中心"),
-                value: `${skills.length} Skills · ${Object.keys(mcpServers).length} MCP`,
+                value: dt("{{v0}} 个技能 · {{v1}} 个 MCP", {
+                  v0: skills.length,
+                  v1: Object.keys(mcpServers).length,
+                }),
                 icon: Blocks,
                 view: "capabilities" as const,
               },
