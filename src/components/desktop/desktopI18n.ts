@@ -1,4 +1,5 @@
 import i18n from "@/i18n";
+import { DESKTOP_JA } from "./desktopI18n.ja";
 import { DESKTOP_ZH_TW } from "./desktopI18n.zhTW";
 
 type Values = Record<string, string | number | null | undefined>;
@@ -512,6 +513,17 @@ const DYNAMIC_EN: Array<[RegExp, (...matches: string[]) => string]> = [
   [/^(\d+) 个工具已经就绪。$/, (count) => `${count} tools are ready.`],
 ];
 
+const DYNAMIC_JA: Array<[RegExp, (...matches: string[]) => string]> = [
+  [
+    /^检测到 (\d+) 个工具配置发生变化。$/,
+    (count) => `${count}個のツール設定が変更されました。`,
+  ],
+  [
+    /^(\d+) 个工具已经就绪。$/,
+    (count) => `${count}個のツールが準備完了しました。`,
+  ],
+];
+
 const DYNAMIC_ZH_TW: Array<[RegExp, (...matches: string[]) => string]> = [
   [
     /^检测到 (\d+) 个工具配置发生变化。$/,
@@ -548,6 +560,9 @@ export function dt(source: string, values?: Values): string {
 
   if (language === "zh-CN") {
     template = source;
+  } else if (language === "ja") {
+    template =
+      DESKTOP_JA[source] ?? translateDynamic(source, DYNAMIC_JA) ?? source;
   } else if (language === "zh-TW") {
     template =
       DESKTOP_ZH_TW[source] ??

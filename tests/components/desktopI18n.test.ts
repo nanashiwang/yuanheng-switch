@@ -5,6 +5,7 @@ import {
   desktopLocale,
   dt,
 } from "@/components/desktop/desktopI18n";
+import { DESKTOP_JA } from "@/components/desktop/desktopI18n.ja";
 import { DESKTOP_ZH_TW } from "@/components/desktop/desktopI18n.zhTW";
 import zhTW from "@/i18n/locales/zh-TW.json";
 
@@ -33,6 +34,23 @@ describe("desktopI18n", () => {
     );
   });
 
+  it("日语使用完整的桌面翻译而不是英文回退", async () => {
+    await i18n.changeLanguage("ja");
+
+    expect(desktopLocale()).toBe("ja");
+    expect(dt("工作台")).toBe("ワークスペース");
+    expect(dt("工具管理")).toBe("ツール管理");
+    expect(dt("能力中心")).toBe("機能センター");
+    expect(dt("会话与用量")).toBe("セッションと使用量");
+    expect(dt("快捷控制台")).toBe("クイックコンソール");
+    expect(dt("当前模型")).toBe("現在のモデル");
+    expect(dt("令牌分组")).toBe("トークングループ");
+    expect(dt("一键修复")).toBe("今すぐ修復");
+    expect(dt("检测到 3 个工具配置发生变化。")).toBe(
+      "3個のツール設定が変更されました。",
+    );
+  });
+
   it("繁体中文支持动态桌面提示", async () => {
     await i18n.changeLanguage("zh-TW");
 
@@ -48,6 +66,39 @@ describe("desktopI18n", () => {
 
     await i18n.changeLanguage("en");
     expect(dt("账号与余额")).toBe("Account & Balance");
+  });
+
+  it("日语覆盖全部桌面英文词条", () => {
+    expect(Object.keys(DESKTOP_JA).sort()).toEqual(
+      Object.keys(DESKTOP_EN).sort(),
+    );
+
+    const untranslatedBrandNames = new Set([
+      "元衡桌面端",
+      "元衡 API",
+      "阿里千问",
+      "智谱 AI",
+      "月之暗面",
+      "字节豆包",
+      "百度文心",
+      "腾讯混元",
+      "小米 MiMo",
+      "阶跃星辰",
+      "美团 LongCat",
+    ]);
+
+    for (const [source, english] of Object.entries(DESKTOP_EN)) {
+      const placeholders = (text: string) =>
+        [...text.matchAll(/\{\{\w+\}\}/g)].map(([value]) => value);
+
+      expect(placeholders(DESKTOP_JA[source]), source).toEqual(
+        placeholders(source),
+      );
+      expect(DESKTOP_JA[source], source).not.toMatch(/\[\[|【|】/);
+      if (!untranslatedBrandNames.has(source)) {
+        expect(DESKTOP_JA[source], source).not.toBe(english);
+      }
+    }
   });
 
   it("繁体中文覆盖全部桌面英文词条", () => {
