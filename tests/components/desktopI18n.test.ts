@@ -5,7 +5,12 @@ import {
   desktopLocale,
   dt,
 } from "@/components/desktop/desktopI18n";
+import { DESKTOP_DE } from "@/components/desktop/desktopI18n.de";
+import { DESKTOP_ES } from "@/components/desktop/desktopI18n.es";
+import { DESKTOP_FR } from "@/components/desktop/desktopI18n.fr";
 import { DESKTOP_JA } from "@/components/desktop/desktopI18n.ja";
+import { DESKTOP_KO } from "@/components/desktop/desktopI18n.ko";
+import { DESKTOP_PT_BR } from "@/components/desktop/desktopI18n.ptBR";
 import { DESKTOP_ZH_TW } from "@/components/desktop/desktopI18n.zhTW";
 import zhTW from "@/i18n/locales/zh-TW.json";
 
@@ -50,6 +55,35 @@ describe("desktopI18n", () => {
       "3個のツール設定が変更されました。",
     );
   });
+
+  it.each([
+    ["ko", "워크스페이스", "현재 모델", "3개 도구가 준비되었습니다."],
+    [
+      "es",
+      "Espacio de trabajo",
+      "Modelo actual",
+      "3 herramientas están listas.",
+    ],
+    ["de", "Arbeitsbereich", "Aktuelles Modell", "3 Tools sind bereit."],
+    ["fr", "Espace de travail", "Modèle actuel", "3 outils sont prêts."],
+    [
+      "pt-BR",
+      "Espaço de trabalho",
+      "Modelo atual",
+      "3 ferramentas estão prontas.",
+    ],
+  ])(
+    "%s uses its desktop dictionary instead of English fallback",
+    async (language, workspace, currentModel, readyMessage) => {
+      await i18n.changeLanguage(language);
+
+      expect(desktopLocale()).toBe(language);
+      expect(dt("工作台")).toBe(workspace);
+      expect(dt("当前模型")).toBe(currentModel);
+      expect(dt("3 个工具已经就绪。")).toBe(readyMessage);
+      expect(dt("设置")).not.toBe(DESKTOP_EN["设置"]);
+    },
+  );
 
   it("繁体中文支持动态桌面提示", async () => {
     await i18n.changeLanguage("zh-TW");
@@ -100,6 +134,29 @@ describe("desktopI18n", () => {
       }
     }
   });
+
+  it.each([
+    ["ko", DESKTOP_KO],
+    ["es", DESKTOP_ES],
+    ["de", DESKTOP_DE],
+    ["fr", DESKTOP_FR],
+    ["pt-BR", DESKTOP_PT_BR],
+  ])(
+    "%s covers every desktop source and preserves placeholders",
+    (_name, dictionary) => {
+      expect(Object.keys(dictionary).sort()).toEqual(
+        Object.keys(DESKTOP_EN).sort(),
+      );
+
+      for (const source of Object.keys(DESKTOP_EN)) {
+        const placeholders = (text: string) =>
+          [...text.matchAll(/\{\{\w+\}\}/g)].map(([value]) => value).sort();
+        expect(placeholders(dictionary[source]), source).toEqual(
+          placeholders(source),
+        );
+      }
+    },
+  );
 
   it("繁体中文覆盖全部桌面英文词条", () => {
     expect(Object.keys(DESKTOP_ZH_TW).sort()).toEqual(
