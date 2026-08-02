@@ -331,7 +331,7 @@
     "title": "Einstellungen",
     "general": "Allgemeines",
     "tabGeneral": "Allgemeines",
-    "tabAuth": "Auth",
+    "tabAuth": "Authentifizierung",
     "tabAdvanced": "Fortgeschritten",
     "tabProxy": "Routing",
     "authCenter": {
@@ -724,7 +724,7 @@
       "migrationPartial": "Ich habe {{migrated}} Fähigkeit(en) migriert, {{errors}} Fehler(n). Schau dir die Protokolle für Details an."
     },
     "skillSync": {
-      "title": "Skill Sync Methode",
+      "title": "Methode zur Fähigkeitensynchronisierung",
       "description": "Wähle, wie Fähigkeiten-Dateien synchronisiert werden",
       "symlink": "Symlink",
       "copy": "Dateien kopieren",

@@ -101,6 +101,7 @@ describe("locale resources", () => {
       settings: "설정",
       skills: "스킬",
       prompts: "프롬프트",
+      auth: "인증",
     },
     {
       name: "es",
@@ -109,6 +110,7 @@ describe("locale resources", () => {
       settings: "Configuración",
       skills: "Habilidades",
       prompts: "Indicaciones",
+      auth: "Autenticación",
     },
     {
       name: "de",
@@ -117,6 +119,7 @@ describe("locale resources", () => {
       settings: "Einstellungen",
       skills: "Fähigkeiten",
       prompts: "Eingabeaufforderungen",
+      auth: "Authentifizierung",
     },
     {
       name: "fr",
@@ -125,6 +128,7 @@ describe("locale resources", () => {
       settings: "Paramètres",
       skills: "Compétences",
       prompts: "Invites",
+      auth: "Authentification",
     },
     {
       name: "pt-BR",
@@ -133,14 +137,16 @@ describe("locale resources", () => {
       settings: "Configurações",
       skills: "Habilidades",
       prompts: "Instruções",
+      auth: "Autenticação",
     },
   ])(
     "$name localizes core navigation instead of falling back to English",
-    ({ locale, language, settings, skills, prompts }) => {
+    ({ locale, language, settings, skills, prompts, auth }) => {
       expect(locale.settings.language).toBe(language);
       expect(locale.desktop.views.settings).toBe(settings);
       expect(locale.desktop.views.skills).toBe(skills);
       expect(locale.desktop.views.prompts).toBe(prompts);
+      expect(locale.settings.tabAuth).toBe(auth);
       expect(locale.settings.language).not.toBe(en.settings.language);
       expect(locale.desktop.views.settings).not.toBe(en.desktop.views.settings);
       expect(locale.desktop.views.skills).not.toBe(en.desktop.views.skills);
@@ -153,6 +159,15 @@ describe("locale resources", () => {
       }
     },
   );
+
+  it("keeps common Korean settings labels localized", () => {
+    expect(ko.settings.configDirectoryOverride).toBe(
+      "구성 디렉터리 재정의(고급)",
+    );
+    expect(ko.settings.skillSync.title).toBe("스킬 동기화 방식");
+    expect(ko.providerForm.fillParameter).toBe("{{label}}을(를) 입력해 주세요");
+    expect(ko.skills.importSelected).toBe("선택 항목 가져오기({{count}})");
+  });
 
   it("uses Traditional Chinese for the settings shell", () => {
     expect(zhTW.settings.pageDescription).toBe(

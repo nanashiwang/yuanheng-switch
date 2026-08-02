@@ -331,7 +331,7 @@
     "title": "Paramètres",
     "general": "Généralités",
     "tabGeneral": "Généralités",
-    "tabAuth": "Auth",
+    "tabAuth": "Authentification",
     "tabAdvanced": "Avancé",
     "tabProxy": "Routage",
     "authCenter": {
@@ -726,7 +726,7 @@
     "skillSync": {
       "title": "Méthode de synchronisation des compétences",
       "description": "Choisissez comment synchroniser les fichiers Compétences",
-      "symlink": "Symlink",
+      "symlink": "Lien symbolique",
       "copy": "Copies de fichiers",
       "symlinkHint": "Les liens symmétriques économisent de l’espace disque et permettent la synchronisation en temps réel. Note : Peut nécessiter des privilèges administrateur ou le mode développeur sur Windows"
     },

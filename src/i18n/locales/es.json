@@ -331,7 +331,7 @@
     "title": "Configuración",
     "general": "General",
     "tabGeneral": "General",
-    "tabAuth": "Auth",
+    "tabAuth": "Autenticación",
     "tabAdvanced": "Avanzado",
     "tabProxy": "Enrutamiento",
     "authCenter": {
@@ -726,7 +726,7 @@
     "skillSync": {
       "title": "Método de Sincronización de Habilidades",
       "description": "Elige cómo sincronizar los archivos de habilidades",
-      "symlink": "Symlink",
+      "symlink": "Enlace simbólico",
       "copy": "Copiar archivos",
       "symlinkHint": "Los enlaces simbólicos ahorran espacio en disco y permiten la sincronización en tiempo real. Nota: Puede requerir privilegios de administrador o el Modo Desarrollador en Windows"
     },

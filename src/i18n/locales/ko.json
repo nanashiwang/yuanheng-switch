@@ -78,7 +78,7 @@
     "emptyHint": "아래의 \"에디터에서 추출\"을 클릭하면 현재 구성에서 재사용 가능한 부품을 추출할 수 있습니다"
   },
   "claudeConfig": {
-    "configLabel": "Claude Code settings.json (JSON) *",
+    "configLabel": "Claude Code settings.json 설정(JSON) *",
     "writeCommonConfig": "공통 설정 적용",
     "editCommonConfig": "수정: 공통 설정",
     "editCommonConfigTitle": "편집: 공통 설정 스니펫",
@@ -165,7 +165,7 @@
     "websiteUrl": "웹사이트 URL",
     "notes": "주석",
     "notesPlaceholder": "예: 회사 전용 계정",
-    "configJson": "Config JSON",
+    "configJson": "구성 JSON",
     "writeCommonConfig": "공통 설정 적용",
     "editCommonConfigButton": "공통 설정 수정",
     "configJsonHint": "클로드 코드 전체 구성을 작성해 주세요",
@@ -436,10 +436,10 @@
     },
     "language": "언어",
     "languageHint": "앱의 표시 언어를 선택합니다.",
-    "theme": "주제",
-    "themeHint": "앱의 외형 테마를 선택하면 즉시 적용됩니다.",
-    "themeLight": "빛",
-    "themeDark": "어두운",
+    "theme": "테마",
+    "themeHint": "앱 테마를 선택하면 즉시 적용됩니다.",
+    "themeLight": "라이트",
+    "themeDark": "다크",
     "themeSystem": "시스템",
     "importExport": "SQL 가져오기/내보내기",
     "importExportHint": "마이그레이션 또는 복원을 위한 데이터베이스 SQL 백업을 가져오기 또는 내보내기 (가져오기는 YuanHeng Switch에서 내보내는 백업만 지원합니다).",
@@ -702,7 +702,7 @@
     "unifyCodexHistoryRestoreNothing": "현재 코덱스 디렉토리에 대한 복원 가능한 마이그레이션 백업이 없습니다",
     "unifyCodexHistoryRestoreSkippedToggleOn": "통합 세션 기록이 다시 활성화되었으며; 복원 건너뛰었습니다",
     "appVisibility": {
-      "title": "홈페이지 디스플레이",
+      "title": "홈 화면 표시",
       "description": "홈페이지에 표시할 앱을 선택하세요",
       "claudeDesc": "Anthropic Claude Code CLI",
       "codexDesc": "OpenAI Codex CLI",
@@ -724,9 +724,9 @@
       "migrationPartial": "기술{{migrated}} 마이그레이션, {{errors}} 오류가 발생했습니다. 자세한 내용은 로그를 확인하세요."
     },
     "skillSync": {
-      "title": "스킬 싱크 방법",
+      "title": "스킬 동기화 방식",
       "description": "스킬 파일 동기화 방법을 선택하세요",
-      "symlink": "심링크",
+      "symlink": "심볼릭 링크",
       "copy": "파일 복사",
       "symlinkHint": "심볼링크는 디스크 공간을 절약하고 실시간 동기화를 가능하게 합니다. 참고: Windows에서는 관리자 권한이나 개발자 모드가 필요할 수 있습니다"
     },
@@ -760,25 +760,25 @@
         }
       }
     },
-    "configDirectoryOverride": "Configuration Directory Override (Advanced)",
+    "configDirectoryOverride": "구성 디렉터리 재정의(고급)",
     "configDirectoryDescription": "WSL과 같은 환경에서 Claude Code나 Codex를 사용할 때, 제공자 데이터가 메인 환경과 일치하도록 WSL 내 설정과 직접 지정할 수 있습니다.",
     "appConfigDir": "위안헝 스위치 구성 디렉터리",
     "appConfigDirDescription": "YuanHeng 스위치 설정의 저장 위치를 맞춤 설정하세요 (config sync를 활성화하려면 클라우드 동기화 폴더로 가리킴)",
     "browsePlaceholderApp": "예: C:\\Users\\Administrator\\.yuanheng-switch",
-    "claudeConfigDir": "Claude Code Configuration Directory",
+    "claudeConfigDir": "Claude Code 구성 디렉터리",
     "claudeConfigDirDescription": "Claude 구성 디렉터리 (settings.json). 커스텀 디렉터리는 디렉터리 내에 .claude.json(MCP)를 저장합니다; 기본 ~/.claude 디렉터리는 Claude Code의 분할 ~/.claude.json 경로를 유지합니다.",
     "codexConfigDir": "코덱스 구성 디렉토리",
     "codexConfigDirDescription": "코덱스 구성 디렉터리를 덮어쓰세요.",
     "geminiConfigDir": "제미니 구성 디렉토리",
-    "geminiConfigDirDescription": "Override Gemini configuration directory (.env).",
+    "geminiConfigDirDescription": "Gemini 구성 디렉터리(.env)를 재정의합니다.",
     "grokConfigDir": "Grok 빌드 구성 디렉터리",
-    "grokConfigDirDescription": "Override Grok Build configuration directory (config.toml).",
+    "grokConfigDirDescription": "Grok Build 구성 디렉터리(config.toml)를 재정의합니다.",
     "opencodeConfigDir": "OpenCode 구성 디렉터리",
     "opencodeConfigDirDescription": "OpenCode 구성 디렉터리 (opencode.json).",
     "openclawConfigDir": "OpenClaw 구성 디렉터리",
     "openclawConfigDirDescription": "OpenClaw 구성 디렉터리 (openclaw.json).",
     "hermesConfigDir": "Hermes 구성 디렉터리",
-    "hermesConfigDirDescription": "Override Hermes configuration directory (config.yaml).",
+    "hermesConfigDirDescription": "Hermes 구성 디렉터리(config.yaml)를 재정의합니다.",
     "browsePlaceholderClaude": "예: /home/<your-username>/.claude",
     "browsePlaceholderCodex": "예: /home/<your-username>/.codex",
     "browsePlaceholderGemini": "예: /home/<your-username>/.gemini",
@@ -930,7 +930,7 @@
     "contextWindowInvalid": "컨텍스트 윈도우는 양의 정수여야 합니다",
     "profile": "클라이언트 모델 프로필",
     "rawConfig": "config.toml",
-    "invalidToml": "Invalid config.toml: {{error}}"
+    "invalidToml": "잘못된 config.toml: {{error}}"
   },
   "sessionManager": {
     "title": "세션 매니저",
@@ -1103,7 +1103,7 @@
       "deepseek": "딥시크",
       "together": "함께 AI"
     },
-    "parameterConfig": "Parameter Config - {{name}} *",
+    "parameterConfig": "매개변수 구성 - {{name}} *",
     "mainModel": "메인 모델 (선택 사항)",
     "mainModelPlaceholder": "예: GLM-4.6",
     "fastModel": "패스트 모델 (선택 사항)",
@@ -1115,8 +1115,8 @@
     "codexApiHint": "💡 OpenAI 응답 형식과 호환되는 서비스 엔드포인트를 채우세요",
     "fillSupplierName": "제공자 이름을 입력해 주세요",
     "fillConfigContent": "구성 내용을 작성해 주세요",
-    "fillParameter": "Please fill in {{label}}",
-    "fillTemplateValue": "Please fill in {{label}}",
+    "fillParameter": "{{label}}을(를) 입력해 주세요",
+    "fillTemplateValue": "{{label}}을(를) 입력해 주세요",
     "endpointRequired": "비공식 제공자에게는 API 엔드포인트가 필수입니다",
     "apiKeyRequired": "비공식 제공자는 API 키가 필요합니다",
     "softValidation": {
@@ -1826,7 +1826,7 @@
     "add": "MCP 추가",
     "addServer": "MCP 추가",
     "editServer": "MCP 수정",
-    "addClaudeServer": "Add Claude Code MCP",
+    "addClaudeServer": "Claude Code MCP 추가",
     "editClaudeServer": "수정: Claude Code MCP",
     "addCodexServer": "코덱스 MCP 추가",
     "editCodexServer": "코덱스 MCP 편집",
@@ -2390,7 +2390,7 @@
     "import": "기존 임포트",
     "importDescription": "위안헝 스위치 통합 경영에 도입할 기술 선택",
     "importSuccess": "{{count}} 기술을 성공적으로 도입",
-    "importSelected": "Import Selected ({{count}})",
+    "importSelected": "선택 항목 가져오기({{count}})",
     "noUnmanagedFound": "가져올 기술도 없고요. 모든 기술은 이미 원항 스위치가 관리하고 있습니다.",
     "unmanagedAvailable": "수입 가능한 기술",
     "foundIn": "발견",
@@ -2435,7 +2435,7 @@
     }
   },
   "deeplink": {
-    "confirmImport": "Confirm Import Provider",
+    "confirmImport": "공급자 가져오기 확인",
     "confirmImportDescription": "다음 구성은 딥링크에서 위안헝 스위치로 가져올 예정입니다",
     "importPrompt": "가져오기 프롬프트",
     "importPromptDescription": "이 시스템 프롬프트를 가져오는지 확인해 주세요",
@@ -2842,7 +2842,7 @@
     "saveAndSync": "저장 및 동기화",
     "savedAndSynced": "모든 앱에 저장 및 동기화됨",
     "saveAndSyncError": "저장 및 동기화 실패",
-    "configJsonPreview": "Config JSON Preview",
+    "configJsonPreview": "구성 JSON 미리보기",
     "configJsonPreviewHint": "다음 구성들은 각 앱에 동기화되며(표시된 필드만 덮어쓰고 다른 맞춤 설정은 유지됩니다)"
   },
   "omo": {
