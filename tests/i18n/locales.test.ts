@@ -145,6 +145,12 @@ describe("locale resources", () => {
       expect(locale.desktop.views.settings).not.toBe(en.desktop.views.settings);
       expect(locale.desktop.views.skills).not.toBe(en.desktop.views.skills);
       expect(locale.desktop.views.prompts).not.toBe(en.desktop.views.prompts);
+      expect(locale.apps).toEqual(en.apps);
+
+      for (const value of Object.values(flattenStrings(locale))) {
+        expect(value).not.toMatch(/\bSkills\b|\bPrompts\b/);
+        if (locale === ko) expect(value).not.toMatch(/\bAgents\b/);
+      }
     },
   );
 
