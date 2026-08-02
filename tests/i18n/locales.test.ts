@@ -1,18 +1,14 @@
 import { describe, expect, it } from "vitest";
 
-import de from "@/i18n/locales/de.json";
 import en from "@/i18n/locales/en.json";
-import es from "@/i18n/locales/es.json";
-import fr from "@/i18n/locales/fr.json";
 import ja from "@/i18n/locales/ja.json";
 import ko from "@/i18n/locales/ko.json";
-import ptBR from "@/i18n/locales/pt-BR.json";
 import zh from "@/i18n/locales/zh.json";
 import zhTW from "@/i18n/locales/zh-TW.json";
 
-const locales = { en, zh, zhTW, ja, ko, es, de, fr, ptBR };
+const locales = { en, zh, zhTW, ja, ko };
 
-const completeNonEnglishLocales = { ko, es, de, fr, ptBR };
+const completeNonEnglishLocales = { ko };
 
 function flattenStrings(
   value: unknown,
@@ -102,42 +98,6 @@ describe("locale resources", () => {
       skills: "스킬",
       prompts: "프롬프트",
       auth: "인증",
-    },
-    {
-      name: "es",
-      locale: es,
-      language: "Idioma",
-      settings: "Configuración",
-      skills: "Habilidades",
-      prompts: "Indicaciones",
-      auth: "Autenticación",
-    },
-    {
-      name: "de",
-      locale: de,
-      language: "Sprache",
-      settings: "Einstellungen",
-      skills: "Fähigkeiten",
-      prompts: "Eingabeaufforderungen",
-      auth: "Authentifizierung",
-    },
-    {
-      name: "fr",
-      locale: fr,
-      language: "Langue",
-      settings: "Paramètres",
-      skills: "Compétences",
-      prompts: "Invites",
-      auth: "Authentification",
-    },
-    {
-      name: "pt-BR",
-      locale: ptBR,
-      language: "Idioma",
-      settings: "Configurações",
-      skills: "Habilidades",
-      prompts: "Instruções",
-      auth: "Autenticação",
     },
   ])(
     "$name localizes core navigation instead of falling back to English",

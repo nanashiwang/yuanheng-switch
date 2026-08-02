@@ -1,10 +1,6 @@
 import i18n from "@/i18n";
-import { DESKTOP_DE } from "./desktopI18n.de";
-import { DESKTOP_ES } from "./desktopI18n.es";
-import { DESKTOP_FR } from "./desktopI18n.fr";
 import { DESKTOP_JA } from "./desktopI18n.ja";
 import { DESKTOP_KO } from "./desktopI18n.ko";
-import { DESKTOP_PT_BR } from "./desktopI18n.ptBR";
 import { DESKTOP_ZH_TW } from "./desktopI18n.zhTW";
 
 type Values = Record<string, string | number | null | undefined>;
@@ -526,47 +522,6 @@ const DYNAMIC_KO: Array<[RegExp, (...matches: string[]) => string]> = [
   [/^(\d+) 个工具已经就绪。$/, (count) => `${count}개 도구가 준비되었습니다.`],
 ];
 
-const DYNAMIC_ES: Array<[RegExp, (...matches: string[]) => string]> = [
-  [
-    /^检测到 (\d+) 个工具配置发生变化。$/,
-    (count) =>
-      `Se detectaron cambios en la configuración de ${count} herramientas.`,
-  ],
-  [
-    /^(\d+) 个工具已经就绪。$/,
-    (count) => `${count} herramientas están listas.`,
-  ],
-];
-
-const DYNAMIC_DE: Array<[RegExp, (...matches: string[]) => string]> = [
-  [
-    /^检测到 (\d+) 个工具配置发生变化。$/,
-    (count) => `Bei ${count} Tools wurden Konfigurationsänderungen erkannt.`,
-  ],
-  [/^(\d+) 个工具已经就绪。$/, (count) => `${count} Tools sind bereit.`],
-];
-
-const DYNAMIC_FR: Array<[RegExp, (...matches: string[]) => string]> = [
-  [
-    /^检测到 (\d+) 个工具配置发生变化。$/,
-    (count) =>
-      `Des modifications de configuration ont été détectées pour ${count} outils.`,
-  ],
-  [/^(\d+) 个工具已经就绪。$/, (count) => `${count} outils sont prêts.`],
-];
-
-const DYNAMIC_PT_BR: Array<[RegExp, (...matches: string[]) => string]> = [
-  [
-    /^检测到 (\d+) 个工具配置发生变化。$/,
-    (count) =>
-      `Foram detectadas alterações na configuração de ${count} ferramentas.`,
-  ],
-  [
-    /^(\d+) 个工具已经就绪。$/,
-    (count) => `${count} ferramentas estão prontas.`,
-  ],
-];
-
 const DYNAMIC_JA: Array<[RegExp, (...matches: string[]) => string]> = [
   [
     /^检测到 (\d+) 个工具配置发生变化。$/,
@@ -625,20 +580,6 @@ export function dt(source: string, values?: Values): string {
   } else if (language === "ko") {
     template =
       DESKTOP_KO[source] ?? translateDynamic(source, DYNAMIC_KO) ?? source;
-  } else if (language === "es") {
-    template =
-      DESKTOP_ES[source] ?? translateDynamic(source, DYNAMIC_ES) ?? source;
-  } else if (language === "de") {
-    template =
-      DESKTOP_DE[source] ?? translateDynamic(source, DYNAMIC_DE) ?? source;
-  } else if (language === "fr") {
-    template =
-      DESKTOP_FR[source] ?? translateDynamic(source, DYNAMIC_FR) ?? source;
-  } else if (language === "pt-BR") {
-    template =
-      DESKTOP_PT_BR[source] ??
-      translateDynamic(source, DYNAMIC_PT_BR) ??
-      source;
   } else {
     template =
       DESKTOP_EN[source] ?? translateDynamic(source, DYNAMIC_EN) ?? source;

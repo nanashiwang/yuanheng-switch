@@ -29,20 +29,24 @@ describe("language registry", () => {
     ["en-US", "en"],
     ["ja-JP", "ja"],
     ["ko-KR", "ko"],
-    ["es-MX", "es"],
-    ["de-DE", "de"],
-    ["fr-CA", "fr"],
-    ["pt-PT", "pt-BR"],
   ] as const)("normalizes %s to %s", (input, expected) => {
     expect(normalizeLanguage(input)).toBe(expected);
   });
 
-  it("persists language and updates the document metadata", () => {
-    persistLanguage("fr");
-    applyLanguageToDocument("fr");
+  it.each(["es-MX", "de-DE", "fr-CA", "pt-BR"])(
+    "treats removed language %s as unsupported and falls back to English",
+    (language) => {
+      expect(isSupportedLanguage(language)).toBe(false);
+      expect(normalizeLanguage(language)).toBe("en");
+    },
+  );
 
-    expect(readStoredLanguage()).toBe("fr");
-    expect(document.documentElement.lang).toBe("fr");
+  it("persists language and updates the document metadata", () => {
+    persistLanguage("ko");
+    applyLanguageToDocument("ko");
+
+    expect(readStoredLanguage()).toBe("ko");
+    expect(document.documentElement.lang).toBe("ko");
     expect(document.documentElement.dir).toBe("ltr");
   });
 
@@ -53,10 +57,6 @@ describe("language registry", () => {
       "zh-TW",
       "ja",
       "ko",
-      "es",
-      "de",
-      "fr",
-      "pt-BR",
     ]);
   });
 });

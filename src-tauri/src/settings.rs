@@ -634,14 +634,6 @@ impl AppSettings {
                 "ja".to_string()
             } else if normalized.starts_with("ko") {
                 "ko".to_string()
-            } else if normalized.starts_with("es") {
-                "es".to_string()
-            } else if normalized.starts_with("de") {
-                "de".to_string()
-            } else if normalized.starts_with("fr") {
-                "fr".to_string()
-            } else if normalized.starts_with("pt") {
-                "pt-BR".to_string()
             } else {
                 "en".to_string()
             }
@@ -1210,7 +1202,10 @@ mod tests {
         let cases = [
             ("zh_Hant_HK", "zh-TW"),
             ("en-US", "en"),
-            ("pt-PT", "pt-BR"),
+            ("es-MX", "en"),
+            ("de-DE", "en"),
+            ("fr-CA", "en"),
+            ("pt-PT", "en"),
             ("unsupported", "en"),
         ];
 

@@ -23,7 +23,7 @@ describe("LanguageSettings", () => {
       ).toBeInTheDocument();
     }
 
-    await user.click(screen.getByRole("option", { name: "Français" }));
-    expect(onChange).toHaveBeenCalledWith("fr");
+    await user.click(screen.getByRole("option", { name: "한국어" }));
+    expect(onChange).toHaveBeenCalledWith("ko");
   });
 });

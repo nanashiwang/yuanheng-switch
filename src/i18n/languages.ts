@@ -4,10 +4,6 @@ export const LANGUAGE_OPTIONS = [
   { code: "zh-TW", nativeName: "繁體中文", htmlLang: "zh-TW" },
   { code: "ja", nativeName: "日本語", htmlLang: "ja" },
   { code: "ko", nativeName: "한국어", htmlLang: "ko" },
-  { code: "es", nativeName: "Español", htmlLang: "es" },
-  { code: "de", nativeName: "Deutsch", htmlLang: "de" },
-  { code: "fr", nativeName: "Français", htmlLang: "fr" },
-  { code: "pt-BR", nativeName: "Português (Brasil)", htmlLang: "pt-BR" },
 ] as const;
 
 export type AppLanguage = (typeof LANGUAGE_OPTIONS)[number]["code"];
@@ -42,10 +38,6 @@ export function normalizeLanguage(language?: string | null): AppLanguage {
   if (normalized.startsWith("en")) return "en";
   if (normalized.startsWith("ja")) return "ja";
   if (normalized.startsWith("ko")) return "ko";
-  if (normalized.startsWith("es")) return "es";
-  if (normalized.startsWith("de")) return "de";
-  if (normalized.startsWith("fr")) return "fr";
-  if (normalized.startsWith("pt")) return "pt-BR";
 
   return DEFAULT_LANGUAGE;
 }
@@ -57,19 +49,11 @@ export function isSupportedLanguage(language?: string | null): boolean {
     raw === "en" ||
     raw === "ja" ||
     raw === "ko" ||
-    raw === "es" ||
-    raw === "de" ||
-    raw === "fr" ||
-    raw === "pt-br" ||
     raw === "zh" ||
     raw.startsWith("zh-") ||
     raw.startsWith("en-") ||
     raw.startsWith("ja-") ||
-    raw.startsWith("ko-") ||
-    raw.startsWith("es-") ||
-    raw.startsWith("de-") ||
-    raw.startsWith("fr-") ||
-    raw.startsWith("pt-")
+    raw.startsWith("ko-")
   );
 }
 
