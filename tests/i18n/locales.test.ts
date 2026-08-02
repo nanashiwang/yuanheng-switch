@@ -94,18 +94,57 @@ describe("locale resources", () => {
   );
 
   it.each([
-    ["ko", ko, "언어", "설정"],
-    ["es", es, "Idioma", "Configuración"],
-    ["de", de, "Sprache", "Einstellungen"],
-    ["fr", fr, "Langue", "Paramètres"],
-    ["pt-BR", ptBR, "Idioma", "Configurações"],
+    {
+      name: "ko",
+      locale: ko,
+      language: "언어",
+      settings: "설정",
+      skills: "스킬",
+      prompts: "프롬프트",
+    },
+    {
+      name: "es",
+      locale: es,
+      language: "Idioma",
+      settings: "Configuración",
+      skills: "Habilidades",
+      prompts: "Indicaciones",
+    },
+    {
+      name: "de",
+      locale: de,
+      language: "Sprache",
+      settings: "Einstellungen",
+      skills: "Fähigkeiten",
+      prompts: "Eingabeaufforderungen",
+    },
+    {
+      name: "fr",
+      locale: fr,
+      language: "Langue",
+      settings: "Paramètres",
+      skills: "Compétences",
+      prompts: "Invites",
+    },
+    {
+      name: "pt-BR",
+      locale: ptBR,
+      language: "Idioma",
+      settings: "Configurações",
+      skills: "Habilidades",
+      prompts: "Instruções",
+    },
   ])(
-    "%s localizes core navigation instead of falling back to English",
-    (_name, locale, languageLabel, settingsLabel) => {
-      expect(locale.settings.language).toBe(languageLabel);
-      expect(locale.desktop.views.settings).toBe(settingsLabel);
+    "$name localizes core navigation instead of falling back to English",
+    ({ locale, language, settings, skills, prompts }) => {
+      expect(locale.settings.language).toBe(language);
+      expect(locale.desktop.views.settings).toBe(settings);
+      expect(locale.desktop.views.skills).toBe(skills);
+      expect(locale.desktop.views.prompts).toBe(prompts);
       expect(locale.settings.language).not.toBe(en.settings.language);
       expect(locale.desktop.views.settings).not.toBe(en.desktop.views.settings);
+      expect(locale.desktop.views.skills).not.toBe(en.desktop.views.skills);
+      expect(locale.desktop.views.prompts).not.toBe(en.desktop.views.prompts);
     },
   );
 
