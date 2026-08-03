@@ -253,6 +253,8 @@ export const DESKTOP_EN: Record<string, string> = {
     "Password verified. Complete two-factor authentication.",
   注册并登录成功: "Registered and signed in",
   登录成功: "Signed in successfully",
+  "登录账号不能为空且不能超过 254 个字符":
+    "Sign-in name is required and must be no more than 254 characters",
   "用户名不能为空且不能超过 20 个字符":
     "Username is required and must be no more than 20 characters",
   "密码长度必须为 8 到 20 个字符": "Password must be 8–20 characters",

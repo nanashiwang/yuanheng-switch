@@ -647,14 +647,42 @@ fn parse_auth_response(value: &Value) -> Result<(bool, Option<String>), String> 
     Ok((false, Some(user_id)))
 }
 
-fn validate_credentials(username: &str, password: &str) -> Result<(), String> {
-    if username.is_empty() || username.chars().count() > 20 || username.contains(['\n', '\r']) {
-        return Err("用户名不能为空且不能超过 20 个字符".to_string());
+const MAX_LOGIN_USERNAME_CHARS: usize = 254;
+const MAX_REGISTER_USERNAME_CHARS: usize = 20;
+
+fn validate_username(username: &str, max_chars: usize, error: &str) -> Result<(), String> {
+    if username.is_empty()
+        || username.chars().count() > max_chars
+        || username.contains(['\n', '\r'])
+    {
+        return Err(error.to_string());
     }
+    Ok(())
+}
+
+fn validate_password(password: &str) -> Result<(), String> {
     if !(8..=20).contains(&password.chars().count()) || password.contains(['\n', '\r']) {
         return Err("密码长度必须为 8 到 20 个字符".to_string());
     }
     Ok(())
+}
+
+fn validate_login_credentials(username: &str, password: &str) -> Result<(), String> {
+    validate_username(
+        username,
+        MAX_LOGIN_USERNAME_CHARS,
+        "登录账号不能为空且不能超过 254 个字符",
+    )?;
+    validate_password(password)
+}
+
+fn validate_registration_credentials(username: &str, password: &str) -> Result<(), String> {
+    validate_username(
+        username,
+        MAX_REGISTER_USERNAME_CHARS,
+        "用户名不能为空且不能超过 20 个字符",
+    )?;
+    validate_password(password)
 }
 
 fn device_token_name(device_name: Option<&str>) -> String {
@@ -979,7 +1007,7 @@ async fn login_with_credentials(
     username: &str,
     password: &str,
 ) -> Result<YuanhengAuthResult, String> {
-    validate_credentials(username, password)?;
+    validate_login_credentials(username, password)?;
     let client = yuanheng_client()?;
     let (value, headers) = post_json(
         &client,
@@ -2937,7 +2965,7 @@ pub async fn register_yuanheng(
     password: String,
 ) -> Result<YuanhengAuthResult, String> {
     let username = username.trim();
-    validate_credentials(username, &password)?;
+    validate_registration_credentials(username, &password)?;
     let client = yuanheng_client()?;
     let (value, _) = post_json(
         &client,
@@ -3240,6 +3268,14 @@ mod tests {
     use crate::database::Database;
     use serial_test::serial;
     use std::sync::Arc;
+
+    #[test]
+    fn login_accepts_existing_usernames_longer_than_registration_limit() {
+        let username = "account-name-longer-than-twenty-characters";
+
+        assert!(validate_login_credentials(username, "password123").is_ok());
+        assert!(validate_registration_credentials(username, "password123").is_err());
+    }
 
     #[test]
     fn creates_session_cookie_for_isolated_webview() {

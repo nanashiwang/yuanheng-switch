@@ -33,6 +33,9 @@ import { extractErrorMessage } from "@/utils/errorUtils";
 import { cn } from "@/lib/utils";
 import { dt } from "./desktopI18n";
 
+const MAX_LOGIN_USERNAME_LENGTH = 254;
+const MAX_REGISTER_USERNAME_LENGTH = 20;
+
 interface YuanhengConnectionPanelProps {
   compact?: boolean;
   onConnected?: () => void;
@@ -74,8 +77,19 @@ export function YuanhengConnectionPanel({
 
   const handleAuthenticate = async () => {
     const normalizedUsername = username.trim();
-    if (!normalizedUsername || normalizedUsername.length > 20) {
-      toast.error(dt("用户名不能为空且不能超过 20 个字符"));
+    const usernameLimit =
+      authMode === "login"
+        ? MAX_LOGIN_USERNAME_LENGTH
+        : MAX_REGISTER_USERNAME_LENGTH;
+    if (
+      !normalizedUsername ||
+      Array.from(normalizedUsername).length > usernameLimit
+    ) {
+      toast.error(
+        authMode === "login"
+          ? dt("登录账号不能为空且不能超过 254 个字符")
+          : dt("用户名不能为空且不能超过 20 个字符"),
+      );
       return;
     }
     if (password.length < 8 || password.length > 20) {
@@ -282,7 +296,11 @@ export function YuanhengConnectionPanel({
                     value={username}
                     onChange={(event) => setUsername(event.target.value)}
                     placeholder={dt("输入元衡用户名")}
-                    maxLength={20}
+                    maxLength={
+                      authMode === "login"
+                        ? MAX_LOGIN_USERNAME_LENGTH
+                        : MAX_REGISTER_USERNAME_LENGTH
+                    }
                     className="h-9"
                   />
                 </div>

@@ -15,6 +15,25 @@ const renderPanel = () => {
 };
 
 describe("YuanhengConnectionPanel", () => {
+  it("登录允许输入超过 20 位的已有用户名", async () => {
+    renderPanel();
+
+    const username = "account-name-longer-than-twenty-characters";
+    const usernameInput = await screen.findByLabelText("用户名");
+    fireEvent.change(usernameInput, { target: { value: username } });
+    expect(usernameInput).toHaveValue(username);
+
+    fireEvent.change(screen.getByLabelText("密码"), {
+      target: { value: "password123" },
+    });
+    const loginButtons = screen.getAllByRole("button", { name: "登录" });
+    fireEvent.click(loginButtons[loginButtons.length - 1]);
+
+    expect(
+      await screen.findByText("元衡账号已登录 · 本机工具凭据已就绪"),
+    ).toBeInTheDocument();
+  });
+
   it("使用账号密码注册并自动登录", async () => {
     renderPanel();
 
