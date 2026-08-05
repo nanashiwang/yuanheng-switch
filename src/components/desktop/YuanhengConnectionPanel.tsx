@@ -176,25 +176,50 @@ export function YuanhengConnectionPanel({
   if (!status?.connected) {
     const authPending = login.isPending || register.isPending;
     return (
-      <section className="relative overflow-hidden rounded-2xl border border-primary/20 bg-gradient-to-br from-primary/[0.07] via-card to-[#d69554]/[0.08] p-5">
+      <section
+        className={cn(
+          "relative overflow-hidden rounded-2xl border border-primary/20 bg-gradient-to-br from-primary/[0.07] via-card to-[#d69554]/[0.08]",
+          compact ? "p-3.5" : "p-5",
+        )}
+      >
         <div className="pointer-events-none absolute -right-12 -top-16 h-40 w-40 rounded-full bg-primary/10 blur-3xl" />
         <div
           className={cn(
             "relative",
-            compact ? "space-y-4" : "grid gap-6 md:grid-cols-[1fr_1.05fr]",
+            compact ? "space-y-3" : "grid gap-6 md:grid-cols-[1fr_1.05fr]",
           )}
         >
           <div>
-            <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-primary/10 text-primary">
-              <Cloud className="h-5 w-5" />
+            <div
+              className={cn(
+                "flex items-center justify-center bg-primary/10 text-primary",
+                compact ? "h-8 w-8 rounded-lg" : "h-10 w-10 rounded-xl",
+              )}
+            >
+              <Cloud className={compact ? "h-4 w-4" : "h-5 w-5"} />
             </div>
-            <p className="mt-4 text-[11px] font-semibold uppercase tracking-[0.18em] text-primary">
+            <p
+              className={cn(
+                "font-semibold uppercase tracking-[0.18em] text-primary",
+                compact ? "mt-2.5 text-[9px]" : "mt-4 text-[11px]",
+              )}
+            >
               {dt("元衡 API")}
             </p>
-            <h2 className="font-display mt-1 text-xl font-semibold">
+            <h2
+              className={cn(
+                "font-display mt-1 font-semibold",
+                compact ? "text-lg" : "text-xl",
+              )}
+            >
               {requiresTwoFactor ? dt("完成两步验证") : dt("登录你的元衡账号")}
             </h2>
-            <p className="mt-2 max-w-lg text-[13px] leading-5 text-muted-foreground">
+            <p
+              className={cn(
+                "mt-1.5 max-w-lg text-muted-foreground",
+                compact ? "text-[11px] leading-4" : "text-[13px] leading-5",
+              )}
+            >
               {requiresTwoFactor
                 ? dt("输入认证器验证码或备用码，验证成功后即可继续。")
                 : dt(
@@ -202,16 +227,28 @@ export function YuanhengConnectionPanel({
                   )}
             </p>
             {!requiresTwoFactor && (
-              <p className="mt-3 inline-flex items-center gap-1.5 rounded-full bg-emerald-500/10 px-2.5 py-1 text-[10px] font-medium text-emerald-700 dark:text-emerald-300">
+              <p
+                className={cn(
+                  "inline-flex items-center gap-1.5 rounded-full bg-emerald-500/10 font-medium text-emerald-700 dark:text-emerald-300",
+                  compact
+                    ? "mt-2 px-2 py-0.5 text-[9px]"
+                    : "mt-3 px-2.5 py-1 text-[10px]",
+                )}
+              >
                 <ShieldCheck className="h-3 w-3" />{" "}
                 {dt("账号密码仅用于本次认证")}
               </p>
             )}
           </div>
-          <div className="relative rounded-xl border bg-background/80 p-4 shadow-sm">
+          <div
+            className={cn(
+              "relative rounded-xl border bg-background/80 shadow-sm",
+              compact ? "p-3" : "p-4",
+            )}
+          >
             {requiresTwoFactor ? (
               <form
-                className="space-y-3"
+                className={compact ? "space-y-2.5" : "space-y-3"}
                 onSubmit={(event) => {
                   event.preventDefault();
                   void handleTwoFactor();
@@ -228,7 +265,7 @@ export function YuanhengConnectionPanel({
                     value={twoFactorCode}
                     onChange={(event) => setTwoFactorCode(event.target.value)}
                     placeholder={dt("6 位验证码或备用码")}
-                    className="h-9"
+                    className={compact ? "h-8 text-[12px]" : "h-9"}
                   />
                 </div>
                 <Button
@@ -258,7 +295,7 @@ export function YuanhengConnectionPanel({
               </form>
             ) : (
               <form
-                className="space-y-3"
+                className={compact ? "space-y-2.5" : "space-y-3"}
                 onSubmit={(event) => {
                   event.preventDefault();
                   void handleAuthenticate();
@@ -269,7 +306,7 @@ export function YuanhengConnectionPanel({
                     type="button"
                     size="sm"
                     variant={authMode === "login" ? "secondary" : "ghost"}
-                    className="h-8 text-[12px]"
+                    className={cn("text-[12px]", compact ? "h-7" : "h-8")}
                     aria-pressed={authMode === "login"}
                     onClick={() => switchAuthMode("login")}
                   >
@@ -279,7 +316,7 @@ export function YuanhengConnectionPanel({
                     type="button"
                     size="sm"
                     variant={authMode === "register" ? "secondary" : "ghost"}
-                    className="h-8 text-[12px]"
+                    className={cn("text-[12px]", compact ? "h-7" : "h-8")}
                     aria-pressed={authMode === "register"}
                     onClick={() => switchAuthMode("register")}
                   >
@@ -287,7 +324,10 @@ export function YuanhengConnectionPanel({
                   </Button>
                 </div>
                 <div className="space-y-1.5">
-                  <Label htmlFor="yuanheng-username" className="text-[12px]">
+                  <Label
+                    htmlFor="yuanheng-username"
+                    className={compact ? "text-[11px]" : "text-[12px]"}
+                  >
                     {dt("用户名")}
                   </Label>
                   <Input
@@ -301,11 +341,14 @@ export function YuanhengConnectionPanel({
                         ? MAX_LOGIN_USERNAME_LENGTH
                         : MAX_REGISTER_USERNAME_LENGTH
                     }
-                    className="h-9"
+                    className={compact ? "h-8 text-[12px]" : "h-9"}
                   />
                 </div>
                 <div className="space-y-1.5">
-                  <Label htmlFor="yuanheng-password" className="text-[12px]">
+                  <Label
+                    htmlFor="yuanheng-password"
+                    className={compact ? "text-[11px]" : "text-[12px]"}
+                  >
                     {dt("密码")}
                   </Label>
                   <Input
@@ -319,14 +362,14 @@ export function YuanhengConnectionPanel({
                     value={password}
                     onChange={(event) => setPassword(event.target.value)}
                     placeholder={dt("8 到 20 个字符")}
-                    className="h-9"
+                    className={compact ? "h-8 text-[12px]" : "h-9"}
                   />
                 </div>
                 {authMode === "register" && (
                   <div className="space-y-1.5">
                     <Label
                       htmlFor="yuanheng-confirm-password"
-                      className="text-[12px]"
+                      className={compact ? "text-[11px]" : "text-[12px]"}
                     >
                       {dt("确认密码")}
                     </Label>
@@ -339,13 +382,13 @@ export function YuanhengConnectionPanel({
                         setConfirmPassword(event.target.value)
                       }
                       placeholder={dt("再次输入密码")}
-                      className="h-9"
+                      className={compact ? "h-8 text-[12px]" : "h-9"}
                     />
                   </div>
                 )}
                 <Button
                   type="submit"
-                  className="w-full"
+                  className={cn("w-full", compact && "h-8 text-[12px]")}
                   disabled={!username.trim() || !password || authPending}
                 >
                   {authPending ? (
