@@ -104,6 +104,20 @@ pub(crate) fn is_confirmed_text_only_model(model: &str) -> bool {
     CONFIRMED_TAILS.contains(&tail)
 }
 
+/// Models that expose image generation/editing endpoints but cannot serve as
+/// the primary conversational model used by Codex, Claude Code, or other CLI
+/// clients. Keep this registry narrow: unknown models remain available until
+/// their endpoint contract is confirmed.
+pub(crate) fn is_image_generation_only_model(model: &str) -> bool {
+    let normalized = normalize_model_id(model);
+    let tail = normalized.rsplit('/').next().unwrap_or(normalized.as_str());
+
+    tail.starts_with("gpt-image-")
+        || matches!(tail, "dall-e-2" | "dall-e-3")
+        || tail == "kolors"
+        || tail.starts_with("kolors-")
+}
+
 fn declared_model_image_support(settings: &Value, model: &str) -> Option<bool> {
     [
         settings
@@ -224,6 +238,27 @@ mod tests {
         assert!(is_confirmed_text_only_model("MiniMax-M2.7-Highspeed"));
         assert!(is_confirmed_text_only_model("step-3.5-flash-2603"));
         assert!(!is_confirmed_text_only_model("glm-5.2v"));
+    }
+
+    #[test]
+    fn image_generation_only_registry_is_narrow_and_namespace_aware() {
+        for model in [
+            "gpt-image-1.5",
+            "openai/gpt-image-2",
+            "models/dall-e-3",
+            "Kwai-Kolors/Kolors",
+        ] {
+            assert!(
+                is_image_generation_only_model(model),
+                "{model} must not be exposed as a terminal chat model"
+            );
+        }
+        for model in ["gpt-5.6-sol", "gpt-4.1", "glm-5.2v", "imagen-3-pro"] {
+            assert!(
+                !is_image_generation_only_model(model),
+                "unconfirmed model {model} must remain available"
+            );
+        }
     }
 
     #[test]

@@ -1,7 +1,11 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
-import type { YuanhengReasoningLevel, YuanhengToolId } from "@/lib/api";
+import {
+  type YuanhengReasoningLevel,
+  type YuanhengToolId,
+  yuanhengTerminalModels,
+} from "@/lib/api";
 import { settingsApi, yuanhengApi } from "@/lib/api";
 import {
   useConfigureYuanhengTools,
@@ -79,6 +83,10 @@ export function useModelSwitchCenter() {
     () => new Map((statuses.data ?? []).map((item) => [item.app, item])),
     [statuses.data],
   );
+  const terminalModels = useMemo(
+    () => yuanhengTerminalModels(connection),
+    [connection],
+  );
 
   useEffect(
     () =>
@@ -96,10 +104,10 @@ export function useModelSwitchCenter() {
       for (const status of statuses.data) {
         if (pendingApps.has(status.app)) continue;
         const model =
-          status.model && connection.models.includes(status.model)
+          status.model && terminalModels.includes(status.model)
             ? status.model
             : status.recommendedModel &&
-                connection.models.includes(status.recommendedModel)
+                terminalModels.includes(status.recommendedModel)
               ? status.recommendedModel
               : undefined;
         if (model) next[status.app] = model;
@@ -124,7 +132,7 @@ export function useModelSwitchCenter() {
       }
       return next;
     });
-  }, [connection, pendingApps, statuses.data]);
+  }, [connection, pendingApps, statuses.data, terminalModels]);
 
   const isInstalled = (app: YuanhengToolId) => {
     const versionTarget = TOOL_VERSION_TARGETS[app];
@@ -398,6 +406,7 @@ export function useModelSwitchCenter() {
 
   return {
     connection,
+    terminalModels,
     bootstrapPhase,
     bootstrapRefreshing: inventory.isFetching || statuses.isFetching,
     retryBootstrap,

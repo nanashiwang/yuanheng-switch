@@ -5,6 +5,7 @@ import {
   CheckCircle2,
   CircleOff,
   Download,
+  Image as ImageIcon,
   Loader2,
   Play,
   RefreshCw,
@@ -12,9 +13,15 @@ import {
   Square,
 } from "lucide-react";
 import { toast } from "sonner";
-import type { AppId, YuanhengReasoningLevel, YuanhengToolId } from "@/lib/api";
-import type { YuanhengConnectionStatus } from "@/lib/api";
-import { settingsApi, yuanhengApi } from "@/lib/api";
+import {
+  type AppId,
+  type YuanhengConnectionStatus,
+  type YuanhengReasoningLevel,
+  type YuanhengToolId,
+  settingsApi,
+  yuanhengApi,
+  yuanhengTerminalModels,
+} from "@/lib/api";
 import {
   useConfigureYuanhengTools,
   useRefreshYuanheng,
@@ -236,7 +243,7 @@ export function ToolSetupGrid({
     return Boolean(versionTarget && versionMap.get(versionTarget)?.version);
   };
 
-  const compatibleModels = () => connection?.models ?? [];
+  const compatibleModels = () => yuanhengTerminalModels(connection);
 
   const selectedReasoningFor = (app: YuanhengToolId, model?: string | null) => {
     const selected = reasoning[app] ?? "auto";
@@ -494,6 +501,21 @@ export function ToolSetupGrid({
           {dt("请先连接元衡账号，再为工具写入配置。")}
         </div>
       )}
+
+      {connection?.connected &&
+        (connection.imageGenerationModels?.length ?? 0) > 0 && (
+          <div className="flex items-start gap-2 rounded-xl border border-sky-500/20 bg-sky-500/[0.055] px-4 py-3 text-[11px] text-sky-900 dark:text-sky-100">
+            <ImageIcon className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+            <span>
+              {dt(
+                "已识别 {{v0}} 个图像生成专用模型。它们不能作为终端主模型，请通过 Images API 或图像生成工具调用。",
+                {
+                  v0: connection.imageGenerationModels?.length ?? 0,
+                },
+              )}
+            </span>
+          </div>
+        )}
 
       <div
         className={cn(

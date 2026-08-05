@@ -32,6 +32,7 @@ export function ModelSwitchCenter({
 }: ModelSwitchCenterProps) {
   const {
     connection,
+    terminalModels,
     bootstrapPhase,
     bootstrapRefreshing,
     retryBootstrap,
@@ -285,7 +286,7 @@ export function ModelSwitchCenter({
                       {dt("模型")}
                     </span>
                     <ModelPicker
-                      models={connection.models}
+                      models={terminalModels}
                       value={selectedModel}
                       recommended={status?.recommendedModel}
                       label={dt("{{v0}} 模型选择", { v0: toolLabel(app) })}

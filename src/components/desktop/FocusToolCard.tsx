@@ -142,6 +142,7 @@ export function FocusToolCard({
 }: FocusToolCardProps) {
   const {
     connection,
+    terminalModels,
     bootstrapPhase,
     retryBootstrap,
     rows,
@@ -166,8 +167,8 @@ export function FocusToolCard({
     ? (reasoning[app] ?? status?.reasoning ?? "auto")
     : "auto";
   const vendorGroups = useMemo(
-    () => groupModelsByVendor(connection?.models ?? []),
-    [connection?.models],
+    () => groupModelsByVendor(terminalModels),
+    [terminalModels],
   );
   const currentVendorId = current ? modelVendorOf(current).id : undefined;
   const [selectedVendors, setSelectedVendors] = useState<

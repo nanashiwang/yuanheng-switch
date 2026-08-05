@@ -371,6 +371,8 @@ export const DESKTOP_EN: Record<string, string> = {
   推荐: "Recommended",
   "模型目录与可用分组来自你的元衡账号。":
     "The model catalog and available groups come from your YuanHeng account.",
+  "已识别 {{v0}} 个图像生成专用模型。它们不能作为终端主模型，请通过 Images API 或图像生成工具调用。":
+    "{{v0}} image-generation-only models detected. They cannot be terminal chat models; use the Images API or an image generation tool.",
   "检测失败不会再显示成“未安装”，请重新检测。":
     "Detection failures are no longer shown as uninstalled. Please detect again.",
   "直接调整模型、令牌分组和推理等级":

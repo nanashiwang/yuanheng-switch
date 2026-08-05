@@ -23,6 +23,7 @@ function createSwitcher(
       announcement: null,
       lastSyncedAt: null,
     },
+    terminalModels: [],
     bootstrapPhase,
     bootstrapRefreshing: false,
     retryBootstrap,

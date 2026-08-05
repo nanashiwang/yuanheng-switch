@@ -44,12 +44,20 @@ export interface YuanhengConnectionStatus {
   userId: string | null;
   account: YuanhengAccount | null;
   models: string[];
+  terminalModels?: string[];
+  imageGenerationModels?: string[];
   groups: YuanhengGroupOption[];
   modelGroups: Record<string, string[]>;
   reasoningLevels: Record<string, YuanhengReasoningLevel[]>;
   reasoningDefaults?: Record<string, YuanhengReasoningLevel>;
   announcement: string | null;
   lastSyncedAt: number | null;
+}
+
+export function yuanhengTerminalModels(
+  connection?: YuanhengConnectionStatus,
+): string[] {
+  return connection?.terminalModels ?? connection?.models ?? [];
 }
 
 export interface YuanhengAuthResult {

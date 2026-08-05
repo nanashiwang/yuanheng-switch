@@ -12,6 +12,7 @@ use tauri_plugin_opener::OpenerExt;
 use toml_edit::DocumentMut;
 
 use crate::app_config::AppType;
+use crate::model_capabilities::is_image_generation_only_model;
 use crate::model_reasoning::{
     fallback_reasoning_profile, load_local_reasoning_profiles, reasoning_profile_for_model,
     REASONING_LEVELS,
@@ -63,6 +64,10 @@ pub struct YuanhengConnectionStatus {
     pub user_id: Option<String>,
     pub account: Option<YuanhengAccount>,
     pub models: Vec<String>,
+    #[serde(default)]
+    pub terminal_models: Vec<String>,
+    #[serde(default)]
+    pub image_generation_models: Vec<String>,
     #[serde(default)]
     pub groups: Vec<YuanhengGroupOption>,
     #[serde(default)]
@@ -185,6 +190,8 @@ impl Default for YuanhengConnectionStatus {
             user_id: None,
             account: None,
             models: Vec::new(),
+            terminal_models: Vec::new(),
+            image_generation_models: Vec::new(),
             groups: Vec::new(),
             model_groups: HashMap::new(),
             reasoning_levels: HashMap::new(),
@@ -397,6 +404,13 @@ fn parse_api_models(value: &Value) -> Result<Vec<String>, String> {
         return Err("当前账号没有可用模型".to_string());
     }
     Ok(names)
+}
+
+fn partition_model_catalog(models: &[String]) -> (Vec<String>, Vec<String>) {
+    models
+        .iter()
+        .cloned()
+        .partition(|model| !is_image_generation_only_model(model))
 }
 
 async fn fetch_api_models(
@@ -917,7 +931,8 @@ async fn sync_connection(
     };
 
     let models: Vec<String> = model_names.into_iter().collect();
-    let (reasoning_levels, reasoning_defaults) = reasoning_profiles_for_models(&models);
+    let (terminal_models, image_generation_models) = partition_model_catalog(&models);
+    let (reasoning_levels, reasoning_defaults) = reasoning_profiles_for_models(&terminal_models);
 
     Ok(YuanhengConnectionStatus {
         connected: true,
@@ -925,6 +940,8 @@ async fn sync_connection(
         user_id: Some(user_id.to_string()),
         account: Some(account),
         models,
+        terminal_models,
+        image_generation_models,
         groups,
         model_groups,
         reasoning_levels,
@@ -1063,8 +1080,10 @@ fn read_cached_status(state: &AppState) -> Result<YuanhengConnectionStatus, Stri
         .unwrap_or_default();
     status.connected = true;
     status.base_url = BASE_URL.to_string();
+    (status.terminal_models, status.image_generation_models) =
+        partition_model_catalog(&status.models);
     (status.reasoning_levels, status.reasoning_defaults) =
-        reasoning_profiles_for_models(&status.models);
+        reasoning_profiles_for_models(&status.terminal_models);
     Ok(status)
 }
 
@@ -1143,6 +1162,7 @@ fn recommended_model(app: &AppType, models: &[String]) -> Option<String> {
     models
         .iter()
         .enumerate()
+        .filter(|(_, model)| !is_image_generation_only_model(model))
         .filter_map(|(index, model)| {
             let score = score(model);
             (score > 0).then_some((score, index, model))
@@ -1551,6 +1571,7 @@ fn set_codex_available_models(provider: &mut Provider, selected: &str, models: &
         .chain(models.iter().map(String::as_str))
         .map(str::trim)
         .filter(|model| !model.is_empty())
+        .filter(|model| !is_image_generation_only_model(model))
         .filter(|model| seen.insert((*model).to_string()))
         .map(|model| {
             json!({
@@ -1640,6 +1661,12 @@ fn provider_reasoning(provider: &Provider) -> Option<String> {
 }
 
 fn provider_schema_current(provider: &Provider, app: &AppType) -> bool {
+    if provider_model(provider, app)
+        .as_deref()
+        .is_some_and(is_image_generation_only_model)
+    {
+        return false;
+    }
     match app {
         AppType::ClaudeDesktop => {
             let Some(model) = provider_model(provider, app) else {
@@ -1691,8 +1718,12 @@ fn codex_catalog_covers_available_models(provider: &Provider, models: &[String])
                 .collect::<BTreeSet<_>>()
         })
         .unwrap_or_default();
-    !models.is_empty()
-        && models
+    let terminal_models = models
+        .iter()
+        .filter(|model| !is_image_generation_only_model(model))
+        .collect::<Vec<_>>();
+    !terminal_models.is_empty()
+        && terminal_models
             .iter()
             .all(|model| configured.contains(model.as_str()))
 }
@@ -1986,7 +2017,8 @@ fn workbuddy_status(state: &AppState, models: &[String]) -> YuanhengToolStatus {
         .is_some_and(|value| !value.is_empty());
     let configured = was_managed
         && stored_model.as_deref().is_some_and(|model| {
-            models.iter().any(|item| item == model)
+            !is_image_generation_only_model(model)
+                && models.iter().any(|item| item == model)
                 && read_workbuddy_config()
                     .as_ref()
                     .is_some_and(|value| workbuddy_config_matches(value, model))
@@ -2419,6 +2451,11 @@ fn resolve_tool_model(
     {
         if !models.iter().any(|item| item == model) {
             return Err(format!("模型 {model} 不在当前账号目录中"));
+        }
+        if is_image_generation_only_model(model) {
+            return Err(format!(
+                "模型 {model} 仅支持图像生成/编辑 API，不能作为终端主模型"
+            ));
         }
         Ok(model.to_string())
     } else {
@@ -3535,6 +3572,19 @@ mod tests {
     }
 
     #[test]
+    fn separates_terminal_and_image_generation_models() {
+        let models = vec![
+            "gpt-5.6-sol".to_string(),
+            "gpt-image-1.5".to_string(),
+            "gpt-image-2".to_string(),
+            "deepseek-v4-pro".to_string(),
+        ];
+        let (terminal, image) = partition_model_catalog(&models);
+        assert_eq!(terminal, vec!["gpt-5.6-sol", "deepseek-v4-pro"]);
+        assert_eq!(image, vec!["gpt-image-1.5", "gpt-image-2"]);
+    }
+
+    #[test]
     fn parses_account_models_and_groups() {
         let models = parse_user_models(&json!({
             "success": true,
@@ -3614,6 +3664,7 @@ mod tests {
     #[test]
     fn recommends_models_by_tool_protocol() {
         let models = vec![
+            "gpt-image-2".to_string(),
             "deepseek-chat".to_string(),
             "claude-sonnet-4-6".to_string(),
             "gemini-3-pro".to_string(),
@@ -3634,6 +3685,12 @@ mod tests {
         assert_eq!(
             recommended_model(&AppType::Codex, &models).as_deref(),
             Some("gpt-5.6")
+        );
+        assert!(recommended_model(&AppType::Codex, &["gpt-image-2".to_string()]).is_none());
+        assert!(
+            resolve_tool_model(AppType::Claude, &models, Some("gpt-image-2"))
+                .unwrap_err()
+                .contains("仅支持图像生成/编辑 API")
         );
     }
 
@@ -3808,6 +3865,7 @@ mod tests {
             "k3",
             &[
                 "gpt-5.6-sol".to_string(),
+                "gpt-image-2".to_string(),
                 "deepseek-v4-pro".to_string(),
                 "k3".to_string(),
             ],
@@ -3816,6 +3874,9 @@ mod tests {
             .as_array()
             .unwrap();
         assert_eq!(models.len(), 3);
+        assert!(models
+            .iter()
+            .all(|item| item["model"].as_str() != Some("gpt-image-2")));
         assert_eq!(models[0]["model"], "k3");
         assert_eq!(models[1]["model"], "gpt-5.6-sol");
         let mut legacy_codex_chat = codex_chat.clone();
