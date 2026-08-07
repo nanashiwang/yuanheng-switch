@@ -5,14 +5,22 @@ import {
   Bot,
   Boxes,
   BookOpenText,
+  CheckCircle2,
   Compass,
+  ImageIcon,
+  Loader2,
   PackageCheck,
+  RefreshCw,
   Sparkles,
   Wrench,
 } from "lucide-react";
+import { toast } from "sonner";
 import type { AppId } from "@/lib/api";
 import { promptsApi } from "@/lib/api";
-import { useInstalledSkills } from "@/hooks/useSkills";
+import {
+  useInstallBuiltinImagegen,
+  useInstalledSkills,
+} from "@/hooks/useSkills";
 import { useAllMcpServers } from "@/hooks/useMcp";
 import { APP_ICON_MAP } from "@/config/appConfig";
 import { Button } from "@/components/ui/button";
@@ -28,11 +36,31 @@ interface CapabilityCenterProps {
 export function CapabilityCenter({ activeApp, onOpen }: CapabilityCenterProps) {
   const { t } = useTranslation();
   const { data: skills = [] } = useInstalledSkills();
+  const installImagegen = useInstallBuiltinImagegen();
   const { data: mcpServers = {} } = useAllMcpServers();
   const { data: prompts = {} } = useQuery({
     queryKey: ["prompts", activeApp],
     queryFn: () => promptsApi.getPrompts(activeApp),
   });
+  const imagegenSkill = skills.find(
+    (skill) => skill.directory.toLowerCase() === "meta-api-imagegen",
+  );
+  const imagegenEnabled = Boolean(imagegenSkill?.apps.codex);
+
+  const handleInstallImagegen = async () => {
+    try {
+      await installImagegen.mutateAsync("codex");
+      toast.success(
+        imagegenEnabled
+          ? dt("图像生成能力已更新")
+          : dt("图像生成能力已启用到 Codex"),
+      );
+    } catch (error) {
+      toast.error(dt("图像生成能力安装失败"), {
+        description: String(error),
+      });
+    }
+  };
   const cards = [
     {
       title: t("desktop.views.skills"),
@@ -108,6 +136,55 @@ export function CapabilityCenter({ activeApp, onOpen }: CapabilityCenterProps) {
             <span className="rounded-full bg-primary/10 px-3 py-1 text-[10px] font-semibold text-primary">
               {APP_ICON_MAP[activeApp].label}
             </span>
+          </div>
+        </section>
+
+        <section className="mt-4 overflow-hidden rounded-lg border border-emerald-600/20 bg-card">
+          <div className="flex flex-wrap items-center gap-4 px-5 py-4">
+            <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-emerald-500/10 text-emerald-600">
+              <ImageIcon className="h-5 w-5" />
+            </span>
+            <div className="min-w-[220px] flex-1">
+              <div className="flex flex-wrap items-center gap-2">
+                <h2 className="font-display text-sm font-semibold">
+                  {dt("YuanHeng 图像生成")}
+                </h2>
+                <span className="rounded bg-emerald-500/10 px-2 py-0.5 text-[9px] font-semibold text-emerald-700 dark:text-emerald-300">
+                  gpt-image-2
+                </span>
+                <span className="rounded bg-muted px-2 py-0.5 text-[9px] font-medium text-muted-foreground">
+                  Images API
+                </span>
+              </div>
+              <p className="mt-1 text-[11px] leading-5 text-muted-foreground">
+                {dt(
+                  "在 Codex 中直接生成或编辑图片，直连接口失败时自动兼容回退。",
+                )}
+              </p>
+            </div>
+            <div className="flex items-center gap-2">
+              {imagegenEnabled && (
+                <span className="flex items-center gap-1 text-[10px] font-medium text-emerald-600">
+                  <CheckCircle2 className="h-3.5 w-3.5" />
+                  {dt("已启用")}
+                </span>
+              )}
+              <Button
+                size="sm"
+                variant={imagegenEnabled ? "outline" : "default"}
+                disabled={installImagegen.isPending}
+                onClick={() => void handleInstallImagegen()}
+              >
+                {installImagegen.isPending ? (
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                ) : imagegenEnabled ? (
+                  <RefreshCw className="h-4 w-4" />
+                ) : (
+                  <Sparkles className="h-4 w-4" />
+                )}
+                {imagegenEnabled ? dt("更新能力") : dt("启用到 Codex")}
+              </Button>
+            </div>
           </div>
         </section>
 

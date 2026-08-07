@@ -334,3 +334,13 @@ pub fn install_skills_from_zip(
 
     SkillService::install_from_zip(&app_state.db, path, &app_type).map_err(|e| e.to_string())
 }
+
+/// 安装或刷新客户端内置的 YuanHeng 图像生成 Skill。
+#[tauri::command]
+pub fn install_builtin_imagegen_skill(
+    current_app: String,
+    app_state: State<'_, AppState>,
+) -> Result<InstalledSkill, String> {
+    let app_type = parse_app_type(&current_app)?;
+    SkillService::install_builtin_imagegen(&app_state.db, &app_type).map_err(|e| e.to_string())
+}

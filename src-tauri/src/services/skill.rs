@@ -20,6 +20,15 @@ use crate::config::get_app_config_dir;
 use crate::database::Database;
 use crate::error::format_skill_error;
 
+const BUILTIN_IMAGEGEN_ID: &str = "builtin:meta-api-imagegen";
+const BUILTIN_IMAGEGEN_DIRECTORY: &str = "meta-api-imagegen";
+const BUILTIN_IMAGEGEN_SKILL_MD: &str =
+    include_str!("../resources/builtin_skills/meta-api-imagegen/SKILL.md");
+const BUILTIN_IMAGEGEN_OPENAI_YAML: &str =
+    include_str!("../resources/builtin_skills/meta-api-imagegen/agents/openai.yaml");
+const BUILTIN_IMAGEGEN_SCRIPT: &str =
+    include_str!("../resources/builtin_skills/meta-api-imagegen/scripts/meta_api_imagegen.mjs");
+
 // ========== 数据结构 ==========
 
 /// Skill 同步方式
@@ -556,6 +565,99 @@ impl SkillService {
     pub fn get_all_installed(db: &Arc<Database>) -> Result<Vec<InstalledSkill>> {
         let skills = db.get_all_installed_skills()?;
         Ok(skills.into_values().collect())
+    }
+
+    /// 安装或刷新客户端内置的图像生成 Skill，并启用到指定终端。
+    pub fn install_builtin_imagegen(
+        db: &Arc<Database>,
+        current_app: &AppType,
+    ) -> Result<InstalledSkill> {
+        if matches!(current_app, AppType::ClaudeDesktop | AppType::OpenClaw) {
+            return Err(anyhow!("This application does not support Skills"));
+        }
+
+        let ssot_dir = Self::get_ssot_dir()?;
+        let destination = ssot_dir.join(BUILTIN_IMAGEGEN_DIRECTORY);
+        let staging = ssot_dir.join(format!(
+            ".{BUILTIN_IMAGEGEN_DIRECTORY}.staging-{}",
+            uuid::Uuid::new_v4()
+        ));
+        let previous = ssot_dir.join(format!(
+            ".{BUILTIN_IMAGEGEN_DIRECTORY}.previous-{}",
+            uuid::Uuid::new_v4()
+        ));
+
+        fs::create_dir_all(staging.join("agents"))?;
+        fs::create_dir_all(staging.join("scripts"))?;
+        fs::write(staging.join("SKILL.md"), BUILTIN_IMAGEGEN_SKILL_MD)?;
+        fs::write(
+            staging.join("agents").join("openai.yaml"),
+            BUILTIN_IMAGEGEN_OPENAI_YAML,
+        )?;
+        fs::write(
+            staging.join("scripts").join("meta_api_imagegen.mjs"),
+            BUILTIN_IMAGEGEN_SCRIPT,
+        )?;
+
+        let had_previous = destination.exists();
+        if had_previous {
+            fs::rename(&destination, &previous)?;
+        }
+        if let Err(error) = fs::rename(&staging, &destination) {
+            if had_previous {
+                let _ = fs::rename(&previous, &destination);
+            }
+            return Err(error.into());
+        }
+
+        let existing = db.get_all_installed_skills()?.into_values().find(|skill| {
+            skill
+                .directory
+                .eq_ignore_ascii_case(BUILTIN_IMAGEGEN_DIRECTORY)
+        });
+        let now = Utc::now().timestamp();
+        let mut apps = existing
+            .as_ref()
+            .map(|skill| skill.apps.clone())
+            .unwrap_or_default();
+        apps.set_enabled_for(current_app, true);
+        let skill = InstalledSkill {
+            id: existing
+                .as_ref()
+                .map(|skill| skill.id.clone())
+                .unwrap_or_else(|| BUILTIN_IMAGEGEN_ID.to_string()),
+            name: "YuanHeng ImageGen".to_string(),
+            description: Some(
+                "Generate and edit images with gpt-image-2 through the direct Images API."
+                    .to_string(),
+            ),
+            directory: BUILTIN_IMAGEGEN_DIRECTORY.to_string(),
+            repo_owner: None,
+            repo_name: None,
+            repo_branch: None,
+            readme_url: None,
+            apps,
+            installed_at: existing
+                .as_ref()
+                .map(|skill| skill.installed_at)
+                .unwrap_or(now),
+            content_hash: Self::compute_dir_hash(&destination).ok(),
+            updated_at: now,
+        };
+
+        if let Err(error) = db.save_skill(&skill) {
+            let _ = fs::remove_dir_all(&destination);
+            if had_previous {
+                let _ = fs::rename(&previous, &destination);
+            }
+            return Err(error.into());
+        }
+
+        if previous.exists() {
+            let _ = fs::remove_dir_all(&previous);
+        }
+        Self::sync_to_app_dir(BUILTIN_IMAGEGEN_DIRECTORY, current_app)?;
+        Ok(skill)
     }
 
     /// 安装 Skill
@@ -3146,5 +3248,25 @@ mod tests {
             dest.join("SKILL.md").is_file(),
             "existing destination skill should be preserved"
         );
+    }
+
+    #[test]
+    fn builtin_imagegen_prefers_the_direct_images_api() {
+        assert!(BUILTIN_IMAGEGEN_SKILL_MD.contains("POST /v1/images/generations"));
+        assert!(BUILTIN_IMAGEGEN_SKILL_MD.contains("POST /v1/images/edits"));
+        assert!(BUILTIN_IMAGEGEN_SKILL_MD.contains("Model: `gpt-image-2`"));
+
+        let direct_call = BUILTIN_IMAGEGEN_SCRIPT
+            .find("await directImages")
+            .expect("direct Images call must be present");
+        let fallback_call = BUILTIN_IMAGEGEN_SCRIPT
+            .find("await responsesFallback")
+            .expect("Responses fallback must be present");
+        assert!(
+            direct_call < fallback_call,
+            "direct Images API must run before the compatibility fallback"
+        );
+        assert!(BUILTIN_IMAGEGEN_SCRIPT.contains("/v1/images/${"));
+        assert!(BUILTIN_IMAGEGEN_SCRIPT.contains("/v1/responses"));
     }
 }

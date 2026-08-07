@@ -282,4 +282,9 @@ export const skillsApi = {
   ): Promise<InstalledSkill[]> {
     return await invoke("install_skills_from_zip", { filePath, currentApp });
   },
+
+  /** 安装或刷新客户端内置的图像生成 Skill */
+  async installBuiltinImagegen(currentApp: AppId): Promise<InstalledSkill> {
+    return await invoke("install_builtin_imagegen_skill", { currentApp });
+  },
 };

@@ -290,6 +290,30 @@ export function useInstallSkillsFromZip() {
   });
 }
 
+/** 安装或刷新内置的 YuanHeng 图像生成 Skill。 */
+export function useInstallBuiltinImagegen() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (currentApp: AppId) =>
+      skillsApi.installBuiltinImagegen(currentApp),
+    onSuccess: (installedSkill) => {
+      queryClient.setQueryData<InstalledSkill[]>(
+        ["skills", "installed"],
+        (oldData) => {
+          if (!oldData) return [installedSkill];
+          const existingIndex = oldData.findIndex(
+            (skill) => skill.id === installedSkill.id,
+          );
+          if (existingIndex < 0) return [...oldData, installedSkill];
+          return oldData.map((skill, index) =>
+            index === existingIndex ? installedSkill : skill,
+          );
+        },
+      );
+    },
+  });
+}
+
 // ========== 更新检测 ==========
 
 /**

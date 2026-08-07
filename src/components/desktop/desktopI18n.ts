@@ -93,6 +93,15 @@ export const DESKTOP_EN: Record<string, string> = {
   按工具维护系统提示词和指令: "Manage system prompts and instructions per tool",
   自治代理编排能力仍在建设中:
     "Autonomous agent orchestration is under development",
+  "YuanHeng 图像生成": "YuanHeng Image Generation",
+  "在 Codex 中直接生成或编辑图片，直连接口失败时自动兼容回退。":
+    "Generate or edit images directly in Codex, with an automatic compatibility fallback when needed.",
+  图像生成能力已更新: "Image generation capability updated",
+  "图像生成能力已启用到 Codex":
+    "Image generation capability enabled for Codex",
+  图像生成能力安装失败: "Failed to install image generation capability",
+  更新能力: "Update Capability",
+  "启用到 Codex": "Enable for Codex",
   "统一管理 {{app}} 的 Skills、MCP、提示词与 Agent 能力。":
     "Manage Skills, MCP, prompts, and agent capabilities for {{app}}.",
   "{{v0}} 个技能 · {{v1}} 个 MCP": "{{v0}} Skills · {{v1}} MCP",
