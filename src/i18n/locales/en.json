@@ -302,7 +302,7 @@
     "unifyCodexHistory": {
       "title": "Unified Codex session history",
       "message": "When enabled, the official subscription and third-party providers share one session history list. Note: resuming an old session across providers may fail because its encrypted_content reasoning cannot be decrypted by another backend.\n\nYou can also migrate your existing official session history into the shared list (originals are backed up to ~/.yuanheng-switch/backups first and can be restored when you turn this off).",
-      "migrateExisting": "Also migrate existing official session history",
+      "migrateExisting": "Scan existing sessions and create a migration preview",
       "confirm": "I understand, enable"
     },
     "unifyCodexHistoryOff": {
@@ -701,6 +701,33 @@
     "unifyCodexHistoryRestoreFailed": "Failed to restore official session history, please try again",
     "unifyCodexHistoryRestoreNothing": "No restorable migration backup for the current Codex directory",
     "unifyCodexHistoryRestoreSkippedToggleOn": "Unified session history was re-enabled; restore skipped",
+    "codexHistoryMigration": "Session Migration & History Unification",
+    "codexHistoryMigrationDescription": "Scan Codex sessions stored under legacy providers, review the preview, then migrate. Active sessions resume automatically after their files are released.",
+    "codexHistoryMigrationDetect": "Scan History",
+    "codexHistoryMigrationTarget": "Target: {{target}}",
+    "codexHistoryMigrationTotal": "Legacy {{count}}",
+    "codexHistoryMigrationOrdinary": "Regular {{count}}",
+    "codexHistoryMigrationArchived": "Archived {{count}}",
+    "codexHistoryMigrationActive": "Active {{count}}",
+    "codexHistoryMigrationDatabase": "Index rows {{count}}",
+    "codexHistoryMigrationProgress": "Completed {{success}}/{{total}}",
+    "codexHistoryMigrationValidationPassed": "Session IDs, totals, archives, rollout files, and SQLite checks passed",
+    "codexHistoryMigrationValidationFailed": "Some integrity checks failed. Retry or roll back after reviewing the error.",
+    "codexHistoryMigrationPending": "{{count}} active sessions are waiting for automatic migration",
+    "codexHistoryMigrationStart": "Start Migration",
+    "codexHistoryMigrationResume": "Resume Task",
+    "codexHistoryMigrationRollback": "Roll Back from Ledger",
+    "codexHistoryMigrationCompleted": "Codex session migration completed",
+    "codexHistoryMigrationRolledBack": "Codex session migration rolled back",
+    "codexHistoryMigrationFailed": "Codex session migration failed",
+    "codexHistoryMigrationStatus": {
+      "preview": "Migration Preview",
+      "running": "Migrating",
+      "paused": "Waiting for active sessions",
+      "completed": "Completed",
+      "failed": "Failed",
+      "rolled_back": "Rolled Back"
+    },
     "appVisibility": {
       "title": "Homepage Display",
       "description": "Choose which apps to show on the homepage",

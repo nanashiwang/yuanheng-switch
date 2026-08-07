@@ -302,7 +302,7 @@
     "unifyCodexHistory": {
       "title": "Codex セッション履歴を統一",
       "message": "オンにすると、公式サブスクリプションとサードパーティが同じセッション履歴リストを共有します。注意：プロバイダーをまたいで古いセッションを再開すると、encrypted_content を相手のバックエンドが復号できず失敗する場合があります。\n\n既存の公式セッション履歴を共有リストへ移行することもできます（移行前に ~/.yuanheng-switch/backups へ自動バックアップされ、オフにする際に復元を選択できます）。",
-      "migrateExisting": "既存の公式セッション履歴も移行する",
+      "migrateExisting": "既存セッションを検出して移行プレビューを作成する",
       "confirm": "理解しました、オンにする"
     },
     "unifyCodexHistoryOff": {
@@ -701,6 +701,33 @@
     "unifyCodexHistoryRestoreFailed": "公式セッション履歴の復元に失敗しました。もう一度お試しください",
     "unifyCodexHistoryRestoreNothing": "現在の Codex ディレクトリに復元可能な移行バックアップはありません",
     "unifyCodexHistoryRestoreSkippedToggleOn": "統一セッション履歴が再度有効化されたため、復元をスキップしました",
+    "codexHistoryMigration": "セッション移行と履歴の統一",
+    "codexHistoryMigrationDescription": "旧 provider に保存された Codex セッションを検出し、プレビュー確認後に移行します。使用中のセッションはファイル解放後に自動再開します。",
+    "codexHistoryMigrationDetect": "履歴を検出",
+    "codexHistoryMigrationTarget": "移行先：{{target}}",
+    "codexHistoryMigrationTotal": "旧セッション {{count}}",
+    "codexHistoryMigrationOrdinary": "通常 {{count}}",
+    "codexHistoryMigrationArchived": "アーカイブ {{count}}",
+    "codexHistoryMigrationActive": "使用中 {{count}}",
+    "codexHistoryMigrationDatabase": "インデックス {{count}}",
+    "codexHistoryMigrationProgress": "完了 {{success}}/{{total}}",
+    "codexHistoryMigrationValidationPassed": "セッション ID、件数、アーカイブ、rollout、SQLite の検証に成功しました",
+    "codexHistoryMigrationValidationFailed": "一部の整合性検証に失敗しました。エラーを確認して再試行またはロールバックしてください。",
+    "codexHistoryMigrationPending": "{{count}} 件の使用中セッションが自動移行を待機しています",
+    "codexHistoryMigrationStart": "移行を開始",
+    "codexHistoryMigrationResume": "タスクを再開",
+    "codexHistoryMigrationRollback": "台帳からロールバック",
+    "codexHistoryMigrationCompleted": "Codex セッション移行が完了しました",
+    "codexHistoryMigrationRolledBack": "Codex セッション移行をロールバックしました",
+    "codexHistoryMigrationFailed": "Codex セッション移行に失敗しました",
+    "codexHistoryMigrationStatus": {
+      "preview": "移行プレビュー",
+      "running": "移行中",
+      "paused": "使用中セッションを待機中",
+      "completed": "完了",
+      "failed": "失敗",
+      "rolled_back": "ロールバック済み"
+    },
     "appVisibility": {
       "title": "ホームページ表示",
       "description": "ホームページに表示するアプリを選択",

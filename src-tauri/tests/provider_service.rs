@@ -471,9 +471,14 @@ requires_openai_auth = true
         .expect("read config.toml");
     let parsed_live: toml::Value = toml::from_str(&live_config).expect("parse live config");
     assert_eq!(
+        parsed_live.get("model_provider").and_then(|v| v.as_str()),
+        Some("custom"),
+        "provider switching should keep the shared Codex history namespace stable"
+    );
+    assert_eq!(
         parsed_live
             .get("model_providers")
-            .and_then(|v| v.get("aihubmix"))
+            .and_then(|v| v.get("custom"))
             .and_then(|v| v.get("experimental_bearer_token"))
             .and_then(|v| v.as_str()),
         Some("bridge-key"),
@@ -482,7 +487,7 @@ requires_openai_auth = true
     assert_eq!(
         parsed_live
             .get("model_providers")
-            .and_then(|v| v.get("aihubmix"))
+            .and_then(|v| v.get("custom"))
             .and_then(|v| v.get("requires_openai_auth"))
             .and_then(|v| v.as_bool()),
         Some(true)

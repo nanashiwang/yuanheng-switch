@@ -1262,7 +1262,7 @@ fn managed_provider(
         AppType::Codex => json!({
             "auth": { "OPENAI_API_KEY": token },
             "config": format!(
-                "model_provider = \"yuanheng\"\nmodel = {}\n{}disable_response_storage = true\n\n[model_providers.yuanheng]\nname = \"元衡\"\nbase_url = {}\nwire_api = \"responses\"\nrequires_openai_auth = true\n",
+                "model_provider = \"custom\"\nmodel = {}\n{}disable_response_storage = true\n\n[model_providers.custom]\nname = \"元衡\"\nbase_url = {}\nwire_api = \"responses\"\nrequires_openai_auth = true\n",
                 toml_string(model),
                 if reasoning == "auto" {
                     String::new()
@@ -2340,7 +2340,8 @@ fn remove_codex_surface_artifacts(state: &AppState) -> Result<bool, String> {
     let profile_path = codex_terminal_profile_path();
     let profile_should_remove = match std::fs::read_to_string(&profile_path) {
         Ok(content)
-            if content.contains("model_provider = \"yuanheng\"")
+            if (content.contains("model_provider = \"custom\"")
+                || content.contains("model_provider = \"yuanheng\""))
                 && content.contains("/codex/v1") =>
         {
             true

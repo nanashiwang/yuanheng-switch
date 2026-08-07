@@ -302,7 +302,7 @@
     "unifyCodexHistory": {
       "title": "통합 코덱스 세션 역사",
       "message": "활성화되면 공식 구독과 제3자 제공업체가 하나의 세션 기록 목록을 공유합니다. 참고: 공급자 간 이전 세션 재개는 encrypted_content 추론을 다른 백엔드에서 복호화할 수 없기 때문에 실패할 수 있습니다.\n\n기존 공식 세션 기록을 공유 목록으로 이전할 수도 있습니다(원본은 먼저 ~/.yuanheng-switch/backups로 백업되며, 이 기능을 끄면 복원될 수 있습니다).",
-      "migrateExisting": "또한 기존 공식 세션 기록을 마이그레이션하세요",
+      "migrateExisting": "기존 세션을 검색하고 마이그레이션 미리보기 만들기",
       "confirm": "알겠습니다, 가능하게요"
     },
     "unifyCodexHistoryOff": {
@@ -701,6 +701,33 @@
     "unifyCodexHistoryRestoreFailed": "공식 세션 기록 복원에 실패했습니다. 다시 시도해 주세요",
     "unifyCodexHistoryRestoreNothing": "현재 코덱스 디렉토리에 대한 복원 가능한 마이그레이션 백업이 없습니다",
     "unifyCodexHistoryRestoreSkippedToggleOn": "통합 세션 기록이 다시 활성화되었으며; 복원 건너뛰었습니다",
+    "codexHistoryMigration": "세션 마이그레이션 및 기록 통합",
+    "codexHistoryMigrationDescription": "이전 provider에 저장된 Codex 세션을 검색하고 미리보기를 확인한 뒤 마이그레이션합니다. 활성 세션은 파일이 해제되면 자동으로 재개됩니다.",
+    "codexHistoryMigrationDetect": "기록 검색",
+    "codexHistoryMigrationTarget": "대상: {{target}}",
+    "codexHistoryMigrationTotal": "이전 세션 {{count}}",
+    "codexHistoryMigrationOrdinary": "일반 {{count}}",
+    "codexHistoryMigrationArchived": "보관 {{count}}",
+    "codexHistoryMigrationActive": "활성 {{count}}",
+    "codexHistoryMigrationDatabase": "인덱스 {{count}}",
+    "codexHistoryMigrationProgress": "완료 {{success}}/{{total}}",
+    "codexHistoryMigrationValidationPassed": "세션 ID, 개수, 보관 상태, rollout 파일 및 SQLite 검사를 통과했습니다",
+    "codexHistoryMigrationValidationFailed": "일부 무결성 검사에 실패했습니다. 오류를 확인한 뒤 다시 시도하거나 롤백하세요.",
+    "codexHistoryMigrationPending": "활성 세션 {{count}}개가 자동 마이그레이션을 기다리고 있습니다",
+    "codexHistoryMigrationStart": "마이그레이션 시작",
+    "codexHistoryMigrationResume": "작업 재개",
+    "codexHistoryMigrationRollback": "원장에서 롤백",
+    "codexHistoryMigrationCompleted": "Codex 세션 마이그레이션이 완료되었습니다",
+    "codexHistoryMigrationRolledBack": "Codex 세션 마이그레이션이 롤백되었습니다",
+    "codexHistoryMigrationFailed": "Codex 세션 마이그레이션에 실패했습니다",
+    "codexHistoryMigrationStatus": {
+      "preview": "마이그레이션 미리보기",
+      "running": "마이그레이션 중",
+      "paused": "활성 세션 대기 중",
+      "completed": "완료",
+      "failed": "실패",
+      "rolled_back": "롤백됨"
+    },
     "appVisibility": {
       "title": "홈 화면 표시",
       "description": "홈페이지에 표시할 앱을 선택하세요",

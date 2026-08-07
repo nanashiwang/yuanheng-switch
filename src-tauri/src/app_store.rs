@@ -1,3 +1,4 @@
+use serde_json::Map;
 use serde_json::Value;
 use std::path::PathBuf;
 use std::sync::{OnceLock, RwLock};
@@ -7,6 +8,7 @@ use crate::error::AppError;
 
 /// Store 中的键名
 const STORE_KEY_APP_CONFIG_DIR: &str = "app_config_dir_override";
+const STORE_KEY_DESKTOP_APP_PATHS: &str = "desktop_app_paths";
 
 /// 缓存当前的 app_config_dir 覆盖路径，避免存储 AppHandle
 static APP_CONFIG_DIR_OVERRIDE: OnceLock<RwLock<Option<PathBuf>>> = OnceLock::new();
@@ -107,6 +109,54 @@ pub fn set_app_config_dir_to_store(
         .map_err(|e| AppError::Message(format!("保存 Store 失败: {e}")))?;
 
     refresh_app_config_dir_override(app);
+    Ok(())
+}
+
+/// 读取用户为桌面应用显式选择的路径。自动检测结果不写入 Store，避免覆盖
+/// 安装器、注册表或 Microsoft Store 后续给出的更准确位置。
+pub fn get_desktop_app_path_from_store(app: &tauri::AppHandle, tool: &str) -> Option<String> {
+    let store = app.store_builder("app_paths.json").build().ok()?;
+    store
+        .get(STORE_KEY_DESKTOP_APP_PATHS)
+        .and_then(|value| value.as_object().cloned())
+        .and_then(|paths| paths.get(tool).cloned())
+        .and_then(|value| value.as_str().map(str::to_string))
+        .map(|path| path.trim().to_string())
+        .filter(|path| !path.is_empty())
+}
+
+/// 保存或清除桌面应用自定义路径。不同工具共用一个对象，但互不覆盖。
+pub fn set_desktop_app_path_to_store(
+    app: &tauri::AppHandle,
+    tool: &str,
+    path: Option<&str>,
+) -> Result<(), AppError> {
+    let store = app
+        .store_builder("app_paths.json")
+        .build()
+        .map_err(|e| AppError::Message(format!("创建 Store 失败: {e}")))?;
+    let mut paths = store
+        .get(STORE_KEY_DESKTOP_APP_PATHS)
+        .and_then(|value| value.as_object().cloned())
+        .unwrap_or_else(Map::new);
+
+    match path.map(str::trim).filter(|path| !path.is_empty()) {
+        Some(path) => {
+            paths.insert(tool.to_string(), Value::String(path.to_string()));
+        }
+        None => {
+            paths.remove(tool);
+        }
+    }
+
+    if paths.is_empty() {
+        store.delete(STORE_KEY_DESKTOP_APP_PATHS);
+    } else {
+        store.set(STORE_KEY_DESKTOP_APP_PATHS, Value::Object(paths));
+    }
+    store
+        .save()
+        .map_err(|e| AppError::Message(format!("保存 Store 失败: {e}")))?;
     Ok(())
 }
 

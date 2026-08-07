@@ -1980,12 +1980,14 @@ pub fn prepare_codex_provider_live_config(
     auth: &Value,
     config_text: &str,
 ) -> Result<String, AppError> {
+    let config_text =
+        crate::codex_history_migration::normalize_codex_provider_history_namespace(config_text)?;
     let token = extract_codex_auth_api_key(auth)
-        .or_else(|| extract_codex_experimental_bearer_token(config_text));
+        .or_else(|| extract_codex_experimental_bearer_token(&config_text));
 
     Ok(match token {
-        Some(token) => set_codex_experimental_bearer_token(config_text, &token)?,
-        None => config_text.to_string(),
+        Some(token) => set_codex_experimental_bearer_token(&config_text, &token)?,
+        None => config_text,
     })
 }
 

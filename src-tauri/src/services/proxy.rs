@@ -3068,10 +3068,14 @@ impl ProxyService {
         // limitation (restore-of-deleted-provider-backup only).
         let prepared_cfg = config_str
             .map(|cfg| {
-                crate::codex_config::prepare_codex_live_config_text_with_optional_catalog(
-                    config,
-                    cfg,
-                    crate::codex_config::CodexCatalogToolProfile::ProxyChat,
+                let catalog_projected =
+                    crate::codex_config::prepare_codex_live_config_text_with_optional_catalog(
+                        config,
+                        cfg,
+                        crate::codex_config::CodexCatalogToolProfile::ProxyChat,
+                    )?;
+                crate::codex_history_migration::normalize_codex_provider_history_namespace(
+                    &catalog_projected,
                 )
             })
             .transpose()
@@ -6116,7 +6120,7 @@ base_url = "https://new.example/v1"
 
     #[tokio::test]
     #[serial]
-    async fn hot_switch_codex_provider_preserves_provider_model_provider_in_backup_and_restore() {
+    async fn hot_switch_codex_provider_keeps_raw_backup_and_stable_live_history_namespace() {
         let _home = TempHome::new();
         crate::settings::reload_settings().expect("reload settings");
 
@@ -6238,22 +6242,22 @@ requires_openai_auth = true
         let parsed_live: toml::Value = toml::from_str(live_config).expect("parse live config");
         assert_eq!(
             parsed_live.get("model_provider").and_then(|v| v.as_str()),
-            Some("aihubmix"),
-            "hot-switched Codex live config should expose the selected provider"
+            Some("custom"),
+            "hot-switched Codex live config should keep a stable history namespace"
         );
         assert_eq!(
             parsed_live
                 .get("model_providers")
-                .and_then(|v| v.get("aihubmix"))
+                .and_then(|v| v.get("custom"))
                 .and_then(|v| v.get("name"))
                 .and_then(|v| v.as_str()),
             Some("AiHubMix"),
-            "Codex app provider label should follow the selected provider"
+            "the stable namespace should still expose the selected provider label"
         );
         assert_eq!(
             parsed_live
                 .get("model_providers")
-                .and_then(|v| v.get("aihubmix"))
+                .and_then(|v| v.get("custom"))
                 .and_then(|v| v.get("base_url"))
                 .and_then(|v| v.as_str()),
             Some("http://127.0.0.1:15721/v1"),
@@ -6273,8 +6277,8 @@ requires_openai_auth = true
         let parsed_live: toml::Value = toml::from_str(live_config).expect("parse live config");
         assert_eq!(
             parsed_live.get("model_provider").and_then(|v| v.as_str()),
-            Some("aihubmix"),
-            "restored Codex live config should preserve the provider's model_provider"
+            Some("custom"),
+            "restored Codex live config should normalize legacy provider ids"
         );
         assert_eq!(
             live.get("auth")
@@ -6382,12 +6386,12 @@ requires_openai_auth = true
 
         assert_eq!(
             parsed_live.get("model_provider").and_then(|v| v.as_str()),
-            Some("deepseek")
+            Some("custom")
         );
         assert_eq!(
             parsed_live
                 .get("model_providers")
-                .and_then(|v| v.get("deepseek"))
+                .and_then(|v| v.get("custom"))
                 .and_then(|v| v.get("name"))
                 .and_then(|v| v.as_str()),
             Some("DeepSeek")
@@ -6395,7 +6399,7 @@ requires_openai_auth = true
         assert_eq!(
             parsed_live
                 .get("model_providers")
-                .and_then(|v| v.get("deepseek"))
+                .and_then(|v| v.get("custom"))
                 .and_then(|v| v.get("base_url"))
                 .and_then(|v| v.as_str()),
             Some("http://127.0.0.1:15721/v1")

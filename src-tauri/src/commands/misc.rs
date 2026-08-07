@@ -10,6 +10,7 @@ use std::path::{Path, PathBuf};
 use std::str::FromStr;
 use tauri::AppHandle;
 use tauri::State;
+use tauri_plugin_dialog::DialogExt;
 use tauri_plugin_opener::OpenerExt;
 
 #[cfg(target_os = "windows")]
@@ -109,6 +110,13 @@ pub struct ToolVersion {
     env_type: String,
     /// 当 env_type 为 "wsl" 时，返回该工具绑定的 WSL distro（用于按 distro 探测 shells）
     wsl_distro: Option<String>,
+    /// 桌面应用的实际安装位置；CLI 工具不返回。
+    install_path: Option<String>,
+    /// automatic / registry / microsoft_store / custom / not_found。
+    detection_source: Option<String>,
+    /// 用户显式选择的原始路径，即使失效也保留给 UI 提示与重选。
+    custom_path: Option<String>,
+    custom_path_valid: bool,
 }
 
 const VALID_TOOLS: [&str; 7] = [
@@ -164,6 +172,7 @@ fn tool_env_type_and_wsl_distro(_tool: &str) -> (String, Option<String>) {
 
 #[tauri::command]
 pub async fn get_tool_versions(
+    app: AppHandle,
     tools: Option<Vec<String>>,
     wsl_shell_by_tool: Option<HashMap<String, WslShellPreferenceInput>>,
 ) -> Result<Vec<ToolVersion>, String> {
@@ -181,11 +190,13 @@ pub async fn get_tool_versions(
         let pref = wsl_shell_by_tool.as_ref().and_then(|m| m.get(tool));
         let tool_wsl_shell = pref.and_then(|p| p.wsl_shell.clone());
         let tool_wsl_shell_flag = pref.and_then(|p| p.wsl_shell_flag.clone());
+        let custom_path = crate::app_store::get_desktop_app_path_from_store(&app, tool);
         async move {
             get_single_tool_version_impl(
                 tool,
                 tool_wsl_shell.as_deref(),
                 tool_wsl_shell_flag.as_deref(),
+                custom_path.as_deref(),
             )
             .await
         }
@@ -200,6 +211,7 @@ pub async fn get_tool_versions(
 /// 也不会阻塞首屏工具卡片。
 #[tauri::command]
 pub async fn get_installed_tool_versions(
+    app: AppHandle,
     tools: Option<Vec<String>>,
     wsl_shell_by_tool: Option<HashMap<String, WslShellPreferenceInput>>,
 ) -> Result<Vec<ToolVersion>, String> {
@@ -219,10 +231,12 @@ pub async fn get_installed_tool_versions(
             .into_iter()
             .map(|tool| {
                 let pref = wsl_shell_by_tool.as_ref().and_then(|m| m.get(tool));
+                let custom_path = crate::app_store::get_desktop_app_path_from_store(&app, tool);
                 get_single_local_tool_version_impl(
                     tool,
                     pref.and_then(|p| p.wsl_shell.as_deref()),
                     pref.and_then(|p| p.wsl_shell_flag.as_deref()),
+                    custom_path.as_deref(),
                 )
             })
             .collect()
@@ -795,64 +809,27 @@ fn windows_cmd_double_quote_arg(value: &str) -> String {
     win_double_quote(value)
 }
 
-fn desktop_app_candidates(tool: &str) -> Vec<PathBuf> {
-    #[cfg(target_os = "macos")]
-    {
-        let names: &[&str] = match tool {
-            "claude-desktop" => &["Claude.app"],
-            "chatgpt-desktop" => &["ChatGPT.app", "Codex.app"],
-            "workbuddy" => &["WorkBuddy.app"],
-            _ => &[],
-        };
-        let mut paths = Vec::new();
-        for name in names {
-            paths.push(PathBuf::from("/Applications").join(name));
-            paths.push(
-                crate::config::get_home_dir()
-                    .join("Applications")
-                    .join(name),
-            );
-        }
-        paths
-    }
-
-    #[cfg(target_os = "windows")]
-    {
-        let local_app_data = std::env::var_os("LOCALAPPDATA")
-            .map(PathBuf::from)
-            .unwrap_or_default();
-        match tool {
-            "chatgpt-desktop" => vec![
-                local_app_data.join("Programs/ChatGPT/ChatGPT.exe"),
-                local_app_data.join("Programs/Codex/Codex.exe"),
-            ],
-            "workbuddy" => vec![local_app_data.join("Programs/WorkBuddy/WorkBuddy.exe")],
-            _ => Vec::new(),
-        }
-    }
-
-    #[cfg(not(any(target_os = "macos", target_os = "windows")))]
-    {
-        let _ = tool;
-        Vec::new()
-    }
-}
-
-fn desktop_app_version(tool: &str) -> ToolVersion {
+fn desktop_app_version(tool: &str, custom_path: Option<&str>) -> ToolVersion {
     let (env_type, wsl_distro) = tool_env_type_and_wsl_distro(tool);
-    let installed = desktop_app_candidates(tool)
-        .into_iter()
-        .find(|path| path.exists());
+    let resolution = crate::desktop_app_detection::discover_desktop_app(tool, custom_path);
+    let installed = resolution.launch_target.is_some();
     ToolVersion {
         name: tool.to_string(),
-        version: installed.as_ref().map(|_| "桌面应用".to_string()),
+        version: installed.then(|| {
+            resolution
+                .version
+                .clone()
+                .unwrap_or_else(|| "桌面应用".to_string())
+        }),
         latest_version: None,
-        error: installed
-            .is_none()
-            .then(|| "desktop app not installed".to_string()),
+        error: (!installed).then(|| "desktop app not installed".to_string()),
         installed_but_broken: false,
         env_type,
         wsl_distro,
+        install_path: resolution.install_path,
+        detection_source: Some(resolution.detection_source.to_string()),
+        custom_path: resolution.custom_path,
+        custom_path_valid: resolution.custom_path_valid,
     }
 }
 
@@ -861,6 +838,7 @@ fn get_single_local_tool_version_impl(
     tool: &str,
     wsl_shell: Option<&str>,
     wsl_shell_flag: Option<&str>,
+    custom_path: Option<&str>,
 ) -> ToolVersion {
     debug_assert!(
         VALID_VERSION_TOOLS.contains(&tool),
@@ -868,7 +846,7 @@ fn get_single_local_tool_version_impl(
     );
 
     if matches!(tool, "claude-desktop" | "chatgpt-desktop" | "workbuddy") {
-        return desktop_app_version(tool);
+        return desktop_app_version(tool, custom_path);
     }
 
     // 判断该工具的运行环境 & WSL distro（如有）
@@ -907,6 +885,10 @@ fn get_single_local_tool_version_impl(
         installed_but_broken,
         env_type,
         wsl_distro,
+        install_path: None,
+        detection_source: None,
+        custom_path: None,
+        custom_path_valid: true,
     }
 }
 
@@ -915,8 +897,10 @@ async fn get_single_tool_version_impl(
     tool: &str,
     wsl_shell: Option<&str>,
     wsl_shell_flag: Option<&str>,
+    custom_path: Option<&str>,
 ) -> ToolVersion {
-    let mut result = get_single_local_tool_version_impl(tool, wsl_shell, wsl_shell_flag);
+    let mut result =
+        get_single_local_tool_version_impl(tool, wsl_shell, wsl_shell_flag, custom_path);
     if matches!(tool, "claude-desktop" | "chatgpt-desktop" | "workbuddy") {
         return result;
     }
@@ -2950,11 +2934,16 @@ fn launch_claude_desktop(_restart: bool) -> Result<(), String> {
 }
 
 #[cfg(target_os = "macos")]
-fn launch_supported_desktop_app(tool: &str, restart: bool) -> Result<(), String> {
-    let app_path = desktop_app_candidates(tool)
-        .into_iter()
-        .find(|path| path.exists())
-        .ok_or_else(|| "未检测到桌面应用，请先安装后重试".to_string())?;
+fn launch_supported_desktop_app(
+    _tool: &str,
+    resolution: crate::desktop_app_detection::DesktopAppResolution,
+    restart: bool,
+) -> Result<(), String> {
+    let Some(crate::desktop_app_detection::DesktopLaunchTarget::Path(app_path)) =
+        resolution.launch_target
+    else {
+        return Err("未检测到桌面应用，请先安装或选择应用路径".to_string());
+    };
     let app_name = app_path
         .file_stem()
         .and_then(|name| name.to_str())
@@ -3023,34 +3012,119 @@ fn launch_supported_desktop_app(tool: &str, restart: bool) -> Result<(), String>
 }
 
 #[cfg(target_os = "windows")]
-fn launch_supported_desktop_app(tool: &str, restart: bool) -> Result<(), String> {
-    let executable = desktop_app_candidates(tool)
-        .into_iter()
-        .find(|path| path.exists())
-        .ok_or_else(|| "未检测到桌面应用，请先安装后重试".to_string())?;
+fn launch_supported_desktop_app(
+    tool: &str,
+    resolution: crate::desktop_app_detection::DesktopAppResolution,
+    restart: bool,
+) -> Result<(), String> {
     if restart {
-        if let Some(name) = executable.file_name().and_then(|name| name.to_str()) {
+        let process_names: &[&str] = match tool {
+            "chatgpt-desktop" => &["ChatGPT.exe", "Codex.exe"],
+            "workbuddy" => &["WorkBuddy.exe"],
+            _ => &[],
+        };
+        for name in process_names {
             let _ = std::process::Command::new("taskkill")
                 .args(["/IM", name, "/T"])
                 .creation_flags(CREATE_NO_WINDOW)
                 .output();
         }
     }
-    std::process::Command::new(&executable)
-        .creation_flags(CREATE_NO_WINDOW)
-        .spawn()
-        .map_err(|error| format!("打开桌面应用失败: {error}"))?;
+    match resolution.launch_target {
+        Some(crate::desktop_app_detection::DesktopLaunchTarget::Path(executable)) => {
+            std::process::Command::new(&executable)
+                .creation_flags(CREATE_NO_WINDOW)
+                .spawn()
+                .map_err(|error| format!("打开桌面应用失败: {error}"))?;
+        }
+        Some(crate::desktop_app_detection::DesktopLaunchTarget::AppUserModelId(aumid)) => {
+            std::process::Command::new("explorer.exe")
+                .arg(format!(r"shell:AppsFolder\{aumid}"))
+                .creation_flags(CREATE_NO_WINDOW)
+                .spawn()
+                .map_err(|error| format!("打开 Microsoft Store 应用失败: {error}"))?;
+        }
+        None => return Err("未检测到桌面应用，请先安装或选择应用路径".to_string()),
+    }
     Ok(())
 }
 
 #[cfg(not(any(target_os = "macos", target_os = "windows")))]
-fn launch_supported_desktop_app(_tool: &str, _restart: bool) -> Result<(), String> {
+fn launch_supported_desktop_app(
+    _tool: &str,
+    _resolution: crate::desktop_app_detection::DesktopAppResolution,
+    _restart: bool,
+) -> Result<(), String> {
     Err("当前平台暂不支持从元衡打开该桌面应用".to_string())
+}
+
+fn ensure_desktop_path_tool(tool: &str) -> Result<(), String> {
+    if matches!(tool, "chatgpt-desktop" | "workbuddy" | "claude-desktop") {
+        Ok(())
+    } else {
+        Err(format!("不支持为 {tool} 设置桌面应用路径"))
+    }
+}
+
+/// 选择、校验并保存桌面应用路径。取消选择不会改变已有配置。
+#[tauri::command]
+pub async fn pick_desktop_app_path(app: AppHandle, tool: String) -> Result<Option<String>, String> {
+    ensure_desktop_path_tool(&tool)?;
+    let dialog_app = app.clone();
+    let selected = tauri::async_runtime::spawn_blocking(move || {
+        dialog_app.dialog().file().blocking_pick_file()
+    })
+    .await
+    .map_err(|e| format!("弹出应用选择器失败: {e}"))?;
+    let Some(selected) = selected else {
+        return Ok(None);
+    };
+    let selected = selected
+        .simplified()
+        .into_path()
+        .map_err(|e| format!("解析选择的应用路径失败: {e}"))?;
+    let resolved = crate::desktop_app_detection::validate_custom_desktop_app_path(
+        &tool,
+        selected.to_string_lossy().as_ref(),
+    )?;
+    let path = resolved.to_string_lossy().to_string();
+    crate::app_store::set_desktop_app_path_to_store(&app, &tool, Some(&path))
+        .map_err(|e| e.to_string())?;
+    Ok(Some(path))
+}
+
+/// 保存手工输入的路径，或传 `null` 清除自定义路径并恢复纯自动检测。
+#[tauri::command]
+pub async fn set_desktop_app_path(
+    app: AppHandle,
+    tool: String,
+    path: Option<String>,
+) -> Result<bool, String> {
+    ensure_desktop_path_tool(&tool)?;
+    let resolved = match path
+        .as_deref()
+        .map(str::trim)
+        .filter(|path| !path.is_empty())
+    {
+        Some(path) => Some(
+            crate::desktop_app_detection::validate_custom_desktop_app_path(&tool, path)?
+                .to_string_lossy()
+                .to_string(),
+        ),
+        None => None,
+    };
+    crate::app_store::set_desktop_app_path_to_store(&app, &tool, resolved.as_deref())
+        .map_err(|e| e.to_string())?;
+    Ok(true)
 }
 
 /// 在新终端中启动已经配置好的 AI CLI。
 #[tauri::command]
-pub async fn launch_tool(tool: String, restart: Option<bool>) -> Result<bool, String> {
+pub async fn launch_tool(
+    app: AppHandle,
+    tool: String,
+    restart: Option<bool>,
+) -> Result<bool, String> {
     if tool == "claude-desktop" {
         tokio::task::spawn_blocking(move || launch_claude_desktop(restart.unwrap_or(false)))
             .await
@@ -3059,8 +3133,11 @@ pub async fn launch_tool(tool: String, restart: Option<bool>) -> Result<bool, St
     }
     if matches!(tool.as_str(), "chatgpt-desktop" | "workbuddy") {
         let launch_tool = tool.clone();
+        let custom_path = crate::app_store::get_desktop_app_path_from_store(&app, &tool);
+        let resolution =
+            crate::desktop_app_detection::discover_desktop_app(&tool, custom_path.as_deref());
         tokio::task::spawn_blocking(move || {
-            launch_supported_desktop_app(&launch_tool, restart.unwrap_or(false))
+            launch_supported_desktop_app(&launch_tool, resolution, restart.unwrap_or(false))
         })
         .await
         .map_err(|e| format!("桌面应用启动任务执行失败: {e}"))??;

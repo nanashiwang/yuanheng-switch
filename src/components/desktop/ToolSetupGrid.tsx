@@ -5,12 +5,14 @@ import {
   CheckCircle2,
   CircleOff,
   Download,
+  FolderOpen,
   Image as ImageIcon,
   Loader2,
   Play,
   RefreshCw,
   Settings2,
   Square,
+  Trash2,
 } from "lucide-react";
 import { toast } from "sonner";
 import {
@@ -367,6 +369,27 @@ export function ToolSetupGrid({
     }
   };
 
+  const chooseDesktopPath = async (app: YuanhengToolId) => {
+    try {
+      const selected = await settingsApi.pickDesktopAppPath(app);
+      if (!selected) return;
+      await versions.refetch();
+      toast.success(dt("已保存 {{v0}} 应用路径", { v0: toolLabel(app) }));
+    } catch (error) {
+      toast.error(extractErrorMessage(error) || dt("应用路径无效"));
+    }
+  };
+
+  const clearDesktopPath = async (app: YuanhengToolId) => {
+    try {
+      await settingsApi.clearDesktopAppPath(app);
+      await versions.refetch();
+      toast.success(dt("已恢复自动检测"));
+    } catch (error) {
+      toast.error(extractErrorMessage(error) || dt("清除应用路径失败"));
+    }
+  };
+
   const launchTool = async (app: YuanhengToolId, forceRestart = false) => {
     try {
       const status = statusMap.get(app);
@@ -561,6 +584,18 @@ export function ToolSetupGrid({
             app === "claude-desktop" ||
             app === "codex" ||
             app === "chatgpt-desktop";
+          const supportsCustomPath =
+            app === "chatgpt-desktop" || app === "workbuddy";
+          const detectionLabel =
+            version?.detection_source === "custom"
+              ? dt("自定义路径")
+              : version?.detection_source === "microsoft_store"
+                ? "Microsoft Store"
+                : version?.detection_source === "registry"
+                  ? dt("注册表检测")
+                  : version?.detection_source === "automatic"
+                    ? dt("自动检测")
+                    : dt("未检测到");
           const modelChanged =
             Boolean(
               selectedModel &&
@@ -651,6 +686,69 @@ export function ToolSetupGrid({
                       : dt("待配置")}
                 </span>
               </div>
+
+              {supportsCustomPath && (
+                <div className="mt-3 border-t border-border/60 pt-3 text-[10px]">
+                  <div className="flex min-w-0 items-center gap-2">
+                    <span
+                      className={cn(
+                        "shrink-0 font-medium",
+                        version?.detection_source === "not_found"
+                          ? "text-amber-700 dark:text-amber-300"
+                          : "text-muted-foreground",
+                      )}
+                    >
+                      {detectionLabel}
+                    </span>
+                    <span
+                      className="min-w-0 flex-1 truncate text-muted-foreground"
+                      title={
+                        version?.install_path ?? version?.custom_path ?? ""
+                      }
+                    >
+                      {version?.install_path ??
+                        version?.custom_path ??
+                        dt("尚未选择应用路径")}
+                    </span>
+                  </div>
+                  {version?.custom_path && !version.custom_path_valid && (
+                    <p className="mt-1 text-amber-700 dark:text-amber-300">
+                      {dt("原自定义路径已失效，当前继续使用自动检测结果。")}
+                    </p>
+                  )}
+                  <div className="mt-2 flex items-center gap-1.5">
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="sm"
+                      className="h-7 px-2 text-[10px]"
+                      onClick={(event) => {
+                        event.stopPropagation();
+                        void chooseDesktopPath(app);
+                      }}
+                    >
+                      <FolderOpen className="h-3.5 w-3.5" />
+                      {version?.custom_path ? dt("重新选择") : dt("选择路径")}
+                    </Button>
+                    {version?.custom_path && (
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="icon"
+                        className="h-7 w-7 text-muted-foreground"
+                        title={dt("清除自定义路径")}
+                        aria-label={dt("清除自定义路径")}
+                        onClick={(event) => {
+                          event.stopPropagation();
+                          void clearDesktopPath(app);
+                        }}
+                      >
+                        <Trash2 className="h-3.5 w-3.5" />
+                      </Button>
+                    )}
+                  </div>
+                </div>
+              )}
 
               {status?.runtimeStatus && (
                 <div

@@ -1,11 +1,14 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
-import { History, KeyRound } from "lucide-react";
+import { History, KeyRound, Loader2, RotateCcw, Search } from "lucide-react";
 import { toast } from "sonner";
 import type { SettingsFormState } from "@/hooks/useSettings";
 import { ToggleRow } from "@/components/ui/toggle-row";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { settingsApi } from "@/lib/api";
+import type { CodexHistoryMigrationTask } from "@/lib/api/settings";
+import { Button } from "@/components/ui/button";
+import { extractErrorMessage } from "@/utils/errorUtils";
 
 interface CodexAuthSettingsProps {
   settings: SettingsFormState;
@@ -23,6 +26,34 @@ export function CodexAuthSettings({
   const [showEnableConfirm, setShowEnableConfirm] = useState(false);
   const [showDisableConfirm, setShowDisableConfirm] = useState(false);
   const [hasUnifyBackup, setHasUnifyBackup] = useState(false);
+  const [migrationTask, setMigrationTask] =
+    useState<CodexHistoryMigrationTask | null>(null);
+  const [migrationBusy, setMigrationBusy] = useState(false);
+
+  useEffect(() => {
+    let active = true;
+    const refresh = async () => {
+      try {
+        const task = await settingsApi.getCodexHistoryMigrationStatus();
+        if (active) setMigrationTask(task);
+      } catch {
+        // 历史状态读取失败不阻断其余设置。
+      }
+    };
+    void refresh();
+    const timer = window.setInterval(() => {
+      if (
+        migrationTask?.status === "running" ||
+        migrationTask?.status === "paused"
+      ) {
+        void refresh();
+      }
+    }, 3000);
+    return () => {
+      active = false;
+      window.clearInterval(timer);
+    };
+  }, [migrationTask?.status]);
 
   const handleUnifyHistoryChange = (checked: boolean) => {
     if (checked) {
@@ -39,12 +70,35 @@ export function CodexAuthSettings({
       });
   };
 
-  const handleEnableConfirm = (migrateExisting: boolean) => {
+  const handleEnableConfirm = async (migrateExisting: boolean) => {
     setShowEnableConfirm(false);
-    void onChange({
+    const saved = await onChange({
       unifyCodexSessionHistory: true,
-      unifyCodexMigrateExisting: migrateExisting,
+      unifyCodexMigrateExisting: false,
     });
+    if (saved === false || !migrateExisting) return;
+    await runMigrationAction(() => settingsApi.previewCodexHistoryMigration());
+  };
+
+  const runMigrationAction = async (
+    action: () => Promise<CodexHistoryMigrationTask>,
+  ) => {
+    setMigrationBusy(true);
+    try {
+      const task = await action();
+      setMigrationTask(task);
+      if (task.status === "completed") {
+        toast.success(t("settings.codexHistoryMigrationCompleted"));
+      } else if (task.status === "rolled_back") {
+        toast.success(t("settings.codexHistoryMigrationRolledBack"));
+      }
+    } catch (error) {
+      toast.error(
+        extractErrorMessage(error) || t("settings.codexHistoryMigrationFailed"),
+      );
+    } finally {
+      setMigrationBusy(false);
+    }
   };
 
   // 备份探测可能落后于正在后台进行的迁移（刚勾选迁入就立刻关闭时，
@@ -105,6 +159,169 @@ export function CodexAuthSettings({
         }
       />
 
+      <div className="border-t border-border/50 pt-4">
+        <div className="flex items-center justify-between gap-3">
+          <div className="min-w-0">
+            <p className="text-xs font-medium">
+              {t("settings.codexHistoryMigration")}
+            </p>
+            <p className="mt-1 text-[11px] leading-5 text-muted-foreground">
+              {t("settings.codexHistoryMigrationDescription")}
+            </p>
+          </div>
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            disabled={migrationBusy || migrationTask?.status === "running"}
+            onClick={() =>
+              void runMigrationAction(() =>
+                settingsApi.previewCodexHistoryMigration(),
+              )
+            }
+          >
+            {migrationBusy ? (
+              <Loader2 className="h-3.5 w-3.5 animate-spin" />
+            ) : (
+              <Search className="h-3.5 w-3.5" />
+            )}
+            {t("settings.codexHistoryMigrationDetect")}
+          </Button>
+        </div>
+
+        {migrationTask && (
+          <div className="mt-3 space-y-3 bg-muted/35 px-3 py-3 text-[11px]">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <span className="font-medium">
+                {t(
+                  `settings.codexHistoryMigrationStatus.${migrationTask.status}`,
+                )}
+              </span>
+              <span className="text-muted-foreground">
+                {t("settings.codexHistoryMigrationTarget", {
+                  target: migrationTask.targetNamespace,
+                })}
+              </span>
+            </div>
+            <div className="grid grid-cols-2 gap-x-4 gap-y-1 text-muted-foreground sm:grid-cols-4">
+              <span>
+                {t("settings.codexHistoryMigrationTotal", {
+                  count: migrationTask.preview.totalCount,
+                })}
+              </span>
+              <span>
+                {t("settings.codexHistoryMigrationOrdinary", {
+                  count: migrationTask.preview.ordinarySessions,
+                })}
+              </span>
+              <span>
+                {t("settings.codexHistoryMigrationArchived", {
+                  count: migrationTask.preview.archivedSessions,
+                })}
+              </span>
+              <span>
+                {t("settings.codexHistoryMigrationActive", {
+                  count: migrationTask.preview.activeSessions,
+                })}
+              </span>
+              <span>
+                {t("settings.codexHistoryMigrationDatabase", {
+                  count: migrationTask.preview.databaseRows,
+                })}
+              </span>
+              <span>
+                {t("settings.codexHistoryMigrationProgress", {
+                  success: migrationTask.successCount,
+                  total: migrationTask.totalCount,
+                })}
+              </span>
+            </div>
+            {migrationTask.validation && (
+              <p className="text-muted-foreground">
+                {migrationTask.validation.totalCountUnchanged &&
+                migrationTask.validation.conversationIdsUnchanged &&
+                migrationTask.validation.rolloutFilesExist &&
+                migrationTask.validation.sqliteIntegrityOk &&
+                migrationTask.validation.duplicateSessionIdsUnchanged &&
+                migrationTask.validation.orphanStateRowsUnchanged &&
+                migrationTask.validation.archiveCountUnchanged
+                  ? t("settings.codexHistoryMigrationValidationPassed")
+                  : t("settings.codexHistoryMigrationValidationFailed")}
+              </p>
+            )}
+            {migrationTask.error &&
+              !migrationTask.error.startsWith("active_sessions_pending") && (
+                <p className="break-words text-destructive">
+                  {migrationTask.error === "integrity_validation_failed"
+                    ? t("settings.codexHistoryMigrationValidationFailed")
+                    : migrationTask.error}
+                </p>
+              )}
+            {migrationTask.pendingFiles.length > 0 && (
+              <p className="text-amber-700 dark:text-amber-300">
+                {t("settings.codexHistoryMigrationPending", {
+                  count: migrationTask.pendingFiles.length,
+                })}
+              </p>
+            )}
+            <div className="flex flex-wrap gap-2">
+              {migrationTask.status === "preview" &&
+                migrationTask.totalCount > 0 && (
+                  <Button
+                    type="button"
+                    size="sm"
+                    disabled={migrationBusy}
+                    onClick={() =>
+                      void runMigrationAction(() =>
+                        settingsApi.startCodexHistoryMigration(),
+                      )
+                    }
+                  >
+                    <History className="h-3.5 w-3.5" />
+                    {t("settings.codexHistoryMigrationStart")}
+                  </Button>
+                )}
+              {(migrationTask.status === "paused" ||
+                migrationTask.status === "failed") && (
+                <Button
+                  type="button"
+                  size="sm"
+                  disabled={migrationBusy}
+                  onClick={() =>
+                    void runMigrationAction(() =>
+                      settingsApi.resumeCodexHistoryMigration(),
+                    )
+                  }
+                >
+                  <History className="h-3.5 w-3.5" />
+                  {t("settings.codexHistoryMigrationResume")}
+                </Button>
+              )}
+              {migrationTask.backupDir &&
+                migrationTask.status !== "preview" &&
+                migrationTask.status !== "rolled_back" && (
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    disabled={
+                      migrationBusy || migrationTask.status === "running"
+                    }
+                    onClick={() =>
+                      void runMigrationAction(() =>
+                        settingsApi.rollbackCodexHistoryMigration(),
+                      )
+                    }
+                  >
+                    <RotateCcw className="h-3.5 w-3.5" />
+                    {t("settings.codexHistoryMigrationRollback")}
+                  </Button>
+                )}
+            </div>
+          </div>
+        )}
+      </div>
+
       <ToggleRow
         icon={<History className="h-4 w-4 text-sky-500" />}
         title={t("settings.unifyCodexSessionHistory")}
@@ -119,7 +336,9 @@ export function CodexAuthSettings({
         message={t("confirm.unifyCodexHistory.message")}
         checkboxLabel={t("confirm.unifyCodexHistory.migrateExisting")}
         confirmText={t("confirm.unifyCodexHistory.confirm")}
-        onConfirm={handleEnableConfirm}
+        onConfirm={(migrateExisting) =>
+          void handleEnableConfirm(migrateExisting)
+        }
         onCancel={() => setShowEnableConfirm(false)}
       />
 

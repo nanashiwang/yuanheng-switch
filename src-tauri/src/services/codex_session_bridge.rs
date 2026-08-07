@@ -733,9 +733,9 @@ mod tests {
         let profile = temp.path().join("yuanheng-terminal.config.toml");
         std::fs::write(
             &profile,
-            r#"model_provider = "yuanheng"
+            r#"model_provider = "custom"
 model_catalog_json = "yuanheng-terminal-model-catalog.json"
-[model_providers.yuanheng]
+[model_providers.custom]
 base_url = "http://127.0.0.1:15721/codex/v1"
 wire_api = "responses"
 experimental_bearer_token = "secret"
@@ -746,10 +746,9 @@ experimental_bearer_token = "secret"
         assert_eq!(
             overrides,
             vec![
-                r#"model_provider="yuanheng""#.to_string(),
-                r#"model_providers.yuanheng.base_url="http://127.0.0.1:15721/codex/v1""#
-                    .to_string(),
-                r#"model_providers.yuanheng.wire_api="responses""#.to_string(),
+                r#"model_provider="custom""#.to_string(),
+                r#"model_providers.custom.base_url="http://127.0.0.1:15721/codex/v1""#.to_string(),
+                r#"model_providers.custom.wire_api="responses""#.to_string(),
                 format!(
                     "model_catalog_json={}",
                     toml::Value::String(

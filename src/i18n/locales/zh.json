@@ -302,7 +302,7 @@
     "unifyCodexHistory": {
       "title": "统一 Codex 会话历史",
       "message": "开启后，官方订阅与第三方将共用同一个会话历史列表。注意：跨供应商继续旧会话时，可能因对方后端无法解密 encrypted_content 推理内容而失败。\n\n可选择同时把现有官方会话历史迁入共享列表（迁移前自动备份到 ~/.yuanheng-switch/backups，关闭开关时可选择恢复）。",
-      "migrateExisting": "同时迁入现有官方会话历史",
+      "migrateExisting": "检测现有会话并生成迁移预览",
       "confirm": "我已了解，继续开启"
     },
     "unifyCodexHistoryOff": {
@@ -701,6 +701,33 @@
     "unifyCodexHistoryRestoreFailed": "还原官方会话历史失败，请重试",
     "unifyCodexHistoryRestoreNothing": "当前 Codex 目录没有可恢复的迁移备份",
     "unifyCodexHistoryRestoreSkippedToggleOn": "统一会话历史开关已重新开启，已跳过还原",
+    "codexHistoryMigration": "会话迁移与历史统一",
+    "codexHistoryMigrationDescription": "检测旧 provider 下的 Codex 会话，确认预览后再迁移；活动会话会等待文件释放后自动补迁。",
+    "codexHistoryMigrationDetect": "检测历史",
+    "codexHistoryMigrationTarget": "目标空间：{{target}}",
+    "codexHistoryMigrationTotal": "旧会话 {{count}}",
+    "codexHistoryMigrationOrdinary": "普通 {{count}}",
+    "codexHistoryMigrationArchived": "归档 {{count}}",
+    "codexHistoryMigrationActive": "活动 {{count}}",
+    "codexHistoryMigrationDatabase": "索引 {{count}}",
+    "codexHistoryMigrationProgress": "已完成 {{success}}/{{total}}",
+    "codexHistoryMigrationValidationPassed": "会话 ID、总数、归档、rollout 与 SQLite 校验通过",
+    "codexHistoryMigrationValidationFailed": "完整性校验未全部通过，请查看错误后重试或回滚",
+    "codexHistoryMigrationPending": "{{count}} 个活动会话等待自动补迁",
+    "codexHistoryMigrationStart": "开始迁移",
+    "codexHistoryMigrationResume": "继续任务",
+    "codexHistoryMigrationRollback": "按账本回滚",
+    "codexHistoryMigrationCompleted": "Codex 会话迁移完成",
+    "codexHistoryMigrationRolledBack": "Codex 会话迁移已回滚",
+    "codexHistoryMigrationFailed": "Codex 会话迁移失败",
+    "codexHistoryMigrationStatus": {
+      "preview": "迁移预览",
+      "running": "迁移中",
+      "paused": "等待活动会话释放",
+      "completed": "迁移完成",
+      "failed": "迁移失败",
+      "rolled_back": "已回滚"
+    },
     "appVisibility": {
       "title": "主页面显示",
       "description": "选择在主页面显示的应用",

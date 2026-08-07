@@ -26,6 +26,55 @@ export interface CodexUnifyHistoryRestoreResult {
   skippedReason?: string;
 }
 
+export type CodexHistoryMigrationStatus =
+  | "preview"
+  | "running"
+  | "paused"
+  | "completed"
+  | "failed"
+  | "rolled_back";
+
+export interface CodexHistoryMigrationPreview {
+  ordinarySessions: number;
+  archivedSessions: number;
+  activeSessions: number;
+  databaseRows: number;
+  physicalFiles: number;
+  totalCount: number;
+  providerCounts: Record<string, number>;
+}
+
+export interface CodexHistoryMigrationValidation {
+  totalCountUnchanged: boolean;
+  conversationIdsUnchanged: boolean;
+  rolloutFilesExist: boolean;
+  sqliteIntegrityOk: boolean;
+  duplicateSessionIds: number;
+  duplicateSessionIdsUnchanged: boolean;
+  orphanStateRows: number;
+  orphanStateRowsUnchanged: boolean;
+  archiveCountUnchanged: boolean;
+}
+
+export interface CodexHistoryMigrationTask {
+  migrationId: string;
+  sourceProviderIds: string[];
+  targetNamespace: string;
+  totalCount: number;
+  successCount: number;
+  failedCount: number;
+  skippedCount: number;
+  status: CodexHistoryMigrationStatus;
+  startedAt?: string;
+  finishedAt?: string;
+  error?: string;
+  preview: CodexHistoryMigrationPreview;
+  pendingFiles: string[];
+  backupDir?: string;
+  validation?: CodexHistoryMigrationValidation;
+  rollbackRequested: boolean;
+}
+
 export interface WebDavSyncResult {
   status: string;
 }
@@ -38,6 +87,16 @@ export interface ToolVersionInfo {
   installed_but_broken: boolean;
   env_type: "windows" | "wsl" | "macos" | "linux" | "unknown";
   wsl_distro: string | null;
+  install_path: string | null;
+  detection_source:
+    | "automatic"
+    | "registry"
+    | "microsoft_store"
+    | "custom"
+    | "not_found"
+    | null;
+  custom_path: string | null;
+  custom_path_valid: boolean;
 }
 
 export const settingsApi = {
@@ -57,6 +116,26 @@ export const settingsApi = {
   /** 按迁移备份账本把当时迁入共享桶的官方会话还原回 openai 桶（幂等） */
   async restoreCodexUnifiedHistory(): Promise<CodexUnifyHistoryRestoreResult> {
     return await invoke("restore_codex_unified_history");
+  },
+
+  async previewCodexHistoryMigration(): Promise<CodexHistoryMigrationTask> {
+    return await invoke("preview_codex_history_migration");
+  },
+
+  async getCodexHistoryMigrationStatus(): Promise<CodexHistoryMigrationTask | null> {
+    return await invoke("get_codex_history_migration_status");
+  },
+
+  async startCodexHistoryMigration(): Promise<CodexHistoryMigrationTask> {
+    return await invoke("start_codex_history_migration");
+  },
+
+  async resumeCodexHistoryMigration(): Promise<CodexHistoryMigrationTask> {
+    return await invoke("resume_codex_history_migration");
+  },
+
+  async rollbackCodexHistoryMigration(): Promise<CodexHistoryMigrationTask> {
+    return await invoke("rollback_codex_history_migration");
   },
 
   async restart(): Promise<boolean> {
@@ -265,6 +344,14 @@ export const settingsApi = {
       tools,
       wslShellByTool,
     });
+  },
+
+  async pickDesktopAppPath(tool: string): Promise<string | null> {
+    return await invoke("pick_desktop_app_path", { tool });
+  },
+
+  async clearDesktopAppPath(tool: string): Promise<boolean> {
+    return await invoke("set_desktop_app_path", { tool, path: null });
   },
 
   async runToolLifecycleAction(

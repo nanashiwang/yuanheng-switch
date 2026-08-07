@@ -1,4 +1,5 @@
 use serde::{Deserialize, Serialize};
+use std::collections::BTreeMap;
 use std::fs;
 use std::path::PathBuf;
 use std::sync::{OnceLock, RwLock};
@@ -294,6 +295,81 @@ pub struct LocalMigrations {
     /// 这样重新开启能把"关闭期间"落入 openai 桶的官方会话补迁进来。
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub codex_official_history_unify_v1: Option<CodexOfficialHistoryUnifyMigration>,
+    /// 旧执行 provider 到稳定历史命名空间的持久化映射。它用于识别需要
+    /// 清理的 legacy 数据；Codex 自身的历史查询仍由稳定的 custom id 承载。
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub codex_provider_aliases_v1: BTreeMap<String, String>,
+    /// 用户显式创建的产品化迁移任务。只有存在 running/paused 任务时才会续跑。
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub codex_history_migration_v2: Option<CodexHistoryMigrationTask>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Default)]
+#[serde(rename_all = "snake_case")]
+pub enum CodexHistoryMigrationStatus {
+    #[default]
+    Preview,
+    Running,
+    Paused,
+    Completed,
+    Failed,
+    RolledBack,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+#[serde(rename_all = "camelCase")]
+pub struct CodexHistoryMigrationPreview {
+    pub ordinary_sessions: usize,
+    pub archived_sessions: usize,
+    pub active_sessions: usize,
+    pub database_rows: usize,
+    pub physical_files: usize,
+    pub total_count: usize,
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub provider_counts: BTreeMap<String, usize>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+#[serde(rename_all = "camelCase")]
+pub struct CodexHistoryMigrationValidation {
+    pub total_count_unchanged: bool,
+    pub conversation_ids_unchanged: bool,
+    pub rollout_files_exist: bool,
+    pub sqlite_integrity_ok: bool,
+    pub duplicate_session_ids: usize,
+    pub duplicate_session_ids_unchanged: bool,
+    pub orphan_state_rows: usize,
+    pub orphan_state_rows_unchanged: bool,
+    pub archive_count_unchanged: bool,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+#[serde(rename_all = "camelCase")]
+pub struct CodexHistoryMigrationTask {
+    pub migration_id: String,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub source_provider_ids: Vec<String>,
+    pub target_namespace: String,
+    pub total_count: usize,
+    pub success_count: usize,
+    pub failed_count: usize,
+    pub skipped_count: usize,
+    pub status: CodexHistoryMigrationStatus,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub started_at: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub finished_at: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub error: Option<String>,
+    pub preview: CodexHistoryMigrationPreview,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub pending_files: Vec<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub backup_dir: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub validation: Option<CodexHistoryMigrationValidation>,
+    #[serde(default)]
+    pub rollback_requested: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -800,6 +876,7 @@ where
     Ok(())
 }
 
+#[allow(dead_code)] // v1 迁移标记仍需反序列化兼容。
 pub fn is_codex_third_party_history_provider_bucket_migrated() -> bool {
     get_settings()
         .local_migrations
@@ -812,6 +889,7 @@ pub fn is_codex_third_party_history_provider_bucket_migrated() -> bool {
         .is_some_and(|m| m.scanned_history_files)
 }
 
+#[allow(dead_code)]
 pub fn mark_codex_third_party_history_provider_bucket_migrated(
     migration: CodexThirdPartyHistoryProviderBucketMigration,
 ) -> Result<(), AppError> {
@@ -842,8 +920,40 @@ pub fn mark_codex_provider_template_migrated(
     })
 }
 
+pub fn get_codex_provider_aliases() -> BTreeMap<String, String> {
+    get_settings()
+        .local_migrations
+        .map(|migrations| migrations.codex_provider_aliases_v1)
+        .unwrap_or_default()
+}
+
+pub fn set_codex_provider_aliases(aliases: BTreeMap<String, String>) -> Result<(), AppError> {
+    mutate_settings(|settings| {
+        settings
+            .local_migrations
+            .get_or_insert_with(Default::default)
+            .codex_provider_aliases_v1 = aliases.clone();
+    })
+}
+
+pub fn get_codex_history_migration_task() -> Option<CodexHistoryMigrationTask> {
+    get_settings()
+        .local_migrations
+        .and_then(|migrations| migrations.codex_history_migration_v2)
+}
+
+pub fn set_codex_history_migration_task(task: CodexHistoryMigrationTask) -> Result<(), AppError> {
+    mutate_settings(|settings| {
+        settings
+            .local_migrations
+            .get_or_insert_with(Default::default)
+            .codex_history_migration_v2 = Some(task.clone());
+    })
+}
+
 /// 统一会话迁移标记是否覆盖指定目录。标记里没记目录（不应出现的旧格式）
 /// 视为不匹配——重跑迁移是幂等的，宁可重迁也不漏迁。
+#[allow(dead_code)] // v1 标记保留给旧设置与备份恢复兼容。
 pub fn is_codex_official_history_unify_migrated_for_dir(codex_dir: &str) -> bool {
     get_settings()
         .local_migrations
@@ -856,6 +966,7 @@ pub fn is_codex_official_history_unify_migrated_for_dir(codex_dir: &str) -> bool
 /// 检查与写入在 settings 写锁内原子完成，与关闭开关路径
 /// （`update_settings` / 清标记）串行，消除"迁移线程复查开关后、写标记前
 /// 用户恰好关闭开关"的竞态窗口。返回是否实际写入。
+#[allow(dead_code)]
 pub fn mark_codex_official_history_unify_migrated_if_enabled(
     migration: CodexOfficialHistoryUnifyMigration,
 ) -> Result<bool, AppError> {
@@ -882,6 +993,7 @@ pub fn clear_codex_official_history_unify_migration() -> Result<(), AppError> {
     })
 }
 
+#[allow(dead_code)]
 pub fn unify_codex_migrate_existing_requested() -> bool {
     get_settings().unify_codex_migrate_existing.unwrap_or(false)
 }

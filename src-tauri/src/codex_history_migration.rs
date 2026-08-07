@@ -16,11 +16,13 @@ use crate::settings::{
 };
 use chrono::{Local, Utc};
 use rusqlite::{backup::Backup, params_from_iter, Connection};
+use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use sha2::{Digest, Sha256};
 use std::collections::{BTreeSet, HashSet};
 use std::fs;
 use std::hash::{Hash, Hasher};
+use std::io::{BufRead, BufReader};
 use std::path::{Path, PathBuf};
 use std::time::{Duration, SystemTime};
 use toml_edit::DocumentMut;
@@ -75,6 +77,7 @@ const CC_SWITCH_LEGACY_CODEX_MODEL_PROVIDER_IDS: &[&str] = &[
     "minimax",
     "minimax_en",
     "modelscope",
+    "nan",
     "novita",
     "nvidia",
     "openrouter",
@@ -91,14 +94,42 @@ const CC_SWITCH_LEGACY_CODEX_MODEL_PROVIDER_IDS: &[&str] = &[
     "sssaicode",
     "stepfun",
     "stepfun_en",
+    "tal",
     "therouter",
     "xiaomi_mimo",
     "xiaomi_mimo_token_plan",
+    "yuanheng",
     "zhipu_glm",
     "zhipu_glm_en",
 ];
 
+fn built_in_codex_provider_aliases() -> std::collections::BTreeMap<String, String> {
+    let mut aliases = std::collections::BTreeMap::new();
+    for provider in CC_SWITCH_LEGACY_CODEX_MODEL_PROVIDER_IDS {
+        aliases.insert(
+            (*provider).to_string(),
+            CC_SWITCH_CODEX_MODEL_PROVIDER_ID.to_string(),
+        );
+    }
+    aliases.insert(
+        LEGACY_CC_SWITCH_CODEX_MODEL_PROVIDER_ID.to_string(),
+        CC_SWITCH_CODEX_MODEL_PROVIDER_ID.to_string(),
+    );
+    aliases
+}
+
+fn codex_provider_aliases() -> std::collections::BTreeMap<String, String> {
+    let mut aliases = built_in_codex_provider_aliases();
+    aliases.extend(crate::settings::get_codex_provider_aliases());
+    aliases
+}
+
+pub fn ensure_codex_provider_aliases_persisted() -> Result<(), AppError> {
+    crate::settings::set_codex_provider_aliases(codex_provider_aliases())
+}
+
 #[derive(Debug, Clone, Default)]
+#[allow(dead_code)] // v1 备份兼容路径保留，生产迁移已切换到显式 v2 任务。
 pub struct CodexHistoryProviderBucketMigrationOutcome {
     pub source_provider_ids: Vec<String>,
     pub migrated_jsonl_files: usize,
@@ -112,6 +143,958 @@ pub struct CodexProviderTemplateBucketMigrationOutcome {
     pub skipped_reason: Option<String>,
 }
 
+const PRODUCT_MIGRATION_NAME: &str = "codex-history-migration-v2";
+const PRODUCT_ROLLBACK_BACKUP_NAME: &str = "codex-history-migration-v2-rollback";
+const ACTIVE_SESSION_WINDOW: Duration = Duration::from_secs(30);
+const PRODUCT_MANIFEST_FILE: &str = "manifest.json";
+
+#[derive(Debug, Clone)]
+struct ProductSessionRecord {
+    path: PathBuf,
+    session_id: String,
+    provider: String,
+    archived: bool,
+    active: bool,
+}
+
+#[derive(Debug, Clone)]
+struct ProductStateRow {
+    db_path: PathBuf,
+    session_id: String,
+    provider: String,
+}
+
+#[derive(Debug, Clone, Default)]
+struct ProductHistoryScan {
+    sessions: Vec<ProductSessionRecord>,
+    state_rows: Vec<ProductStateRow>,
+    all_session_ids: BTreeSet<String>,
+    all_state_ids: BTreeSet<String>,
+    duplicate_session_ids: usize,
+    archive_count: usize,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct ProductSessionManifestEntry {
+    path: String,
+    session_id: String,
+    source_provider: String,
+    archived: bool,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct ProductStateManifestEntry {
+    db_path: String,
+    session_id: String,
+    source_provider: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct ProductMigrationManifest {
+    version: u8,
+    migration_id: String,
+    codex_config_dir: String,
+    target_namespace: String,
+    before_session_ids: Vec<String>,
+    before_state_ids: Vec<String>,
+    before_archive_count: usize,
+    before_duplicate_session_ids: usize,
+    #[serde(default)]
+    before_orphan_state_rows: usize,
+    sessions: Vec<ProductSessionManifestEntry>,
+    state_rows: Vec<ProductStateManifestEntry>,
+}
+
+fn product_migration_source_aliases() -> BTreeSet<String> {
+    let mut sources: BTreeSet<String> = codex_provider_aliases()
+        .into_iter()
+        .filter_map(|(source, target)| {
+            target
+                .eq_ignore_ascii_case(CC_SWITCH_CODEX_MODEL_PROVIDER_ID)
+                .then_some(source)
+        })
+        .collect();
+    if crate::settings::unify_codex_session_history()
+        && codex_config_text_routes_custom(&read_codex_config_text().unwrap_or_default())
+    {
+        sources.insert(OFFICIAL_OPENAI_CODEX_MODEL_PROVIDER_ID.to_string());
+    }
+    sources
+}
+
+fn provider_is_product_migration_source(provider: &str, sources: &BTreeSet<String>) -> bool {
+    sources
+        .iter()
+        .any(|source| source.eq_ignore_ascii_case(provider.trim()))
+}
+
+fn read_product_session_record(
+    path: &Path,
+    archived: bool,
+    activity_now: SystemTime,
+) -> Option<ProductSessionRecord> {
+    let file = fs::File::open(path).ok()?;
+    for line in BufReader::new(file).lines().map_while(Result::ok) {
+        if !line.contains("\"session_meta\"") {
+            continue;
+        }
+        let value: Value = serde_json::from_str(&line).ok()?;
+        if value.get("type").and_then(Value::as_str) != Some("session_meta") {
+            continue;
+        }
+        let payload = value.get("payload")?;
+        let session_id = payload.get("id")?.as_str()?.to_string();
+        let provider = payload
+            .get("model_provider")
+            .and_then(Value::as_str)
+            .unwrap_or_default()
+            .to_string();
+        return Some(ProductSessionRecord {
+            path: path.to_path_buf(),
+            session_id,
+            provider,
+            archived,
+            active: product_session_file_is_active_at(path, activity_now),
+        });
+    }
+    None
+}
+
+fn product_session_file_is_active(path: &Path) -> bool {
+    product_session_file_is_active_at(path, SystemTime::now())
+}
+
+fn product_session_file_is_active_at(path: &Path, now: SystemTime) -> bool {
+    let Ok(metadata) = fs::metadata(path) else {
+        return true;
+    };
+    let Ok(modified) = metadata.modified() else {
+        return true;
+    };
+    now.duration_since(modified)
+        .map_or(true, |age| age < ACTIVE_SESSION_WINDOW)
+}
+
+fn scan_product_history(sources: &BTreeSet<String>) -> Result<ProductHistoryScan, AppError> {
+    let codex_dir = get_codex_config_dir();
+    let config_text = read_codex_config_text().unwrap_or_default();
+    scan_product_history_at(&codex_dir, &config_text, sources, SystemTime::now())
+}
+
+fn scan_product_history_at(
+    codex_dir: &Path,
+    config_text: &str,
+    sources: &BTreeSet<String>,
+    now: SystemTime,
+) -> Result<ProductHistoryScan, AppError> {
+    let mut files = Vec::new();
+    collect_jsonl_files(&codex_dir.join("sessions"), &mut files, 0, 8);
+    collect_jsonl_files(&codex_dir.join("archived_sessions"), &mut files, 0, 4);
+
+    let mut scan = ProductHistoryScan::default();
+    let mut seen_session_ids = HashSet::new();
+    for path in files {
+        let archived = path.starts_with(codex_dir.join("archived_sessions"));
+        let Some(record) = read_product_session_record(&path, archived, now) else {
+            continue;
+        };
+        if !seen_session_ids.insert(record.session_id.clone()) {
+            scan.duplicate_session_ids += 1;
+        }
+        scan.all_session_ids.insert(record.session_id.clone());
+        if archived {
+            scan.archive_count += 1;
+        }
+        if provider_is_product_migration_source(&record.provider, sources) {
+            scan.sessions.push(record);
+        }
+    }
+
+    for db_path in codex_state_db_paths(codex_dir, config_text) {
+        if !db_path.exists() {
+            continue;
+        }
+        let conn =
+            Connection::open_with_flags(&db_path, rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY)
+                .map_err(|e| AppError::Database(format!("打开 Codex state DB 失败: {e}")))?;
+        conn.busy_timeout(Duration::from_secs(5)).map_err(|e| {
+            AppError::Database(format!("设置 Codex state DB busy_timeout 失败: {e}"))
+        })?;
+        if !Database::table_exists(&conn, "threads")?
+            || !Database::has_column(&conn, "threads", "model_provider")?
+        {
+            continue;
+        }
+        let mut statement = conn
+            .prepare("SELECT id, model_provider FROM threads")
+            .map_err(|e| AppError::Database(format!("读取 Codex state DB 失败: {e}")))?;
+        let rows = statement
+            .query_map([], |row| {
+                Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
+            })
+            .map_err(|e| AppError::Database(format!("查询 Codex state DB 失败: {e}")))?;
+        for row in rows {
+            let (session_id, provider) =
+                row.map_err(|e| AppError::Database(format!("解析 Codex state DB 行失败: {e}")))?;
+            scan.all_state_ids.insert(session_id.clone());
+            if provider_is_product_migration_source(&provider, sources) {
+                scan.state_rows.push(ProductStateRow {
+                    db_path: db_path.clone(),
+                    session_id,
+                    provider,
+                });
+            }
+        }
+    }
+    Ok(scan)
+}
+
+fn product_preview_from_scan(
+    scan: &ProductHistoryScan,
+) -> crate::settings::CodexHistoryMigrationPreview {
+    let mut ids = BTreeSet::new();
+    let mut provider_counts = std::collections::BTreeMap::new();
+    for session in &scan.sessions {
+        ids.insert(session.session_id.clone());
+        *provider_counts.entry(session.provider.clone()).or_insert(0) += 1;
+    }
+    for row in &scan.state_rows {
+        ids.insert(row.session_id.clone());
+        provider_counts.entry(row.provider.clone()).or_insert(0);
+    }
+    crate::settings::CodexHistoryMigrationPreview {
+        ordinary_sessions: scan
+            .sessions
+            .iter()
+            .filter(|session| !session.archived)
+            .count(),
+        archived_sessions: scan
+            .sessions
+            .iter()
+            .filter(|session| session.archived)
+            .count(),
+        active_sessions: scan
+            .sessions
+            .iter()
+            .filter(|session| session.active)
+            .count(),
+        database_rows: scan.state_rows.len(),
+        physical_files: scan.sessions.len(),
+        total_count: ids.len(),
+        provider_counts,
+    }
+}
+
+fn product_source_provider_ids(scan: &ProductHistoryScan) -> Vec<String> {
+    scan.sessions
+        .iter()
+        .map(|session| session.provider.clone())
+        .chain(scan.state_rows.iter().map(|row| row.provider.clone()))
+        .collect::<BTreeSet<_>>()
+        .into_iter()
+        .collect()
+}
+
+pub fn preview_codex_history_migration(
+) -> Result<crate::settings::CodexHistoryMigrationTask, AppError> {
+    let _guard = lock_codex_official_history_op();
+    ensure_codex_provider_aliases_persisted()?;
+    let sources = product_migration_source_aliases();
+    let scan = scan_product_history(&sources)?;
+    let preview = product_preview_from_scan(&scan);
+    let task = crate::settings::CodexHistoryMigrationTask {
+        migration_id: uuid::Uuid::new_v4().to_string(),
+        source_provider_ids: product_source_provider_ids(&scan),
+        target_namespace: CC_SWITCH_CODEX_MODEL_PROVIDER_ID.to_string(),
+        total_count: preview.total_count,
+        skipped_count: preview.active_sessions,
+        preview,
+        pending_files: scan
+            .sessions
+            .iter()
+            .filter(|session| session.active)
+            .map(|session| session.path.to_string_lossy().to_string())
+            .collect(),
+        ..Default::default()
+    };
+    crate::settings::set_codex_history_migration_task(task.clone())?;
+    Ok(task)
+}
+
+pub fn get_codex_history_migration_status() -> Option<crate::settings::CodexHistoryMigrationTask> {
+    crate::settings::get_codex_history_migration_task()
+}
+
+fn product_backup_root(migration_id: &str) -> PathBuf {
+    get_app_config_dir()
+        .join("backups")
+        .join(PRODUCT_MIGRATION_NAME)
+        .join(migration_id)
+}
+
+fn product_manifest_path(backup_root: &Path) -> PathBuf {
+    backup_root.join(PRODUCT_MANIFEST_FILE)
+}
+
+fn write_product_manifest(
+    backup_root: &Path,
+    manifest: &ProductMigrationManifest,
+) -> Result<(), AppError> {
+    let bytes =
+        serde_json::to_vec_pretty(manifest).map_err(|e| AppError::JsonSerialize { source: e })?;
+    atomic_write(&product_manifest_path(backup_root), &bytes)
+}
+
+fn read_product_manifest(backup_root: &Path) -> Result<ProductMigrationManifest, AppError> {
+    let path = product_manifest_path(backup_root);
+    let text = fs::read_to_string(&path).map_err(|e| AppError::io(&path, e))?;
+    serde_json::from_str(&text).map_err(|e| AppError::json(&path, e))
+}
+
+fn merge_product_manifest(manifest: &mut ProductMigrationManifest, scan: &ProductHistoryScan) {
+    manifest.before_session_ids = manifest
+        .before_session_ids
+        .iter()
+        .cloned()
+        .chain(scan.all_session_ids.iter().cloned())
+        .collect::<BTreeSet<_>>()
+        .into_iter()
+        .collect();
+    manifest.before_state_ids = manifest
+        .before_state_ids
+        .iter()
+        .cloned()
+        .chain(scan.all_state_ids.iter().cloned())
+        .collect::<BTreeSet<_>>()
+        .into_iter()
+        .collect();
+    manifest.before_archive_count = scan.archive_count;
+    manifest.before_duplicate_session_ids = scan.duplicate_session_ids;
+    manifest.before_orphan_state_rows =
+        scan.all_state_ids.difference(&scan.all_session_ids).count();
+
+    let mut session_keys: HashSet<(String, String)> = manifest
+        .sessions
+        .iter()
+        .map(|entry| (entry.path.clone(), entry.session_id.clone()))
+        .collect();
+    for session in &scan.sessions {
+        let path = session.path.to_string_lossy().to_string();
+        if session_keys.insert((path.clone(), session.session_id.clone())) {
+            manifest.sessions.push(ProductSessionManifestEntry {
+                path,
+                session_id: session.session_id.clone(),
+                source_provider: session.provider.clone(),
+                archived: session.archived,
+            });
+        }
+    }
+    let mut state_keys: HashSet<(String, String)> = manifest
+        .state_rows
+        .iter()
+        .map(|entry| (entry.db_path.clone(), entry.session_id.clone()))
+        .collect();
+    for row in &scan.state_rows {
+        let db_path = row.db_path.to_string_lossy().to_string();
+        if state_keys.insert((db_path.clone(), row.session_id.clone())) {
+            manifest.state_rows.push(ProductStateManifestEntry {
+                db_path,
+                session_id: row.session_id.clone(),
+                source_provider: row.provider.clone(),
+            });
+        }
+    }
+}
+
+fn load_or_create_product_manifest(
+    task: &crate::settings::CodexHistoryMigrationTask,
+    backup_root: &Path,
+    codex_dir: &Path,
+    scan: &ProductHistoryScan,
+) -> Result<ProductMigrationManifest, AppError> {
+    let path = product_manifest_path(backup_root);
+    let mut manifest = if path.exists() {
+        let manifest = read_product_manifest(backup_root)?;
+        if manifest.version != 1
+            || manifest.migration_id != task.migration_id
+            || manifest.codex_config_dir != canonical_dir_string(codex_dir)
+            || manifest.target_namespace != CC_SWITCH_CODEX_MODEL_PROVIDER_ID
+        {
+            return Err(AppError::Message(
+                "迁移备份账本与当前任务或 Codex 配置目录不匹配".to_string(),
+            ));
+        }
+        manifest
+    } else {
+        ProductMigrationManifest {
+            version: 1,
+            migration_id: task.migration_id.clone(),
+            codex_config_dir: canonical_dir_string(codex_dir),
+            target_namespace: CC_SWITCH_CODEX_MODEL_PROVIDER_ID.to_string(),
+            before_session_ids: scan.all_session_ids.iter().cloned().collect(),
+            before_state_ids: scan.all_state_ids.iter().cloned().collect(),
+            before_archive_count: scan.archive_count,
+            before_duplicate_session_ids: scan.duplicate_session_ids,
+            before_orphan_state_rows: scan.all_state_ids.difference(&scan.all_session_ids).count(),
+            sessions: Vec::new(),
+            state_rows: Vec::new(),
+        }
+    };
+    merge_product_manifest(&mut manifest, scan);
+    write_product_manifest(backup_root, &manifest)?;
+    Ok(manifest)
+}
+
+fn backup_product_jsonl_once(
+    path: &Path,
+    codex_dir: &Path,
+    backup_root: &Path,
+) -> Result<(), AppError> {
+    let backup_path = backup_root
+        .join("jsonl")
+        .join(relative_backup_path(path, codex_dir));
+    if backup_path.exists() {
+        return Ok(());
+    }
+    copy_existing_file(path, &backup_path)
+}
+
+fn backup_product_state_db_once(
+    db_path: &Path,
+    codex_dir: &Path,
+    backup_root: &Path,
+    conn: &Connection,
+) -> Result<(), AppError> {
+    let backup_path = backup_root
+        .join("state")
+        .join(relative_backup_path(db_path, codex_dir));
+    if backup_path.exists() {
+        return Ok(());
+    }
+    backup_codex_state_db(db_path, codex_dir, backup_root, conn)
+}
+
+fn retryable_product_file_error(error: &AppError) -> bool {
+    let text = error.to_string().to_ascii_lowercase();
+    text.contains("changed during migration")
+        || text.contains("permission denied")
+        || text.contains("access is denied")
+        || text.contains("sharing violation")
+        || text.contains("being used by another process")
+}
+
+fn retryable_product_database_error(error: &AppError) -> bool {
+    let text = error.to_string().to_ascii_lowercase();
+    text.contains("database is locked")
+        || text.contains("database is busy")
+        || text.contains("sharing violation")
+        || text.contains("being used by another process")
+}
+
+fn migrate_product_state_rows(
+    scan: &ProductHistoryScan,
+    codex_dir: &Path,
+    backup_root: &Path,
+) -> Result<usize, AppError> {
+    let mut by_db: std::collections::BTreeMap<PathBuf, Vec<&ProductStateRow>> =
+        std::collections::BTreeMap::new();
+    for row in &scan.state_rows {
+        by_db.entry(row.db_path.clone()).or_default().push(row);
+    }
+    let mut changed = 0;
+    for (db_path, rows) in by_db {
+        let mut conn = Connection::open(&db_path)
+            .map_err(|e| AppError::Database(format!("打开 Codex state DB 失败: {e}")))?;
+        conn.busy_timeout(Duration::from_secs(5)).map_err(|e| {
+            AppError::Database(format!("设置 Codex state DB busy_timeout 失败: {e}"))
+        })?;
+        backup_product_state_db_once(&db_path, codex_dir, backup_root, &conn)?;
+        let tx = conn
+            .transaction()
+            .map_err(|e| AppError::Database(format!("开启 Codex state DB 迁移事务失败: {e}")))?;
+        for row in rows {
+            changed += tx
+                .execute(
+                    "UPDATE threads SET model_provider = ? WHERE id = ? AND model_provider = ?",
+                    [
+                        CC_SWITCH_CODEX_MODEL_PROVIDER_ID,
+                        row.session_id.as_str(),
+                        row.provider.as_str(),
+                    ],
+                )
+                .map_err(|e| {
+                    AppError::Database(format!("迁移 Codex state DB provider 失败: {e}"))
+                })?;
+        }
+        tx.commit()
+            .map_err(|e| AppError::Database(format!("提交 Codex state DB 迁移事务失败: {e}")))?;
+    }
+    Ok(changed)
+}
+
+fn sqlite_product_integrity_ok(codex_dir: &Path, config_text: &str) -> bool {
+    codex_state_db_paths(codex_dir, config_text)
+        .into_iter()
+        .filter(|path| path.exists())
+        .all(|path| {
+            Connection::open_with_flags(&path, rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY)
+                .and_then(|conn| {
+                    conn.query_row("PRAGMA integrity_check", [], |row| row.get::<_, String>(0))
+                })
+                .is_ok_and(|result| result.eq_ignore_ascii_case("ok"))
+        })
+}
+
+fn validate_product_migration(
+    manifest: &ProductMigrationManifest,
+    after: &ProductHistoryScan,
+    sqlite_integrity_ok: bool,
+) -> crate::settings::CodexHistoryMigrationValidation {
+    let before_sessions: BTreeSet<String> = manifest.before_session_ids.iter().cloned().collect();
+    let before_state: BTreeSet<String> = manifest.before_state_ids.iter().cloned().collect();
+    let before_all: BTreeSet<String> = before_sessions.union(&before_state).cloned().collect();
+    let after_all: BTreeSet<String> = after
+        .all_session_ids
+        .union(&after.all_state_ids)
+        .cloned()
+        .collect();
+    crate::settings::CodexHistoryMigrationValidation {
+        total_count_unchanged: before_all.len() == after_all.len(),
+        conversation_ids_unchanged: before_all == after_all,
+        rollout_files_exist: manifest
+            .sessions
+            .iter()
+            .all(|entry| Path::new(&entry.path).is_file()),
+        sqlite_integrity_ok,
+        duplicate_session_ids: after.duplicate_session_ids,
+        duplicate_session_ids_unchanged: manifest.before_duplicate_session_ids
+            == after.duplicate_session_ids,
+        orphan_state_rows: after
+            .all_state_ids
+            .difference(&after.all_session_ids)
+            .count(),
+        orphan_state_rows_unchanged: manifest.before_orphan_state_rows
+            == after
+                .all_state_ids
+                .difference(&after.all_session_ids)
+                .count(),
+        archive_count_unchanged: manifest.before_archive_count == after.archive_count,
+    }
+}
+
+fn product_validation_passed(
+    validation: &crate::settings::CodexHistoryMigrationValidation,
+) -> bool {
+    validation.total_count_unchanged
+        && validation.conversation_ids_unchanged
+        && validation.rollout_files_exist
+        && validation.sqlite_integrity_ok
+        && validation.duplicate_session_ids_unchanged
+        && validation.orphan_state_rows_unchanged
+        && validation.archive_count_unchanged
+}
+
+fn run_product_migration_locked(
+    mut task: crate::settings::CodexHistoryMigrationTask,
+) -> Result<crate::settings::CodexHistoryMigrationTask, AppError> {
+    ensure_codex_provider_aliases_persisted()?;
+    let sources = product_migration_source_aliases();
+    let scan = scan_product_history(&sources)?;
+    let preview = product_preview_from_scan(&scan);
+    task.source_provider_ids = product_source_provider_ids(&scan);
+    task.total_count = task.total_count.max(preview.total_count);
+    task.status = crate::settings::CodexHistoryMigrationStatus::Running;
+    task.rollback_requested = false;
+    task.started_at
+        .get_or_insert_with(|| Utc::now().to_rfc3339());
+    task.finished_at = None;
+    task.error = None;
+    task.failed_count = 0;
+
+    let backup_root = task
+        .backup_dir
+        .as_ref()
+        .map(PathBuf::from)
+        .unwrap_or_else(|| product_backup_root(&task.migration_id));
+    task.backup_dir = Some(backup_root.to_string_lossy().to_string());
+    let codex_dir = get_codex_config_dir();
+    let config_text = read_codex_config_text().unwrap_or_default();
+    let manifest = load_or_create_product_manifest(&task, &backup_root, &codex_dir, &scan)?;
+    crate::settings::set_codex_history_migration_task(task.clone())?;
+
+    let source_set: HashSet<String> = scan
+        .sessions
+        .iter()
+        .map(|session| session.provider.clone())
+        .collect();
+    let mut pending_files = Vec::new();
+    let mut hard_errors = Vec::new();
+    for session in &scan.sessions {
+        if session.active {
+            pending_files.push(session.path.to_string_lossy().to_string());
+            continue;
+        }
+        if let Err(error) = (|| -> Result<(), AppError> {
+            backup_product_jsonl_once(&session.path, &codex_dir, &backup_root)?;
+            rewrite_codex_session_file_for_provider_bucket(
+                &session.path,
+                &codex_dir,
+                &source_set,
+                &backup_root,
+            )?;
+            Ok(())
+        })() {
+            if retryable_product_file_error(&error) {
+                pending_files.push(session.path.to_string_lossy().to_string());
+            } else {
+                hard_errors.push(format!("{}: {error}", session.path.display()));
+            }
+        }
+    }
+    if let Err(error) = migrate_product_state_rows(&scan, &codex_dir, &backup_root) {
+        if retryable_product_database_error(&error) {
+            pending_files.extend(
+                scan.state_rows
+                    .iter()
+                    .map(|row| row.db_path.to_string_lossy().to_string()),
+            );
+        } else {
+            hard_errors.push(error.to_string());
+        }
+    }
+
+    let after = scan_product_history(&sources)?;
+    let remaining_ids: BTreeSet<String> = after
+        .sessions
+        .iter()
+        .map(|session| session.session_id.clone())
+        .chain(after.state_rows.iter().map(|row| row.session_id.clone()))
+        .collect();
+    let manifest_ids: BTreeSet<String> = manifest
+        .sessions
+        .iter()
+        .map(|entry| entry.session_id.clone())
+        .chain(
+            manifest
+                .state_rows
+                .iter()
+                .map(|entry| entry.session_id.clone()),
+        )
+        .collect();
+    task.total_count = manifest_ids.len();
+    task.success_count = manifest_ids.len().saturating_sub(remaining_ids.len());
+    pending_files.sort();
+    pending_files.dedup();
+    task.pending_files = pending_files;
+    task.skipped_count = task.pending_files.len();
+    task.failed_count = hard_errors.len();
+    let validation = validate_product_migration(
+        &manifest,
+        &after,
+        sqlite_product_integrity_ok(&codex_dir, &config_text),
+    );
+    if !product_validation_passed(&validation) {
+        hard_errors.push("integrity_validation_failed".to_string());
+        task.failed_count = hard_errors.len();
+    }
+    task.validation = Some(validation);
+    if !hard_errors.is_empty() {
+        task.status = crate::settings::CodexHistoryMigrationStatus::Failed;
+        task.error = Some(hard_errors.join("\n"));
+        task.finished_at = Some(Utc::now().to_rfc3339());
+    } else if !task.pending_files.is_empty() {
+        task.status = crate::settings::CodexHistoryMigrationStatus::Paused;
+        task.error = Some("active_sessions_pending".to_string());
+    } else {
+        task.status = crate::settings::CodexHistoryMigrationStatus::Completed;
+        task.finished_at = Some(Utc::now().to_rfc3339());
+    }
+    crate::settings::set_codex_history_migration_task(task.clone())?;
+    Ok(task)
+}
+
+pub fn start_codex_history_migration(
+) -> Result<crate::settings::CodexHistoryMigrationTask, AppError> {
+    let _guard = lock_codex_official_history_op();
+    let task = match crate::settings::get_codex_history_migration_task() {
+        Some(task)
+            if matches!(
+                task.status,
+                crate::settings::CodexHistoryMigrationStatus::Preview
+                    | crate::settings::CodexHistoryMigrationStatus::Paused
+                    | crate::settings::CodexHistoryMigrationStatus::Failed
+            ) =>
+        {
+            task
+        }
+        _ => {
+            drop(_guard);
+            let task = preview_codex_history_migration()?;
+            let _guard = lock_codex_official_history_op();
+            return run_product_migration_locked(task);
+        }
+    };
+    run_product_migration_locked(task)
+}
+
+fn rewrite_product_session_provider(
+    line: &str,
+    session_id: &str,
+    from_provider: &str,
+    to_provider: &str,
+) -> Option<String> {
+    if !line.contains("\"session_meta\"") || !line.contains("\"model_provider\"") {
+        return None;
+    }
+    let mut value: Value = serde_json::from_str(line).ok()?;
+    if value.get("type").and_then(Value::as_str) != Some("session_meta") {
+        return None;
+    }
+    let payload = value.get_mut("payload")?.as_object_mut()?;
+    if payload.get("id").and_then(Value::as_str) != Some(session_id)
+        || payload.get("model_provider").and_then(Value::as_str) != Some(from_provider)
+    {
+        return None;
+    }
+    payload.insert(
+        "model_provider".to_string(),
+        Value::String(to_provider.to_string()),
+    );
+    serde_json::to_string(&value).ok()
+}
+
+fn rollback_product_state_rows(
+    manifest: &ProductMigrationManifest,
+    codex_dir: &Path,
+    backup_root: &Path,
+) -> Result<usize, AppError> {
+    let mut by_db: std::collections::BTreeMap<PathBuf, Vec<&ProductStateManifestEntry>> =
+        std::collections::BTreeMap::new();
+    for row in &manifest.state_rows {
+        by_db
+            .entry(PathBuf::from(&row.db_path))
+            .or_default()
+            .push(row);
+    }
+    let mut changed = 0;
+    for (db_path, rows) in by_db {
+        if !db_path.exists() {
+            continue;
+        }
+        let mut conn = Connection::open(&db_path)
+            .map_err(|e| AppError::Database(format!("打开 Codex state DB 失败: {e}")))?;
+        conn.busy_timeout(Duration::from_secs(5)).map_err(|e| {
+            AppError::Database(format!("设置 Codex state DB busy_timeout 失败: {e}"))
+        })?;
+        backup_product_state_db_once(&db_path, codex_dir, backup_root, &conn)?;
+        let tx = conn
+            .transaction()
+            .map_err(|e| AppError::Database(format!("开启 Codex state DB 回滚事务失败: {e}")))?;
+        for row in rows {
+            changed += tx
+                .execute(
+                    "UPDATE threads SET model_provider = ? WHERE id = ? AND model_provider = ?",
+                    [
+                        row.source_provider.as_str(),
+                        row.session_id.as_str(),
+                        CC_SWITCH_CODEX_MODEL_PROVIDER_ID,
+                    ],
+                )
+                .map_err(|e| {
+                    AppError::Database(format!("回滚 Codex state DB provider 失败: {e}"))
+                })?;
+        }
+        tx.commit()
+            .map_err(|e| AppError::Database(format!("提交 Codex state DB 回滚事务失败: {e}")))?;
+    }
+    Ok(changed)
+}
+
+fn rollback_product_migration_locked(
+    mut task: crate::settings::CodexHistoryMigrationTask,
+) -> Result<crate::settings::CodexHistoryMigrationTask, AppError> {
+    let backup_root = task
+        .backup_dir
+        .as_ref()
+        .map(PathBuf::from)
+        .ok_or_else(|| AppError::Message("迁移任务没有可用备份账本".to_string()))?;
+    let manifest = read_product_manifest(&backup_root)?;
+    if manifest.codex_config_dir != canonical_dir_string(&get_codex_config_dir()) {
+        return Err(AppError::Message(
+            "迁移备份属于另一个 Codex 配置目录，已拒绝回滚".to_string(),
+        ));
+    }
+
+    task.status = crate::settings::CodexHistoryMigrationStatus::Running;
+    task.rollback_requested = true;
+    task.error = None;
+    task.finished_at = None;
+    crate::settings::set_codex_history_migration_task(task.clone())?;
+
+    let rollback_backup_root = get_app_config_dir()
+        .join("backups")
+        .join(PRODUCT_ROLLBACK_BACKUP_NAME)
+        .join(&task.migration_id);
+    let codex_dir = get_codex_config_dir();
+    let mut pending_files = Vec::new();
+    let mut hard_errors = Vec::new();
+    for entry in &manifest.sessions {
+        let path = PathBuf::from(&entry.path);
+        if !path.exists() {
+            hard_errors.push(format!("会话文件不存在: {}", path.display()));
+            continue;
+        }
+        if product_session_file_is_active(&path) {
+            pending_files.push(entry.path.clone());
+            continue;
+        }
+        let result =
+            rewrite_codex_session_file_lines(&path, &codex_dir, &rollback_backup_root, |line| {
+                rewrite_product_session_provider(
+                    line,
+                    &entry.session_id,
+                    CC_SWITCH_CODEX_MODEL_PROVIDER_ID,
+                    &entry.source_provider,
+                )
+            });
+        if let Err(error) = result {
+            if retryable_product_file_error(&error) {
+                pending_files.push(entry.path.clone());
+            } else {
+                hard_errors.push(format!("{}: {error}", path.display()));
+            }
+        }
+    }
+    if let Err(error) = rollback_product_state_rows(&manifest, &codex_dir, &rollback_backup_root) {
+        if retryable_product_database_error(&error) {
+            pending_files.extend(manifest.state_rows.iter().map(|row| row.db_path.clone()));
+        } else {
+            hard_errors.push(error.to_string());
+        }
+    }
+
+    let sources = product_migration_source_aliases();
+    let after = scan_product_history(&sources)?;
+    pending_files.sort();
+    pending_files.dedup();
+    task.pending_files = pending_files;
+    task.skipped_count = task.pending_files.len();
+    task.failed_count = hard_errors.len();
+    let config_text = read_codex_config_text().unwrap_or_default();
+    let validation = validate_product_migration(
+        &manifest,
+        &after,
+        sqlite_product_integrity_ok(&codex_dir, &config_text),
+    );
+    if !product_validation_passed(&validation) {
+        hard_errors.push("integrity_validation_failed".to_string());
+        task.failed_count = hard_errors.len();
+    }
+    task.validation = Some(validation);
+    if !hard_errors.is_empty() {
+        task.status = crate::settings::CodexHistoryMigrationStatus::Failed;
+        task.error = Some(hard_errors.join("\n"));
+        task.finished_at = Some(Utc::now().to_rfc3339());
+    } else if !task.pending_files.is_empty() {
+        task.status = crate::settings::CodexHistoryMigrationStatus::Paused;
+        task.error = Some("active_sessions_pending_rollback".to_string());
+    } else {
+        task.status = crate::settings::CodexHistoryMigrationStatus::RolledBack;
+        task.rollback_requested = false;
+        task.success_count = 0;
+        task.finished_at = Some(Utc::now().to_rfc3339());
+    }
+    crate::settings::set_codex_history_migration_task(task.clone())?;
+    Ok(task)
+}
+
+pub fn rollback_codex_history_migration(
+) -> Result<crate::settings::CodexHistoryMigrationTask, AppError> {
+    let _guard = lock_codex_official_history_op();
+    let task = crate::settings::get_codex_history_migration_task()
+        .ok_or_else(|| AppError::Message("没有可回滚的会话迁移任务".to_string()))?;
+    rollback_product_migration_locked(task)
+}
+
+pub fn resume_codex_history_migration(
+) -> Result<crate::settings::CodexHistoryMigrationTask, AppError> {
+    let _guard = lock_codex_official_history_op();
+    let task = crate::settings::get_codex_history_migration_task()
+        .ok_or_else(|| AppError::Message("没有可继续的会话迁移任务".to_string()))?;
+    if task.rollback_requested {
+        rollback_product_migration_locked(task)
+    } else {
+        run_product_migration_locked(task)
+    }
+}
+
+static PRODUCT_MIGRATION_RETRY_SCHEDULED: std::sync::atomic::AtomicBool =
+    std::sync::atomic::AtomicBool::new(false);
+
+/// 活动会话释放后自动补迁。只会处理已经存在的 running/paused 任务，
+/// 从未由用户启动过的预览不会在后台改写任何历史文件。
+pub fn schedule_codex_history_migration_resume() {
+    use std::sync::atomic::Ordering;
+    if PRODUCT_MIGRATION_RETRY_SCHEDULED.swap(true, Ordering::AcqRel) {
+        return;
+    }
+    tauri::async_runtime::spawn(async {
+        for _ in 0..180 {
+            let Some(task) = crate::settings::get_codex_history_migration_task() else {
+                break;
+            };
+            if !matches!(
+                task.status,
+                crate::settings::CodexHistoryMigrationStatus::Running
+                    | crate::settings::CodexHistoryMigrationStatus::Paused
+            ) {
+                break;
+            }
+            tokio::time::sleep(Duration::from_secs(10)).await;
+            let outcome =
+                tauri::async_runtime::spawn_blocking(resume_codex_history_migration).await;
+            match outcome {
+                Ok(Ok(task))
+                    if matches!(
+                        task.status,
+                        crate::settings::CodexHistoryMigrationStatus::Completed
+                            | crate::settings::CodexHistoryMigrationStatus::RolledBack
+                            | crate::settings::CodexHistoryMigrationStatus::Failed
+                    ) =>
+                {
+                    break
+                }
+                Ok(Ok(_)) => {}
+                Ok(Err(error)) => {
+                    log::warn!("Codex history migration automatic resume failed: {error}");
+                    break;
+                }
+                Err(error) => {
+                    log::warn!("Codex history migration automatic resume task failed: {error}");
+                    break;
+                }
+            }
+        }
+        PRODUCT_MIGRATION_RETRY_SCHEDULED.store(false, Ordering::Release);
+    });
+}
+
+pub fn resume_codex_history_migration_if_needed() {
+    if crate::settings::get_codex_history_migration_task().is_some_and(|task| {
+        matches!(
+            task.status,
+            crate::settings::CodexHistoryMigrationStatus::Running
+                | crate::settings::CodexHistoryMigrationStatus::Paused
+        )
+    }) {
+        schedule_codex_history_migration_resume();
+    }
+}
+
+#[allow(dead_code)] // 仅保留给旧版迁移账本兼容与回归测试。
 pub fn maybe_migrate_codex_third_party_history_provider_bucket(
     db: &Database,
 ) -> Result<CodexHistoryProviderBucketMigrationOutcome, AppError> {
@@ -195,6 +1178,7 @@ pub fn maybe_migrate_codex_provider_template_bucket(
 /// custom 桶里官方与第三方会话无法区分，自动逻辑绝不反向搬回；
 /// 用户可在关闭开关时选择按备份账本精确还原（见 `restore_codex_official_history_from_backups`）。
 /// 迁移前 jsonl / state DB 均备份到 `~/.cc-switch/backups/codex-official-history-unify-v1/`。
+#[allow(dead_code)] // 启动期自动改写已停用，v2 由用户确认后执行。
 pub fn maybe_migrate_codex_official_history_to_unified_bucket(
 ) -> Result<CodexHistoryProviderBucketMigrationOutcome, AppError> {
     if !crate::settings::unify_codex_session_history() {
@@ -297,6 +1281,7 @@ fn canonical_dir_string(dir: &Path) -> String {
 
 /// 在备份代际根目录写入 meta.json，记录这批备份来自哪个 Codex 目录。
 /// 代际目录不存在（本轮没有任何文件被迁移）时跳过。
+#[allow(dead_code)] // 旧版备份代际格式仍需可读、可测试。
 fn write_backup_generation_meta(backup_root: &Path, codex_dir_key: &str) -> Result<(), AppError> {
     if !backup_root.exists() {
         return Ok(());
@@ -329,7 +1314,27 @@ pub fn has_codex_official_history_unify_backup() -> bool {
     has_official_history_unify_backup_for_dir(
         &official_history_unify_backup_parent(),
         &canonical_dir_string(&get_codex_config_dir()),
-    )
+    ) || has_product_official_history_backup()
+}
+
+fn has_product_official_history_backup() -> bool {
+    let Some(task) = crate::settings::get_codex_history_migration_task() else {
+        return false;
+    };
+    let Some(backup_root) = task.backup_dir.as_deref().map(Path::new) else {
+        return false;
+    };
+    read_product_manifest(backup_root).is_ok_and(|manifest| {
+        manifest.codex_config_dir == canonical_dir_string(&get_codex_config_dir())
+            && (manifest
+                .sessions
+                .iter()
+                .any(|entry| entry.source_provider == OFFICIAL_OPENAI_CODEX_MODEL_PROVIDER_ID)
+                || manifest
+                    .state_rows
+                    .iter()
+                    .any(|entry| entry.source_provider == OFFICIAL_OPENAI_CODEX_MODEL_PROVIDER_ID))
+    })
 }
 
 fn has_official_history_unify_backup_for_dir(ledger_parent: &Path, codex_dir_key: &str) -> bool {
@@ -363,13 +1368,161 @@ pub fn restore_codex_official_history_from_backups(
             ..Default::default()
         });
     }
+    let codex_dir = get_codex_config_dir();
     let config_text = read_codex_config_text().unwrap_or_default();
-    restore_codex_official_history_inner(
-        &get_codex_config_dir(),
+    let restore_backup_root = migration_backup_root(OFFICIAL_UNIFY_RESTORE_BACKUP_NAME);
+    let legacy = restore_codex_official_history_inner(
+        &codex_dir,
         &official_history_unify_backup_parent(),
-        &migration_backup_root(OFFICIAL_UNIFY_RESTORE_BACKUP_NAME),
+        &restore_backup_root,
         &config_text,
+    )?;
+    let product = restore_product_official_history(&codex_dir, &restore_backup_root)?;
+    let restored_jsonl_files = legacy.restored_jsonl_files + product.restored_jsonl_files;
+    let restored_state_rows = legacy.restored_state_rows + product.restored_state_rows;
+    if restored_jsonl_files == 0 && restored_state_rows == 0 {
+        return Ok(CodexOfficialHistoryRestoreOutcome {
+            skipped_reason: legacy.skipped_reason.or(product.skipped_reason),
+            ..Default::default()
+        });
+    }
+    Ok(CodexOfficialHistoryRestoreOutcome {
+        restored_jsonl_files,
+        restored_state_rows,
+        skipped_reason: None,
+    })
+}
+
+fn restore_product_official_history(
+    codex_dir: &Path,
+    restore_backup_root: &Path,
+) -> Result<CodexOfficialHistoryRestoreOutcome, AppError> {
+    let Some(task) = crate::settings::get_codex_history_migration_task() else {
+        return Ok(CodexOfficialHistoryRestoreOutcome {
+            skipped_reason: Some("no_product_backup_ledger".to_string()),
+            ..Default::default()
+        });
+    };
+    let Some(backup_root) = task.backup_dir.as_deref().map(Path::new) else {
+        return Ok(CodexOfficialHistoryRestoreOutcome {
+            skipped_reason: Some("no_product_backup_ledger".to_string()),
+            ..Default::default()
+        });
+    };
+    let manifest = read_product_manifest(backup_root)?;
+    if manifest.codex_config_dir != canonical_dir_string(codex_dir) {
+        return Ok(CodexOfficialHistoryRestoreOutcome {
+            skipped_reason: Some("product_backup_for_other_codex_dir".to_string()),
+            ..Default::default()
+        });
+    }
+    restore_product_official_history_from_manifest(
+        &manifest,
+        codex_dir,
+        restore_backup_root,
+        SystemTime::now(),
     )
+}
+
+fn restore_product_official_history_from_manifest(
+    manifest: &ProductMigrationManifest,
+    codex_dir: &Path,
+    restore_backup_root: &Path,
+    activity_now: SystemTime,
+) -> Result<CodexOfficialHistoryRestoreOutcome, AppError> {
+    let sessions: Vec<&ProductSessionManifestEntry> = manifest
+        .sessions
+        .iter()
+        .filter(|entry| entry.source_provider == OFFICIAL_OPENAI_CODEX_MODEL_PROVIDER_ID)
+        .collect();
+    let state_rows: Vec<&ProductStateManifestEntry> = manifest
+        .state_rows
+        .iter()
+        .filter(|entry| entry.source_provider == OFFICIAL_OPENAI_CODEX_MODEL_PROVIDER_ID)
+        .collect();
+    if sessions.is_empty() && state_rows.is_empty() {
+        return Ok(CodexOfficialHistoryRestoreOutcome {
+            skipped_reason: Some("no_product_official_ledger".to_string()),
+            ..Default::default()
+        });
+    }
+
+    // 先整体预检活动文件，避免回滚一半后才遇到正在写入的会话。
+    if let Some(active) = sessions
+        .iter()
+        .map(|entry| Path::new(&entry.path))
+        .find(|path| path.exists() && product_session_file_is_active_at(path, activity_now))
+    {
+        return Err(AppError::Message(format!(
+            "Codex 会话仍在写入，请关闭对应客户端后重试恢复: {}",
+            active.display()
+        )));
+    }
+
+    let mut restored_jsonl_files = 0;
+    for entry in sessions {
+        let path = PathBuf::from(&entry.path);
+        if !path.exists() {
+            continue;
+        }
+        if rewrite_codex_session_file_lines(&path, codex_dir, restore_backup_root, |line| {
+            rewrite_product_session_provider(
+                line,
+                &entry.session_id,
+                CC_SWITCH_CODEX_MODEL_PROVIDER_ID,
+                OFFICIAL_OPENAI_CODEX_MODEL_PROVIDER_ID,
+            )
+        })? {
+            restored_jsonl_files += 1;
+        }
+    }
+
+    let mut by_db: std::collections::BTreeMap<PathBuf, Vec<&ProductStateManifestEntry>> =
+        std::collections::BTreeMap::new();
+    for row in state_rows {
+        by_db
+            .entry(PathBuf::from(&row.db_path))
+            .or_default()
+            .push(row);
+    }
+    let mut restored_state_rows = 0;
+    for (db_path, rows) in by_db {
+        if !db_path.exists() {
+            continue;
+        }
+        let mut conn = Connection::open(&db_path)
+            .map_err(|e| AppError::Database(format!("打开 Codex state DB 失败: {e}")))?;
+        conn.busy_timeout(Duration::from_secs(5)).map_err(|e| {
+            AppError::Database(format!("设置 Codex state DB busy_timeout 失败: {e}"))
+        })?;
+        backup_product_state_db_once(&db_path, codex_dir, restore_backup_root, &conn)?;
+        let tx = conn
+            .transaction()
+            .map_err(|e| AppError::Database(format!("开启 Codex state DB 还原事务失败: {e}")))?;
+        for row in rows {
+            restored_state_rows += tx
+                .execute(
+                    "UPDATE threads SET model_provider = ? WHERE id = ? AND model_provider = ?",
+                    [
+                        OFFICIAL_OPENAI_CODEX_MODEL_PROVIDER_ID,
+                        row.session_id.as_str(),
+                        CC_SWITCH_CODEX_MODEL_PROVIDER_ID,
+                    ],
+                )
+                .map_err(|e| {
+                    AppError::Database(format!("还原 Codex state DB provider 失败: {e}"))
+                })?;
+        }
+        tx.commit()
+            .map_err(|e| AppError::Database(format!("提交 Codex state DB 还原事务失败: {e}")))?;
+    }
+
+    Ok(CodexOfficialHistoryRestoreOutcome {
+        restored_jsonl_files,
+        restored_state_rows,
+        skipped_reason: (restored_jsonl_files == 0 && restored_state_rows == 0)
+            .then(|| "nothing_to_restore".to_string()),
+    })
 }
 
 fn restore_codex_official_history_inner(
@@ -704,6 +1857,7 @@ fn migrate_codex_provider_templates_to_custom(
     })
 }
 
+#[allow(dead_code)] // v1 自动发现逻辑保留用于 legacy 数据兼容。
 fn collect_source_model_provider_ids(db: &Database) -> Result<BTreeSet<String>, AppError> {
     let providers = db.get_all_providers("codex")?;
     let mut ids = BTreeSet::new();
@@ -739,6 +1893,7 @@ fn collect_source_model_provider_ids(db: &Database) -> Result<BTreeSet<String>, 
     Ok(ids)
 }
 
+#[allow(dead_code)]
 fn insert_known_cc_switch_legacy_source_id(ids: &mut BTreeSet<String>, provider_id: &str) {
     let trimmed = provider_id.trim();
     if is_known_cc_switch_legacy_codex_model_provider_id(trimmed) {
@@ -759,6 +1914,7 @@ fn is_known_cc_switch_legacy_codex_model_provider_id(provider_id: &str) -> bool 
         .any(|known| known.eq_ignore_ascii_case(provider_id))
 }
 
+#[allow(dead_code)]
 fn legacy_codex_model_provider_id_from_normalized_config(config_text: &str) -> Option<String> {
     let doc = config_text.parse::<DocumentMut>().ok()?;
     let provider_id = doc
@@ -783,6 +1939,7 @@ fn legacy_codex_model_provider_id_from_normalized_config(config_text: &str) -> O
     normalized_legacy_codex_provider_name(name).map(str::to_string)
 }
 
+#[allow(dead_code)]
 fn normalized_legacy_codex_provider_name(name: &str) -> Option<&'static str> {
     if is_known_cc_switch_legacy_codex_model_provider_id(name) {
         return CC_SWITCH_LEGACY_CODEX_MODEL_PROVIDER_IDS
@@ -798,6 +1955,7 @@ fn normalized_legacy_codex_provider_name(name: &str) -> Option<&'static str> {
     }
 }
 
+#[allow(dead_code)]
 fn trusted_legacy_codex_model_provider_ids_from_config(config_text: &str) -> BTreeSet<String> {
     let Ok(doc) = config_text.parse::<DocumentMut>() else {
         return BTreeSet::new();
@@ -875,6 +2033,15 @@ fn migrate_provider_config_template_to_custom(
 
     let custom_table_exists =
         config_defines_model_provider(&doc, CC_SWITCH_CODEX_MODEL_PROVIDER_ID);
+    if custom_table_exists
+        && active_provider_id
+            .as_deref()
+            .is_some_and(|provider_id| source_provider_ids.contains(provider_id))
+    {
+        // 两张表同时存在时无法证明 custom 表属于同一路由。覆盖它会把用户
+        // 的显式配置静默替换，宁可保留旧 id 并交给迁移预览提示。
+        return Ok(None);
+    }
     let source_provider_id_to_move = active_provider_id
         .as_deref()
         .filter(|provider_id| source_provider_ids.contains(*provider_id))
@@ -925,6 +2092,15 @@ fn migrate_provider_config_template_to_custom(
     }
 }
 
+/// 将元衡曾使用过的执行 provider id 归一到稳定的 `custom` 历史命名空间。
+/// 若配置已存在独立的 custom 表，沿用现有冲突保护，不覆盖用户路由。
+pub(crate) fn normalize_codex_provider_history_namespace(
+    config_text: &str,
+) -> Result<String, AppError> {
+    Ok(migrate_provider_config_template_to_custom(config_text)?
+        .unwrap_or_else(|| config_text.to_string()))
+}
+
 fn rewrite_legacy_provider_profile_refs(doc: &mut DocumentMut, source_provider_id: &str) -> bool {
     let Some(profiles) = doc
         .get_mut("profiles")
@@ -958,6 +2134,7 @@ fn rewrite_legacy_provider_profile_refs(doc: &mut DocumentMut, source_provider_i
     changed
 }
 
+#[allow(dead_code)] // 旧备份/恢复回归测试仍验证该迁移器的兼容性。
 fn migrate_codex_jsonl_files(
     codex_dir: &Path,
     source_provider_ids: &BTreeSet<String>,
@@ -1098,6 +2275,7 @@ fn rewrite_codex_session_meta_line(
     serde_json::to_string(&value).ok()
 }
 
+#[allow(dead_code)]
 fn migrate_codex_state_dbs(
     codex_dir: &Path,
     source_provider_ids: &BTreeSet<String>,
@@ -1116,6 +2294,7 @@ fn migrate_codex_state_dbs(
     Ok(migrated)
 }
 
+#[allow(dead_code)]
 fn migrate_codex_state_db_provider_bucket(
     db_path: &Path,
     codex_dir: &Path,
@@ -1311,6 +2490,425 @@ mod tests {
 
     fn source_ids(values: &[&str]) -> BTreeSet<String> {
         values.iter().map(|value| value.to_string()).collect()
+    }
+
+    fn write_product_session(path: &Path, session_id: &str, provider: &str) -> Vec<Value> {
+        if let Some(parent) = path.parent() {
+            fs::create_dir_all(parent).expect("create session dir");
+        }
+        let values = vec![
+            serde_json::json!({
+                "timestamp": "2026-08-07T00:00:00Z",
+                "type": "session_meta",
+                "payload": {
+                    "id": session_id,
+                    "model_provider": provider,
+                    "title": format!("title-{session_id}"),
+                    "created_at": 100,
+                    "updated_at": 200,
+                    "cwd": "C:\\workspace\\项目",
+                    "rollout_path": path.to_string_lossy(),
+                    "parent_thread_id": "parent-session"
+                }
+            }),
+            serde_json::json!({
+                "type": "response_item",
+                "payload": { "role": "user", "content": "keep this message" }
+            }),
+        ];
+        let text = values
+            .iter()
+            .map(|value| serde_json::to_string(value).unwrap())
+            .collect::<Vec<_>>()
+            .join("\n")
+            + "\n";
+        fs::write(path, text).expect("write session");
+        values
+    }
+
+    fn read_product_session_values(path: &Path) -> Vec<Value> {
+        fs::read_to_string(path)
+            .expect("read session")
+            .lines()
+            .map(|line| serde_json::from_str(line).expect("parse session line"))
+            .collect()
+    }
+
+    fn product_session_provider(path: &Path) -> String {
+        read_product_session_values(path)[0]["payload"]["model_provider"]
+            .as_str()
+            .expect("session provider")
+            .to_string()
+    }
+
+    fn create_product_state_db(path: &Path, rows: &[(&str, &str)]) {
+        if let Some(parent) = path.parent() {
+            fs::create_dir_all(parent).expect("create state dir");
+        }
+        let conn = Connection::open(path).expect("open state db");
+        conn.execute_batch(
+            "CREATE TABLE threads (\
+                id TEXT PRIMARY KEY,\
+                model_provider TEXT NOT NULL,\
+                title TEXT,\
+                cwd TEXT,\
+                rollout_path TEXT,\
+                archived INTEGER NOT NULL DEFAULT 0\
+            );",
+        )
+        .expect("create threads table");
+        for (session_id, provider) in rows {
+            conn.execute(
+                "INSERT INTO threads (id, model_provider, title, cwd, rollout_path) \
+                 VALUES (?1, ?2, ?3, ?4, ?5)",
+                rusqlite::params![
+                    session_id,
+                    provider,
+                    format!("title-{session_id}"),
+                    "C:\\workspace\\项目",
+                    format!("sessions/{session_id}.jsonl")
+                ],
+            )
+            .expect("insert thread");
+        }
+    }
+
+    fn state_provider(path: &Path, session_id: &str) -> String {
+        Connection::open(path)
+            .expect("open state db")
+            .query_row(
+                "SELECT model_provider FROM threads WHERE id = ?1",
+                [session_id],
+                |row| row.get(0),
+            )
+            .expect("read state provider")
+    }
+
+    fn future_scan_time() -> SystemTime {
+        SystemTime::now()
+            .checked_add(ACTIVE_SESSION_WINDOW + Duration::from_secs(1))
+            .expect("future scan time")
+    }
+
+    #[test]
+    fn maps_legacy_aliases_to_custom_without_overwriting_conflicts() {
+        let aliases = built_in_codex_provider_aliases();
+        for provider in ["nan", "yuanheng", "tal"] {
+            assert_eq!(
+                aliases.get(provider).map(String::as_str),
+                Some(CC_SWITCH_CODEX_MODEL_PROVIDER_ID)
+            );
+        }
+
+        let legacy = r#"model_provider = "nan"
+
+[model_providers.nan]
+name = "Nan"
+base_url = "https://nan.example/v1"
+
+[profiles.work]
+model_provider = "nan"
+"#;
+        let normalized = normalize_codex_provider_history_namespace(legacy).expect("normalize");
+        let parsed: toml::Value = toml::from_str(&normalized).expect("parse normalized config");
+        assert_eq!(
+            parsed
+                .get("model_provider")
+                .and_then(|value| value.as_str()),
+            Some("custom")
+        );
+        assert!(parsed
+            .get("model_providers")
+            .and_then(|value| value.get("nan"))
+            .is_none());
+        assert_eq!(
+            parsed
+                .get("model_providers")
+                .and_then(|value| value.get("custom"))
+                .and_then(|value| value.get("base_url"))
+                .and_then(|value| value.as_str()),
+            Some("https://nan.example/v1")
+        );
+        assert_eq!(
+            parsed
+                .get("profiles")
+                .and_then(|value| value.get("work"))
+                .and_then(|value| value.get("model_provider"))
+                .and_then(|value| value.as_str()),
+            Some("custom")
+        );
+
+        let conflict = r#"model_provider = "nan"
+
+[model_providers.nan]
+base_url = "https://nan.example/v1"
+
+[model_providers.custom]
+base_url = "https://manual.example/v1"
+"#;
+        assert_eq!(
+            normalize_codex_provider_history_namespace(conflict).expect("preserve conflict"),
+            conflict
+        );
+    }
+
+    #[test]
+    fn product_preview_scans_regular_archive_active_and_state_rows() {
+        let dir = tempdir().expect("tempdir");
+        let codex_dir = dir.path().join(".codex");
+        write_product_session(&codex_dir.join("sessions/2026/08/07/s1.jsonl"), "s1", "nan");
+        write_product_session(
+            &codex_dir.join("archived_sessions/s2.jsonl"),
+            "s2",
+            "yuanheng",
+        );
+        create_product_state_db(
+            &codex_dir.join(CODEX_STATE_DB_FILENAME),
+            &[("s1", "nan"), ("s2", "yuanheng"), ("s3", "tal")],
+        );
+
+        let mut scan = scan_product_history_at(
+            &codex_dir,
+            "",
+            &source_ids(&["nan", "yuanheng", "tal"]),
+            future_scan_time(),
+        )
+        .expect("scan product history");
+        scan.sessions
+            .sort_by(|left, right| left.session_id.cmp(&right.session_id));
+        scan.sessions[1].active = true;
+        let preview = product_preview_from_scan(&scan);
+
+        assert_eq!(preview.ordinary_sessions, 1);
+        assert_eq!(preview.archived_sessions, 1);
+        assert_eq!(preview.active_sessions, 1);
+        assert_eq!(preview.database_rows, 3);
+        assert_eq!(preview.physical_files, 2);
+        assert_eq!(preview.total_count, 3);
+        assert_eq!(preview.provider_counts.get("nan"), Some(&1));
+        assert_eq!(preview.provider_counts.get("yuanheng"), Some(&1));
+        assert_eq!(preview.provider_counts.get("tal"), Some(&0));
+        assert_eq!(scan.archive_count, 1);
+        assert_eq!(scan.duplicate_session_ids, 0);
+    }
+
+    #[test]
+    fn product_manifest_resume_is_idempotent_and_absorbs_new_sessions() {
+        let dir = tempdir().expect("tempdir");
+        let codex_dir = dir.path().join(".codex");
+        let backup_root = dir.path().join("backup");
+        write_product_session(&codex_dir.join("sessions/2026/08/07/s1.jsonl"), "s1", "nan");
+        let sources = source_ids(&["nan", "yuanheng"]);
+        let first = scan_product_history_at(&codex_dir, "", &sources, future_scan_time())
+            .expect("first scan");
+        let task = crate::settings::CodexHistoryMigrationTask {
+            migration_id: "migration-resume".to_string(),
+            target_namespace: "custom".to_string(),
+            ..Default::default()
+        };
+        let manifest = load_or_create_product_manifest(&task, &backup_root, &codex_dir, &first)
+            .expect("create manifest");
+        assert_eq!(manifest.sessions.len(), 1);
+
+        write_product_session(
+            &codex_dir.join("archived_sessions/s2.jsonl"),
+            "s2",
+            "yuanheng",
+        );
+        let second = scan_product_history_at(&codex_dir, "", &sources, future_scan_time())
+            .expect("second scan");
+        let manifest = load_or_create_product_manifest(&task, &backup_root, &codex_dir, &second)
+            .expect("merge manifest");
+        assert_eq!(manifest.sessions.len(), 2);
+        assert_eq!(manifest.before_session_ids, vec!["s1", "s2"]);
+        assert_eq!(manifest.before_archive_count, 1);
+
+        let rerun = load_or_create_product_manifest(&task, &backup_root, &codex_dir, &second)
+            .expect("rerun manifest merge");
+        assert_eq!(rerun.sessions.len(), 2);
+
+        let mismatched_task = crate::settings::CodexHistoryMigrationTask {
+            migration_id: "other-task".to_string(),
+            target_namespace: "custom".to_string(),
+            ..Default::default()
+        };
+        assert!(load_or_create_product_manifest(
+            &mismatched_task,
+            &backup_root,
+            &codex_dir,
+            &second
+        )
+        .is_err());
+    }
+
+    #[test]
+    fn product_migration_preserves_data_is_idempotent_and_rolls_back_exactly() {
+        let dir = tempdir().expect("tempdir");
+        let codex_dir = dir.path().join(".codex");
+        let backup_root = dir.path().join("backup");
+        let rollback_backup_root = dir.path().join("rollback-backup");
+        let first_path = codex_dir.join("sessions/2026/08/07/s1.jsonl");
+        let second_path = codex_dir.join("archived_sessions/s2.jsonl");
+        let first_before = write_product_session(&first_path, "s1", "nan");
+        let second_before = write_product_session(&second_path, "s2", "yuanheng");
+        let state_path = codex_dir.join(CODEX_STATE_DB_FILENAME);
+        create_product_state_db(&state_path, &[("s1", "nan"), ("s2", "yuanheng")]);
+        let sources = source_ids(&["nan", "yuanheng"]);
+        let scan = scan_product_history_at(&codex_dir, "", &sources, future_scan_time())
+            .expect("scan before migration");
+        assert!(scan.sessions.iter().all(|session| !session.active));
+
+        let task = crate::settings::CodexHistoryMigrationTask {
+            migration_id: "migration-exact".to_string(),
+            target_namespace: "custom".to_string(),
+            ..Default::default()
+        };
+        let manifest = load_or_create_product_manifest(&task, &backup_root, &codex_dir, &scan)
+            .expect("create manifest");
+        let source_set: HashSet<String> = scan
+            .sessions
+            .iter()
+            .map(|session| session.provider.clone())
+            .collect();
+        for session in &scan.sessions {
+            assert!(rewrite_codex_session_file_for_provider_bucket(
+                &session.path,
+                &codex_dir,
+                &source_set,
+                &backup_root,
+            )
+            .expect("rewrite session"));
+        }
+        assert_eq!(
+            migrate_product_state_rows(&scan, &codex_dir, &backup_root)
+                .expect("migrate state rows"),
+            2
+        );
+
+        let after = scan_product_history_at(&codex_dir, "", &sources, future_scan_time())
+            .expect("scan after migration");
+        assert!(after.sessions.is_empty());
+        assert!(after.state_rows.is_empty());
+        let validation = validate_product_migration(
+            &manifest,
+            &after,
+            sqlite_product_integrity_ok(&codex_dir, ""),
+        );
+        assert!(product_validation_passed(&validation));
+        assert_eq!(validation.duplicate_session_ids, 0);
+        assert_eq!(validation.orphan_state_rows, 0);
+
+        let mut first_expected = first_before.clone();
+        first_expected[0]["payload"]["model_provider"] = Value::String("custom".to_string());
+        let mut second_expected = second_before.clone();
+        second_expected[0]["payload"]["model_provider"] = Value::String("custom".to_string());
+        assert_eq!(read_product_session_values(&first_path), first_expected);
+        assert_eq!(read_product_session_values(&second_path), second_expected);
+        assert_eq!(state_provider(&state_path, "s1"), "custom");
+        assert_eq!(state_provider(&state_path, "s2"), "custom");
+
+        assert!(!rewrite_codex_session_file_for_provider_bucket(
+            &first_path,
+            &codex_dir,
+            &source_set,
+            &backup_root,
+        )
+        .expect("idempotent file rerun"));
+        assert_eq!(
+            migrate_product_state_rows(&after, &codex_dir, &backup_root)
+                .expect("idempotent db rerun"),
+            0
+        );
+
+        for entry in &manifest.sessions {
+            let path = PathBuf::from(&entry.path);
+            assert!(rewrite_codex_session_file_lines(
+                &path,
+                &codex_dir,
+                &rollback_backup_root,
+                |line| rewrite_product_session_provider(
+                    line,
+                    &entry.session_id,
+                    "custom",
+                    &entry.source_provider,
+                ),
+            )
+            .expect("rollback session"));
+        }
+        assert_eq!(
+            rollback_product_state_rows(&manifest, &codex_dir, &rollback_backup_root)
+                .expect("rollback state rows"),
+            2
+        );
+        assert_eq!(read_product_session_values(&first_path), first_before);
+        assert_eq!(read_product_session_values(&second_path), second_before);
+        assert_eq!(state_provider(&state_path, "s1"), "nan");
+        assert_eq!(state_provider(&state_path, "s2"), "yuanheng");
+        assert!(sqlite_product_integrity_ok(&codex_dir, ""));
+    }
+
+    #[test]
+    fn product_official_restore_uses_openai_manifest_entries_only() {
+        let dir = tempdir().expect("tempdir");
+        let codex_dir = dir.path().join(".codex");
+        let restore_backup_root = dir.path().join("restore-backup");
+        let official_path = codex_dir.join("sessions/official.jsonl");
+        let legacy_path = codex_dir.join("sessions/legacy.jsonl");
+        write_product_session(&official_path, "official", "custom");
+        write_product_session(&legacy_path, "legacy", "custom");
+        let state_path = codex_dir.join(CODEX_STATE_DB_FILENAME);
+        create_product_state_db(&state_path, &[("official", "custom"), ("legacy", "custom")]);
+        let manifest = ProductMigrationManifest {
+            version: 1,
+            migration_id: "migration-official".to_string(),
+            codex_config_dir: canonical_dir_string(&codex_dir),
+            target_namespace: "custom".to_string(),
+            before_session_ids: vec!["legacy".to_string(), "official".to_string()],
+            before_state_ids: vec!["legacy".to_string(), "official".to_string()],
+            before_archive_count: 0,
+            before_duplicate_session_ids: 0,
+            before_orphan_state_rows: 0,
+            sessions: vec![
+                ProductSessionManifestEntry {
+                    path: official_path.to_string_lossy().to_string(),
+                    session_id: "official".to_string(),
+                    source_provider: "openai".to_string(),
+                    archived: false,
+                },
+                ProductSessionManifestEntry {
+                    path: legacy_path.to_string_lossy().to_string(),
+                    session_id: "legacy".to_string(),
+                    source_provider: "nan".to_string(),
+                    archived: false,
+                },
+            ],
+            state_rows: vec![
+                ProductStateManifestEntry {
+                    db_path: state_path.to_string_lossy().to_string(),
+                    session_id: "official".to_string(),
+                    source_provider: "openai".to_string(),
+                },
+                ProductStateManifestEntry {
+                    db_path: state_path.to_string_lossy().to_string(),
+                    session_id: "legacy".to_string(),
+                    source_provider: "nan".to_string(),
+                },
+            ],
+        };
+
+        let outcome = restore_product_official_history_from_manifest(
+            &manifest,
+            &codex_dir,
+            &restore_backup_root,
+            future_scan_time(),
+        )
+        .expect("restore official entries");
+        assert_eq!(outcome.restored_jsonl_files, 1);
+        assert_eq!(outcome.restored_state_rows, 1);
+        assert_eq!(product_session_provider(&official_path), "openai");
+        assert_eq!(product_session_provider(&legacy_path), "custom");
+        assert_eq!(state_provider(&state_path, "official"), "openai");
+        assert_eq!(state_provider(&state_path, "legacy"), "custom");
     }
 
     #[test]

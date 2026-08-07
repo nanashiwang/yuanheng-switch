@@ -113,29 +113,7 @@ pub async fn save_settings(
             ));
         }
 
-        if unify_codex_enabled {
-            // 后台执行存量迁移（openai 桶 → custom 桶；仅当用户勾选了迁入既有
-            // 会话，函数内部自门控）。大会话目录可能要读数秒，不能阻塞设置保存；
-            // 失败时不写完成标记，下次启动自动重试。
-            tauri::async_runtime::spawn_blocking(|| {
-                match crate::codex_history_migration::maybe_migrate_codex_official_history_to_unified_bucket() {
-                    Ok(outcome) => {
-                        if let Some(reason) = outcome.skipped_reason {
-                            log::debug!("○ Codex official history unify migration skipped: {reason}");
-                        } else {
-                            log::info!(
-                                "✓ Codex official history unify migration completed: jsonl_files={}, state_rows={}",
-                                outcome.migrated_jsonl_files,
-                                outcome.migrated_state_rows
-                            );
-                        }
-                    }
-                    Err(e) => {
-                        log::warn!("✗ Codex official history unify migration failed: {e}");
-                    }
-                }
-            });
-        } else {
+        if !unify_codex_enabled {
             // 清除标记与迁移意愿，让重新开启并再次勾选时能补迁
             // 关闭期间落入 openai 桶的官方会话。
             if let Err(err) = crate::settings::clear_codex_official_history_unify_migration() {
@@ -147,6 +125,77 @@ pub async fn save_settings(
         }
     }
     Ok(true)
+}
+
+#[tauri::command]
+pub async fn preview_codex_history_migration(
+) -> Result<crate::settings::CodexHistoryMigrationTask, String> {
+    tauri::async_runtime::spawn_blocking(
+        crate::codex_history_migration::preview_codex_history_migration,
+    )
+    .await
+    .map_err(|e| e.to_string())?
+    .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub async fn get_codex_history_migration_status(
+) -> Result<Option<crate::settings::CodexHistoryMigrationTask>, String> {
+    Ok(crate::codex_history_migration::get_codex_history_migration_status())
+}
+
+#[tauri::command]
+pub async fn start_codex_history_migration(
+) -> Result<crate::settings::CodexHistoryMigrationTask, String> {
+    let task = tauri::async_runtime::spawn_blocking(
+        crate::codex_history_migration::start_codex_history_migration,
+    )
+    .await
+    .map_err(|e| e.to_string())?
+    .map_err(|e| e.to_string())?;
+    if matches!(
+        task.status,
+        crate::settings::CodexHistoryMigrationStatus::Paused
+    ) {
+        crate::codex_history_migration::schedule_codex_history_migration_resume();
+    }
+    Ok(task)
+}
+
+#[tauri::command]
+pub async fn resume_codex_history_migration(
+) -> Result<crate::settings::CodexHistoryMigrationTask, String> {
+    let task = tauri::async_runtime::spawn_blocking(
+        crate::codex_history_migration::resume_codex_history_migration,
+    )
+    .await
+    .map_err(|e| e.to_string())?
+    .map_err(|e| e.to_string())?;
+    if matches!(
+        task.status,
+        crate::settings::CodexHistoryMigrationStatus::Paused
+    ) {
+        crate::codex_history_migration::schedule_codex_history_migration_resume();
+    }
+    Ok(task)
+}
+
+#[tauri::command]
+pub async fn rollback_codex_history_migration(
+) -> Result<crate::settings::CodexHistoryMigrationTask, String> {
+    let task = tauri::async_runtime::spawn_blocking(
+        crate::codex_history_migration::rollback_codex_history_migration,
+    )
+    .await
+    .map_err(|e| e.to_string())?
+    .map_err(|e| e.to_string())?;
+    if matches!(
+        task.status,
+        crate::settings::CodexHistoryMigrationStatus::Paused
+    ) {
+        crate::codex_history_migration::schedule_codex_history_migration_resume();
+    }
+    Ok(task)
 }
 
 #[derive(serde::Serialize)]
@@ -556,6 +605,7 @@ mod tests {
                     migrated_state_rows: 7,
                     codex_config_dir: None,
                 }),
+                ..LocalMigrations::default()
             }),
             ..AppSettings::default()
         };
@@ -609,6 +659,7 @@ mod tests {
                     migrated_state_rows: 2,
                     codex_config_dir: None,
                 }),
+                ..LocalMigrations::default()
             }),
             ..AppSettings::default()
         };

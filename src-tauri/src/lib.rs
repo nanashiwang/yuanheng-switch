@@ -12,6 +12,7 @@ mod config;
 mod core_daemon;
 mod database;
 mod deeplink;
+mod desktop_app_detection;
 mod error;
 mod gemini_config;
 mod gemini_mcp;
@@ -750,24 +751,10 @@ pub fn run() {
             {
                 let db_for_codex_history_migration = app_state.db.clone();
                 tauri::async_runtime::spawn_blocking(move || {
-                    match crate::codex_history_migration::maybe_migrate_codex_third_party_history_provider_bucket(
-                        &db_for_codex_history_migration,
-                    ) {
-                        Ok(outcome) => {
-                            if let Some(reason) = outcome.skipped_reason {
-                                log::debug!("○ Codex history provider bucket migration skipped: {reason}");
-                            } else {
-                                log::info!(
-                                    "✓ Codex history provider bucket migration completed: sources={}, jsonl_files={}, state_rows={}",
-                                    outcome.source_provider_ids.len(),
-                                    outcome.migrated_jsonl_files,
-                                    outcome.migrated_state_rows
-                                );
-                            }
-                        }
-                        Err(e) => {
-                            log::warn!("✗ Codex history provider bucket migration failed: {e}");
-                        }
+                    if let Err(error) =
+                        crate::codex_history_migration::ensure_codex_provider_aliases_persisted()
+                    {
+                        log::warn!("✗ Persisting Codex provider aliases failed: {error}");
                     }
 
                     match crate::codex_history_migration::maybe_migrate_codex_provider_template_bucket(
@@ -788,24 +775,7 @@ pub fn run() {
                         }
                     }
 
-                    // 统一会话开关的官方历史迁移：开关开启但上次未完成（如文件被占用
-                    // 中途失败）时在启动期重试；函数内部自门控，开关关闭时直接跳过。
-                    match crate::codex_history_migration::maybe_migrate_codex_official_history_to_unified_bucket() {
-                        Ok(outcome) => {
-                            if let Some(reason) = outcome.skipped_reason {
-                                log::debug!("○ Codex official history unify migration skipped: {reason}");
-                            } else {
-                                log::info!(
-                                    "✓ Codex official history unify migration completed: jsonl_files={}, state_rows={}",
-                                    outcome.migrated_jsonl_files,
-                                    outcome.migrated_state_rows
-                                );
-                            }
-                        }
-                        Err(e) => {
-                            log::warn!("✗ Codex official history unify migration failed: {e}");
-                        }
-                    }
+                    crate::codex_history_migration::resume_codex_history_migration_if_needed();
                 });
             }
 
@@ -1602,6 +1572,13 @@ pub fn run() {
             commands::launch_session_terminal,
             commands::get_tool_versions,
             commands::get_installed_tool_versions,
+            commands::pick_desktop_app_path,
+            commands::set_desktop_app_path,
+            commands::preview_codex_history_migration,
+            commands::get_codex_history_migration_status,
+            commands::start_codex_history_migration,
+            commands::resume_codex_history_migration,
+            commands::rollback_codex_history_migration,
             commands::run_tool_lifecycle_action,
             commands::probe_tool_installations,
             // Provider terminal
