@@ -149,6 +149,7 @@ fn push_unique(paths: &mut Vec<PathBuf>, path: PathBuf) {
     }
 }
 
+#[cfg(any(target_os = "macos", target_os = "windows"))]
 fn classic_candidates(tool: &str) -> Vec<(PathBuf, &'static str)> {
     let mut candidates = Vec::new();
 
@@ -194,6 +195,11 @@ fn classic_candidates(tool: &str) -> Vec<(PathBuf, &'static str)> {
     }
 
     candidates
+}
+
+#[cfg(not(any(target_os = "macos", target_os = "windows")))]
+fn classic_candidates(_tool: &str) -> Vec<(PathBuf, &'static str)> {
+    Vec::new()
 }
 
 fn automatic_classic_resolution(tool: &str) -> Option<DesktopAppResolution> {
