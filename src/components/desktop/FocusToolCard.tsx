@@ -2,7 +2,6 @@ import { useMemo, useState } from "react";
 import {
   AlertTriangle,
   CheckCircle2,
-  ChevronDown,
   Loader2,
   Play,
   RefreshCw,
@@ -10,6 +9,12 @@ import {
 } from "lucide-react";
 import type { YuanhengToolId } from "@/lib/api";
 import { ProviderIcon } from "@/components/ProviderIcon";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+} from "@/components/ui/select";
 import { ModelPicker } from "./ModelPicker";
 import { pickPreferredGroup, toolLabel } from "./ToolSetupGrid";
 import {
@@ -27,6 +32,90 @@ interface FocusToolCardProps {
 
 const focusCardShell =
   "relative min-h-[246px] overflow-hidden rounded-2xl bg-gradient-to-br from-[#0f2a26] to-[#173f3a] p-5 text-[#eef5f2] shadow-[0_18px_40px_-22px_rgba(15,42,38,0.55)]";
+
+interface FocusSelectOption {
+  value: string;
+  label: string;
+  icon?: string;
+  iconName?: string;
+}
+
+/**
+ * 焦点卡内的紧凑选择器。
+ *
+ * 不使用原生 select：macOS WebView 会把深色触发器的浅色文字继承给
+ * 系统白色弹层，导致选项只有悬停时才可见。应用自绘弹层使用主题色，
+ * 与模型选择器保持一致，也避免不同系统的原生菜单行为差异。
+ */
+function FocusSelectPicker({
+  label,
+  value,
+  options,
+  disabled,
+  onChange,
+}: {
+  label: string;
+  value: string;
+  options: FocusSelectOption[];
+  disabled?: boolean;
+  onChange: (value: string) => void;
+}) {
+  const selected =
+    options.find((option) => option.value === value) ?? options[0];
+  const selectedValue = selected ? `value:${selected.value}` : undefined;
+
+  return (
+    <Select
+      value={selectedValue}
+      disabled={disabled || options.length === 0}
+      onValueChange={(nextValue) => onChange(nextValue.slice("value:".length))}
+    >
+      <SelectTrigger
+        aria-label={label}
+        className="h-8 min-w-0 gap-2 border-white/15 bg-white/[0.08] px-2.5 text-left text-[10.5px] text-white shadow-sm transition-colors hover:bg-white/[0.12] focus:border-[#e9b67c]/70 disabled:cursor-not-allowed disabled:opacity-60"
+        onClick={(event) => event.stopPropagation()}
+      >
+        <span className="flex min-w-0 flex-1 items-center gap-2">
+          {selected?.icon && (
+            <ProviderIcon
+              icon={selected.icon}
+              name={selected.iconName ?? selected.label}
+              size={14}
+            />
+          )}
+          <span className="min-w-0 flex-1 truncate">
+            {selected?.label ?? value}
+          </span>
+        </span>
+      </SelectTrigger>
+      <SelectContent
+        position="popper"
+        sideOffset={6}
+        className="z-[1000] max-h-[240px] min-w-[var(--radix-select-trigger-width)]"
+        onClick={(event) => event.stopPropagation()}
+      >
+        {options.map((option) => (
+          <SelectItem
+            key={option.value || "__default__"}
+            value={`value:${option.value}`}
+            className="text-[10.5px]"
+          >
+            <span className="flex min-w-0 items-center gap-2">
+              {option.icon && (
+                <ProviderIcon
+                  icon={option.icon}
+                  name={option.iconName ?? option.label}
+                  size={14}
+                />
+              )}
+              <span className="min-w-0 flex-1 truncate">{option.label}</span>
+            </span>
+          </SelectItem>
+        ))}
+      </SelectContent>
+    </Select>
+  );
+}
 
 function FocusToolDecoration() {
   return (
@@ -218,6 +307,22 @@ export function FocusToolCard({
       )
     : undefined;
   const groupMap = new Map(connection.groups.map((group) => [group.id, group]));
+  const vendorOptions = vendorGroups.map((vendor) => ({
+    value: vendor.id,
+    label: `${vendor.label} · ${vendor.models.length}`,
+    icon: vendor.icon,
+    iconName: vendor.label,
+  }));
+  const groupOptions =
+    availableGroups.length === 0
+      ? [{ value: "", label: dt("账号默认") }]
+      : availableGroups.map((group) => {
+          const option = groupMap.get(group);
+          return {
+            value: group,
+            label: `${group}${option?.ratio != null ? ` · ${option.ratio}x` : ""}`,
+          };
+        });
 
   return (
     <section className={focusCardShell}>
@@ -296,35 +401,18 @@ export function FocusToolCard({
             <span className="mb-1 block text-[9px] font-medium text-white/50">
               {dt("1 · 模型供应商")}
             </span>
-            <div className="relative">
-              {selectedVendor && (
-                <ProviderIcon
-                  icon={selectedVendor.icon}
-                  name={selectedVendor.label}
-                  size={14}
-                  className="pointer-events-none absolute left-2.5 top-1/2 z-10 -translate-y-1/2"
-                />
-              )}
-              <select
-                aria-label={dt("{{v0}} 模型供应商", { v0: toolLabel(app) })}
-                value={selectedVendor?.id ?? ""}
-                disabled={pending || vendorGroups.length === 0}
-                className="h-8 w-full min-w-0 appearance-none rounded-md border border-white/15 bg-white/[0.08] pl-8 pr-7 text-[10.5px] text-white shadow-sm outline-none [color-scheme:dark] transition-colors hover:bg-white/[0.12] focus:border-[#e9b67c]/70 disabled:cursor-not-allowed disabled:opacity-60"
-                onChange={(event) =>
-                  setSelectedVendors((currentSelections) => ({
-                    ...currentSelections,
-                    [app]: event.target.value,
-                  }))
-                }
-              >
-                {vendorGroups.map((vendor) => (
-                  <option key={vendor.id} value={vendor.id}>
-                    {vendor.label} · {vendor.models.length}
-                  </option>
-                ))}
-              </select>
-              <ChevronDown className="pointer-events-none absolute right-2.5 top-1/2 h-3 w-3 -translate-y-1/2 text-white/45" />
-            </div>
+            <FocusSelectPicker
+              label={dt("{{v0}} 模型供应商", { v0: toolLabel(app) })}
+              value={selectedVendor?.id ?? ""}
+              options={vendorOptions}
+              disabled={pending || vendorGroups.length === 0}
+              onChange={(vendor) =>
+                setSelectedVendors((currentSelections) => ({
+                  ...currentSelections,
+                  [app]: vendor,
+                }))
+              }
+            />
           </label>
 
           <label className="min-w-0">
@@ -356,31 +444,15 @@ export function FocusToolCard({
             <span className="mb-1 block text-[9px] font-medium text-white/50">
               {dt("3 · 令牌分组")}
             </span>
-            <div className="relative">
-              <select
-                aria-label={dt("{{v0}} 当前工具令牌分组", {
-                  v0: toolLabel(app),
-                })}
-                value={selectedGroup ?? ""}
-                disabled={pending || availableGroups.length <= 1}
-                className="h-8 w-full min-w-0 appearance-none rounded-md border border-white/15 bg-white/[0.08] pl-2 pr-7 text-[10.5px] text-white shadow-sm outline-none [color-scheme:dark] transition-colors hover:bg-white/[0.12] focus:border-[#e9b67c]/70 disabled:cursor-not-allowed disabled:opacity-60"
-                onChange={(event) => void applyGroup(app, event.target.value)}
-              >
-                {availableGroups.length === 0 && (
-                  <option value="">{dt("账号默认")}</option>
-                )}
-                {availableGroups.map((group) => {
-                  const option = groupMap.get(group);
-                  return (
-                    <option key={group} value={group}>
-                      {group}
-                      {option?.ratio != null ? ` · ${option.ratio}x` : ""}
-                    </option>
-                  );
-                })}
-              </select>
-              <ChevronDown className="pointer-events-none absolute right-2.5 top-1/2 h-3 w-3 -translate-y-1/2 text-white/45" />
-            </div>
+            <FocusSelectPicker
+              label={dt("{{v0}} 当前工具令牌分组", {
+                v0: toolLabel(app),
+              })}
+              value={selectedGroup ?? ""}
+              options={groupOptions}
+              disabled={pending || availableGroups.length <= 1}
+              onChange={(group) => void applyGroup(app, group)}
+            />
           </label>
         </div>
       </div>

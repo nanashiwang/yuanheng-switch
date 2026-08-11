@@ -538,8 +538,12 @@ describe("App integration with MSW", { timeout: 15_000 }, () => {
     renderApp(App);
 
     const vendorPicker = await screen.findByLabelText("Codex 模型供应商");
-    expect(vendorPicker).toHaveValue("openai");
-    fireEvent.change(vendorPicker, { target: { value: "anthropic" } });
+    expect(vendorPicker.tagName).toBe("BUTTON");
+    expect(vendorPicker).toHaveTextContent("OpenAI · 1");
+    fireEvent.click(vendorPicker);
+    fireEvent.click(
+      await screen.findByRole("option", { name: /Anthropic · 1/ }),
+    );
 
     const modelPicker = await screen.findByLabelText("Codex Anthropic模型");
     fireEvent.click(modelPicker);
@@ -551,7 +555,9 @@ describe("App integration with MSW", { timeout: 15_000 }, () => {
       expect(getConfiguredToolCalls()).toContainEqual(["codex"]),
     );
     const groupPicker = await screen.findByLabelText("Codex 当前工具令牌分组");
-    fireEvent.change(groupPicker, { target: { value: "vip" } });
+    expect(groupPicker.tagName).toBe("BUTTON");
+    fireEvent.click(groupPicker);
+    fireEvent.click(await screen.findByRole("option", { name: /vip · 0.8x/ }));
     await waitFor(() =>
       expect(getConfiguredToolGroupCalls()).toContainEqual({ codex: "vip" }),
     );
