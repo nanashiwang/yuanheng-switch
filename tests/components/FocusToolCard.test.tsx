@@ -33,12 +33,15 @@ function createSwitcher(
     reasoning: {},
     pendingApps: new Set(),
     restartRequiredApps: new Set(),
+    launchDirectories: {},
+    launchDirectoryPendingApps: new Set(),
     statusMap: new Map(),
     codexBridge: {} as ModelSwitchCenterState["codexBridge"],
     refreshModels: vi.fn(),
     applyModel: vi.fn(),
     applyGroup: vi.fn(),
     applyReasoning: vi.fn(),
+    chooseLaunchDirectory: vi.fn(),
     launch: vi.fn(),
   };
 }
@@ -81,5 +84,35 @@ describe("FocusToolCard", () => {
     expect(screen.getByText("本机工具检测失败")).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "重新检测" }));
     expect(retryBootstrap).toHaveBeenCalledTimes(1);
+  });
+
+  it("为非 Codex CLI 提供独立工作目录入口", () => {
+    const switcher = createSwitcher("ready");
+    switcher.rows = ["claude"];
+    switcher.models = { claude: "claude-sonnet" };
+    switcher.launchDirectories = { claude: "/tmp/claude-project" };
+    switcher.statusMap = new Map([
+      [
+        "claude",
+        {
+          app: "claude",
+          supported: true,
+          configured: true,
+          needsUpdate: false,
+          model: "claude-sonnet",
+          recommendedModel: "claude-sonnet",
+          message: null,
+        },
+      ],
+    ]);
+
+    render(<FocusToolCard switcher={switcher} onOpenTools={vi.fn()} />);
+
+    const directoryButton = screen.getByRole("button", {
+      name: "选择 Claude 工作目录",
+    });
+    expect(directoryButton).toHaveTextContent("claude-project");
+    fireEvent.click(directoryButton);
+    expect(switcher.chooseLaunchDirectory).toHaveBeenCalledWith("claude");
   });
 });

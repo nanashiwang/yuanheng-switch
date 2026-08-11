@@ -113,6 +113,15 @@ describe("useModelSwitchCenter", () => {
             reasoningEffort: null,
           });
         }
+        if (command === "get_tool_launch_cwd") {
+          return Promise.resolve(null);
+        }
+        if (command === "pick_directory") {
+          return Promise.resolve("/tmp/codex project");
+        }
+        if (command === "set_tool_launch_cwd") {
+          return Promise.resolve(payload.cwd);
+        }
         if (command === "configure_yuanheng_tools") {
           const app = (payload.apps as YuanhengToolStatus["app"][])[0];
           const model = (
@@ -308,5 +317,54 @@ describe("useModelSwitchCenter", () => {
     expect(result.current.restartRequiredApps.has("chatgpt-desktop")).toBe(
       false,
     );
+  });
+
+  it("persists and passes working directories for multiple CLI tools", async () => {
+    const { wrapper } = createWrapper();
+    const { result } = renderHook(() => useModelSwitchCenter(), { wrapper });
+
+    await waitFor(() => {
+      expect(result.current.rows).toContain("codex");
+      expect(result.current.launchDirectories.codex).toBeUndefined();
+    });
+
+    await act(async () => {
+      await result.current.chooseLaunchDirectory("codex");
+    });
+
+    expect(result.current.launchDirectories.codex).toBe("/tmp/codex project");
+    expect(invokeMock).toHaveBeenCalledWith("set_tool_launch_cwd", {
+      tool: "codex",
+      cwd: "/tmp/codex project",
+    });
+
+    await act(async () => {
+      await result.current.launch("codex");
+    });
+
+    expect(invokeMock).toHaveBeenCalledWith("launch_tool", {
+      tool: "codex",
+      restart: false,
+      cwd: "/tmp/codex project",
+    });
+
+    await act(async () => {
+      await result.current.chooseLaunchDirectory("claude");
+    });
+
+    expect(invokeMock).toHaveBeenCalledWith("set_tool_launch_cwd", {
+      tool: "claude",
+      cwd: "/tmp/codex project",
+    });
+
+    await act(async () => {
+      await result.current.launch("claude");
+    });
+
+    expect(invokeMock).toHaveBeenCalledWith("launch_tool", {
+      tool: "claude",
+      restart: false,
+      cwd: "/tmp/codex project",
+    });
   });
 });

@@ -127,6 +127,12 @@ export const DESKTOP_EN: Record<string, string> = {
   查看所有工具: "View All Tools",
   启动: "Launch",
   "启动 {{tool}}": "Launch {{tool}}",
+  工作目录: "Working Directory",
+  用户主目录: "Home Directory",
+  "选择 {{tool}} 工作目录": "Choose {{tool}} Working Directory",
+  "已将 {{tool}} 工作目录切换为 {{directory}}":
+    "{{tool}} working directory changed to {{directory}}",
+  选择工作目录失败: "Failed to choose working directory",
   选择模型: "Select Model",
   "搜索网站可用模型...": "Search available models...",
   "当前/推荐优先 · 新版本在前 · 共 {{count}} 个":
@@ -190,8 +196,8 @@ export const DESKTOP_EN: Record<string, string> = {
   网站模型同步失败: "Model sync failed",
   "已选择 {{count}} 个工具": "{{count}} tools selected",
   选择你需要使用的工具: "Select the tools you want to use",
-  "元衡将写入 API、模型和认证配置，不修改工作目录。":
-    "YuanHeng writes API, model, and authentication settings without changing working directories.",
+  "元衡将写入 API、模型和认证配置；工作目录仅在你主动选择时更改。":
+    "YuanHeng writes API, model, and authentication settings; working directories change only when you choose one.",
   刷新工具状态: "Refresh Tool Status",
   刷新: "Refresh",
   一键配置所选工具: "Configure Selected Tools",

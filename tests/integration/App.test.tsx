@@ -14,6 +14,7 @@ import {
   getConfiguredToolGroupCalls,
   getConfiguredToolReasoningCalls,
   getLaunchedToolCalls,
+  getLaunchedToolRequests,
   getRestartedToolCalls,
   resetProviderState,
   setSettings,
@@ -348,6 +349,87 @@ describe("App integration with MSW", { timeout: 15_000 }, () => {
 
     fireEvent.click(screen.getByRole("button", { name: "启动 Codex" }));
     await waitFor(() => expect(getLaunchedToolCalls()).toEqual(["codex"]));
+  });
+
+  it("chooses and reuses a Codex working directory when launching", async () => {
+    setSettings({ firstRunNoticeConfirmed: true });
+    localStorage.setItem("yuanheng-switch-last-app", "codex");
+    setYuanhengConnection({
+      connected: true,
+      userId: "1024",
+      models: ["gpt-5.6"],
+    });
+    setYuanhengToolStatus("codex", {
+      configured: true,
+      model: "gpt-5.6",
+      recommendedModel: "gpt-5.6",
+    });
+
+    const { default: App } = await import("@/App");
+    renderApp(App);
+
+    await screen.findByRole("heading", { name: "工作台" });
+    const directoryButton = await screen.findByRole("button", {
+      name: "选择 Codex 工作目录",
+    });
+    expect(directoryButton).toHaveTextContent("用户主目录");
+
+    fireEvent.click(directoryButton);
+    await waitFor(() =>
+      expect(directoryButton).toHaveTextContent("selected-dir"),
+    );
+
+    const focusCard = directoryButton.closest("section");
+    expect(focusCard).not.toBeNull();
+    fireEvent.click(
+      within(focusCard!).getByRole("button", { name: "启动 Codex" }),
+    );
+    await waitFor(() =>
+      expect(getLaunchedToolRequests()).toContainEqual({
+        app: "codex",
+        cwd: "/mock/selected-dir",
+      }),
+    );
+  });
+
+  it("chooses a separate working directory for another CLI from tool management", async () => {
+    setSettings({ firstRunNoticeConfirmed: true });
+    setYuanhengConnection({
+      connected: true,
+      userId: "1024",
+      models: ["claude-sonnet"],
+    });
+    setYuanhengToolStatus("claude", {
+      configured: true,
+      model: "claude-sonnet",
+      recommendedModel: "claude-sonnet",
+    });
+
+    const { default: App } = await import("@/App");
+    renderApp(App);
+
+    await screen.findByRole("heading", { name: "工作台" });
+    fireEvent.click(screen.getByRole("button", { name: "工具管理" }));
+
+    const directoryButton = await screen.findByRole("button", {
+      name: "选择 Claude 工作目录",
+    });
+    fireEvent.click(directoryButton);
+    await waitFor(() =>
+      expect(directoryButton).toHaveTextContent("selected-dir"),
+    );
+
+    const toolCard = directoryButton.closest("article");
+    expect(toolCard).not.toBeNull();
+    fireEvent.click(
+      within(toolCard!).getByRole("button", { name: "启动 Claude" }),
+    );
+    await waitFor(() =>
+      expect(getLaunchedToolRequests()).toContainEqual({
+        app: "claude",
+        cwd: "/mock/selected-dir",
+      }),
+    );
   });
 
   it("applies a Codex model selection immediately for the next turn", async () => {

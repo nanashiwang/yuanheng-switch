@@ -12,7 +12,12 @@ export { proxyApi } from "./proxy";
 export { openclawApi } from "./openclaw";
 export { sessionsApi } from "./sessions";
 export { workspaceApi } from "./workspace";
-export { yuanhengApi, yuanhengTerminalModels } from "./yuanheng";
+export {
+  isYuanhengCliTool,
+  YUANHENG_CLI_TOOLS,
+  yuanhengApi,
+  yuanhengTerminalModels,
+} from "./yuanheng";
 export type {
   YuanhengConnectionStatus,
   YuanhengAccount,
@@ -25,6 +30,7 @@ export type {
   YuanhengDiagnosticReport,
   YuanhengDiagnosticStatus,
   YuanhengReasoningLevel,
+  YuanhengCliToolId,
   YuanhengToolId,
 } from "./yuanheng";
 export * as configApi from "./config";
