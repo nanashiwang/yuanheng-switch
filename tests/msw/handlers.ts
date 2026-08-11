@@ -28,8 +28,10 @@ import {
   getYuanhengAnnouncements,
   getYuanhengConnection,
   getYuanhengToolStatuses,
+  getToolLaunchDirectory,
   recordToolLaunch,
   recordToolRestart,
+  setToolLaunchDirectory,
   setYuanhengConnection,
 } from "./state";
 
@@ -226,13 +228,29 @@ export const handlers = [
     },
   ),
   http.post(`${TAURI_ENDPOINT}/launch_tool`, async ({ request }) => {
-    const { tool, restart = false } = await withJson<{
+    const {
+      tool,
+      restart = false,
+      cwd,
+    } = await withJson<{
       tool: YuanhengToolId;
       restart?: boolean;
+      cwd?: string;
     }>(request);
-    recordToolLaunch(tool);
+    recordToolLaunch(tool, cwd);
     if (restart) recordToolRestart(tool);
     return success(true);
+  }),
+  http.post(`${TAURI_ENDPOINT}/get_tool_launch_cwd`, async ({ request }) => {
+    const { tool } = await withJson<{ tool: YuanhengToolId }>(request);
+    return success(getToolLaunchDirectory(tool));
+  }),
+  http.post(`${TAURI_ENDPOINT}/set_tool_launch_cwd`, async ({ request }) => {
+    const { tool, cwd } = await withJson<{
+      tool: YuanhengToolId;
+      cwd: string;
+    }>(request);
+    return success(setToolLaunchDirectory(tool, cwd));
   }),
   http.post(`${TAURI_ENDPOINT}/get_installed_skills`, () => success([])),
   http.post(`${TAURI_ENDPOINT}/get_mcp_servers`, () => success({})),

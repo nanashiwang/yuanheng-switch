@@ -257,6 +257,11 @@ let configuredToolReasoningCalls: Partial<
 >[] = [];
 let launchedToolCalls: YuanhengToolId[] = [];
 let restartedToolCalls: YuanhengToolId[] = [];
+let toolLaunchDirectories: Partial<Record<YuanhengToolId, string>> = {};
+let launchedToolRequests: Array<{
+  app: YuanhengToolId;
+  cwd: string | null;
+}> = [];
 
 const cloneProviders = (value: ProvidersByApp) =>
   deepClone(value) as ProvidersByApp;
@@ -338,6 +343,8 @@ export const resetProviderState = () => {
   configuredToolReasoningCalls = [];
   launchedToolCalls = [];
   restartedToolCalls = [];
+  toolLaunchDirectories = {};
+  launchedToolRequests = [];
 };
 
 export const getYuanhengConnection = () =>
@@ -439,16 +446,25 @@ export const configureYuanhengTools = (
   });
 };
 
-export const recordToolLaunch = (app: YuanhengToolId) =>
+export const recordToolLaunch = (app: YuanhengToolId, cwd?: string | null) => {
   launchedToolCalls.push(app);
+  launchedToolRequests.push({ app, cwd: cwd ?? null });
+};
 export const recordToolRestart = (app: YuanhengToolId) =>
   restartedToolCalls.push(app);
+export const getToolLaunchDirectory = (app: YuanhengToolId) =>
+  toolLaunchDirectories[app] ?? null;
+export const setToolLaunchDirectory = (app: YuanhengToolId, cwd: string) => {
+  toolLaunchDirectories[app] = cwd;
+  return cwd;
+};
 export const getConfiguredToolCalls = () => [...configuredToolCalls];
 export const getConfiguredToolGroupCalls = () => [...configuredToolGroupCalls];
 export const getConfiguredToolReasoningCalls = () => [
   ...configuredToolReasoningCalls,
 ];
 export const getLaunchedToolCalls = () => [...launchedToolCalls];
+export const getLaunchedToolRequests = () => [...launchedToolRequests];
 export const getRestartedToolCalls = () => [...restartedToolCalls];
 
 export const getProviders = (appType: AppId) =>

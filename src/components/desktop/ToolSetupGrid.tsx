@@ -20,6 +20,7 @@ import {
   type YuanhengConnectionStatus,
   type YuanhengReasoningLevel,
   type YuanhengToolId,
+  isYuanhengCliTool,
   settingsApi,
   yuanhengApi,
   yuanhengTerminalModels,
@@ -37,6 +38,10 @@ import { ModelPicker } from "./ModelPicker";
 import { cn } from "@/lib/utils";
 import { extractErrorMessage } from "@/utils/errorUtils";
 import { dt } from "./desktopI18n";
+import {
+  launchDirectoryLabel,
+  useToolLaunchDirectories,
+} from "./useToolLaunchDirectories";
 import {
   clearRestartRequired,
   markRestartRequired,
@@ -150,6 +155,7 @@ export function ToolSetupGrid({
   const refreshConnection = useRefreshYuanheng();
   const statuses = useYuanhengToolStatuses();
   const configure = useConfigureYuanhengTools();
+  const launchDirectoryState = useToolLaunchDirectories();
   const versions = useQuery({
     queryKey: ["desktop", "tool-versions"],
     queryFn: () =>
@@ -390,6 +396,21 @@ export function ToolSetupGrid({
     }
   };
 
+  const chooseLaunchDirectory = async (app: YuanhengToolId) => {
+    try {
+      const saved = await launchDirectoryState.chooseDirectory(app);
+      if (!saved) return;
+      toast.success(
+        dt("已将 {{tool}} 工作目录切换为 {{directory}}", {
+          tool: toolLabel(app),
+          directory: launchDirectoryLabel(saved),
+        }),
+      );
+    } catch (error) {
+      toast.error(extractErrorMessage(error) || dt("选择工作目录失败"));
+    }
+  };
+
   const launchTool = async (app: YuanhengToolId, forceRestart = false) => {
     try {
       const status = statusMap.get(app);
@@ -422,7 +443,13 @@ export function ToolSetupGrid({
         onConfigured?.();
       }
       const restarted = isDesktopApp(app) && (needsApply || forceRestart);
-      await yuanhengApi.launchTool(app, restarted);
+      await yuanhengApi.launchTool(
+        app,
+        restarted,
+        isYuanhengCliTool(app)
+          ? launchDirectoryState.directories[app]
+          : undefined,
+      );
       if (restarted) clearRestartRequired(app);
       toast.success(
         dt("{{v0}} 已使用 {{v1}} {{v2}}", {
@@ -476,7 +503,9 @@ export function ToolSetupGrid({
               : dt("选择你需要使用的工具")}
           </p>
           <p className="mt-0.5 text-[10px] text-muted-foreground">
-            {dt("元衡将写入 API、模型和认证配置，不修改工作目录。")}
+            {dt(
+              "元衡将写入 API、模型和认证配置；工作目录仅在你主动选择时更改。",
+            )}
           </p>
         </div>
         <Button
@@ -586,6 +615,10 @@ export function ToolSetupGrid({
             app === "chatgpt-desktop";
           const supportsCustomPath =
             app === "chatgpt-desktop" || app === "workbuddy";
+          const supportsLaunchDirectory = isYuanhengCliTool(app);
+          const launchDirectory = launchDirectoryState.directories[app];
+          const launchDirectoryPending =
+            launchDirectoryState.pendingApps.has(app);
           const detectionLabel =
             version?.detection_source === "custom"
               ? dt("自定义路径")
@@ -748,6 +781,32 @@ export function ToolSetupGrid({
                     )}
                   </div>
                 </div>
+              )}
+
+              {supportsLaunchDirectory && (
+                <button
+                  type="button"
+                  disabled={launchDirectoryPending}
+                  aria-label={dt("选择 {{tool}} 工作目录", {
+                    tool: toolLabel(app),
+                  })}
+                  title={launchDirectory ?? dt("用户主目录")}
+                  onClick={(event) => {
+                    event.stopPropagation();
+                    void chooseLaunchDirectory(app);
+                  }}
+                  className="mt-3 flex min-w-0 items-center gap-2 border-t border-border/60 pt-3 text-left text-[10px] text-muted-foreground transition-colors hover:text-foreground disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  {launchDirectoryPending ? (
+                    <Loader2 className="h-3.5 w-3.5 shrink-0 animate-spin" />
+                  ) : (
+                    <FolderOpen className="h-3.5 w-3.5 shrink-0" />
+                  )}
+                  <span className="shrink-0 font-medium">{dt("工作目录")}</span>
+                  <span className="min-w-0 flex-1 truncate text-foreground/80">
+                    {launchDirectoryLabel(launchDirectory)}
+                  </span>
+                </button>
               )}
 
               {status?.runtimeStatus && (

@@ -1583,6 +1583,8 @@ pub fn run() {
             commands::probe_tool_installations,
             // Provider terminal
             commands::open_provider_terminal,
+            commands::get_tool_launch_cwd,
+            commands::set_tool_launch_cwd,
             commands::launch_tool,
             commands::get_codex_session_bridge_status,
             commands::get_yuanheng_connection,

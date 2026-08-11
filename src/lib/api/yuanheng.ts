@@ -3,6 +3,22 @@ import type { AppId } from "./types";
 
 export type YuanhengToolId = AppId | "chatgpt-desktop" | "workbuddy";
 
+export const YUANHENG_CLI_TOOLS = [
+  "claude",
+  "codex",
+  "gemini",
+  "grokbuild",
+  "opencode",
+  "openclaw",
+  "hermes",
+] as const satisfies readonly YuanhengToolId[];
+
+export type YuanhengCliToolId = (typeof YUANHENG_CLI_TOOLS)[number];
+
+export const isYuanhengCliTool = (
+  app: YuanhengToolId,
+): app is YuanhengCliToolId => YUANHENG_CLI_TOOLS.some((tool) => tool === app);
+
 export interface YuanhengAccount {
   username: string;
   displayName: string;
@@ -218,7 +234,22 @@ export const yuanhengApi = {
     });
   },
 
-  launchTool(app: YuanhengToolId, restart = false): Promise<boolean> {
-    return invoke("launch_tool", { tool: app, restart });
+  getLaunchDirectory(app: YuanhengToolId): Promise<string | null> {
+    return invoke("get_tool_launch_cwd", { tool: app });
+  },
+
+  setLaunchDirectory(app: YuanhengToolId, cwd: string): Promise<string> {
+    return invoke("set_tool_launch_cwd", { tool: app, cwd });
+  },
+
+  launchTool(
+    app: YuanhengToolId,
+    restart = false,
+    cwd?: string,
+  ): Promise<boolean> {
+    return invoke(
+      "launch_tool",
+      cwd ? { tool: app, restart, cwd } : { tool: app, restart },
+    );
   },
 };

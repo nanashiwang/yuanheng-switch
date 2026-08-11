@@ -2,12 +2,13 @@ import { useMemo, useState } from "react";
 import {
   AlertTriangle,
   CheckCircle2,
+  FolderOpen,
   Loader2,
   Play,
   RefreshCw,
   Wrench,
 } from "lucide-react";
-import type { YuanhengToolId } from "@/lib/api";
+import { isYuanhengCliTool, type YuanhengToolId } from "@/lib/api";
 import { ProviderIcon } from "@/components/ProviderIcon";
 import {
   Select,
@@ -23,6 +24,7 @@ import {
 } from "./useModelSwitchCenter";
 import { groupModelsByVendor, modelVendorOf } from "./modelVendors";
 import { dt } from "./desktopI18n";
+import { launchDirectoryLabel } from "./useToolLaunchDirectories";
 
 interface FocusToolCardProps {
   switcher: ModelSwitchCenterState;
@@ -240,10 +242,13 @@ export function FocusToolCard({
     reasoning,
     pendingApps,
     restartRequiredApps,
+    launchDirectories,
+    launchDirectoryPendingApps,
     statusMap,
     refreshModels,
     applyModel,
     applyGroup,
+    chooseLaunchDirectory,
     launch,
   } = switcher;
 
@@ -283,6 +288,8 @@ export function FocusToolCard({
   }
 
   const pending = pendingApps.has(app);
+  const launchDirectory = launchDirectories[app];
+  const launchDirectoryPending = launchDirectoryPendingApps.has(app);
   const configured = Boolean(status?.configured);
   const restartRequired = restartRequiredApps.has(app);
   const selectedVendor =
@@ -384,6 +391,28 @@ export function FocusToolCard({
           <span className="rounded-full bg-white/10 px-2 py-0.5 text-[10px] text-white/75">
             {currentReasoning} {dt("推理")}
           </span>
+        )}
+        {isYuanhengCliTool(app) && (
+          <button
+            type="button"
+            disabled={pending || launchDirectoryPending}
+            aria-label={dt("选择 {{tool}} 工作目录", {
+              tool: toolLabel(app),
+            })}
+            title={launchDirectory ?? dt("用户主目录")}
+            onClick={() => void chooseLaunchDirectory(app)}
+            className="inline-flex min-w-0 items-center gap-1.5 text-[10px] text-white/60 transition-colors hover:text-white disabled:cursor-not-allowed disabled:opacity-50"
+          >
+            {launchDirectoryPending ? (
+              <Loader2 className="h-3 w-3 shrink-0 animate-spin" />
+            ) : (
+              <FolderOpen className="h-3 w-3 shrink-0" />
+            )}
+            <span>{dt("工作目录")}</span>
+            <span className="max-w-[180px] truncate font-medium text-white/85">
+              {launchDirectoryLabel(launchDirectory)}
+            </span>
+          </button>
         )}
       </div>
 

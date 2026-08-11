@@ -3118,12 +3118,61 @@ pub async fn set_desktop_app_path(
     Ok(true)
 }
 
+fn ensure_launch_cwd_tool(tool: &str) -> Result<(), String> {
+    if tool_command(tool).is_some() {
+        Ok(())
+    } else {
+        Err(format!("不支持为该工具设置工作目录: {tool}"))
+    }
+}
+
+/// 读取 CLI 工具上次选择的工作目录。该路径只保存在本机 Store 中。
+#[tauri::command]
+pub async fn get_tool_launch_cwd(app: AppHandle, tool: String) -> Result<Option<String>, String> {
+    ensure_launch_cwd_tool(&tool)?;
+    Ok(crate::app_store::get_tool_launch_cwd_from_store(
+        &app, &tool,
+    ))
+}
+
+/// 校验并保存 CLI 工具的工作目录，返回规范化后的本地路径。
+#[tauri::command]
+pub async fn set_tool_launch_cwd(
+    app: AppHandle,
+    tool: String,
+    cwd: String,
+) -> Result<String, String> {
+    ensure_launch_cwd_tool(&tool)?;
+    let resolved =
+        resolve_launch_cwd(Some(cwd))?.ok_or_else(|| "请选择有效的工作目录".to_string())?;
+    let path = resolved.to_string_lossy().to_string();
+    crate::app_store::set_tool_launch_cwd_to_store(&app, &tool, Some(&path))
+        .map_err(|e| e.to_string())?;
+    Ok(path)
+}
+
+fn resolve_tool_launch_cwd(
+    app: &AppHandle,
+    tool: &str,
+    cwd: Option<String>,
+) -> Result<PathBuf, String> {
+    ensure_launch_cwd_tool(tool)?;
+    let requested = cwd
+        .filter(|path| !path.trim().is_empty())
+        .or_else(|| crate::app_store::get_tool_launch_cwd_from_store(app, tool))
+        .or_else(|| dirs::home_dir().map(|path| path.to_string_lossy().to_string()))
+        .ok_or_else(|| "无法确定用户主目录，请先选择工作目录".to_string())?;
+
+    resolve_launch_cwd(Some(requested))?.ok_or_else(|| "无法确定工作目录，请重新选择".to_string())
+}
+
 /// 在新终端中启动已经配置好的 AI CLI。
 #[tauri::command]
 pub async fn launch_tool(
     app: AppHandle,
     tool: String,
     restart: Option<bool>,
+    cwd: Option<String>,
 ) -> Result<bool, String> {
     if tool == "claude-desktop" {
         tokio::task::spawn_blocking(move || launch_claude_desktop(restart.unwrap_or(false)))
@@ -3144,21 +3193,27 @@ pub async fn launch_tool(
         return Ok(true);
     }
     if tool == "codex" {
+        let launch_cwd = resolve_tool_launch_cwd(&app, &tool, cwd)?;
         let codex_executable = resolve_path_launch_command("codex")
             .unwrap_or_else(|| std::path::PathBuf::from("codex"));
         let endpoint =
             crate::services::codex_session_bridge::ensure_codex_session_bridge(codex_executable)
                 .await?;
         let command = format!("codex --remote {endpoint}");
-        tokio::task::spawn_blocking(move || launch_terminal_running(&command, "tool_codex"))
-            .await
-            .map_err(|e| format!("Codex 启动任务执行失败: {e}"))??;
+        tokio::task::spawn_blocking(move || {
+            launch_terminal_running(&command, "tool_codex", Some(&launch_cwd))
+        })
+        .await
+        .map_err(|e| format!("Codex 启动任务执行失败: {e}"))??;
         return Ok(true);
     }
     let command = tool_command(&tool).ok_or_else(|| format!("不支持的 AI 工具: {tool}"))?;
-    tokio::task::spawn_blocking(move || launch_terminal_running(command, &format!("tool_{tool}")))
-        .await
-        .map_err(|e| format!("AI 工具启动任务执行失败: {e}"))??;
+    let launch_cwd = resolve_tool_launch_cwd(&app, &tool, cwd)?;
+    tokio::task::spawn_blocking(move || {
+        launch_terminal_running(command, &format!("tool_{tool}"), Some(&launch_cwd))
+    })
+    .await
+    .map_err(|e| format!("AI 工具启动任务执行失败: {e}"))??;
     Ok(true)
 }
 
@@ -3819,6 +3874,17 @@ fn shell_single_quote(value: &str) -> String {
     format!("'{}'", value.replace('\'', "'\"'\"'"))
 }
 
+#[cfg_attr(target_os = "windows", allow(dead_code))]
+fn build_unix_cwd_command(cwd: Option<&Path>) -> String {
+    cwd.map(|dir| {
+        format!(
+            "cd {} || exit 1\n",
+            shell_single_quote(&dir.to_string_lossy())
+        )
+    })
+    .unwrap_or_default()
+}
+
 #[cfg_attr(not(target_os = "windows"), allow(dead_code))]
 fn is_windows_unc_path(path: &str) -> bool {
     path.starts_with(r"\\")
@@ -3887,25 +3953,31 @@ fn run_windows_start_command(args: &[&str], terminal_name: &str) -> Result<(), S
 ///
 /// **Security**：`command_line` 会被原样拼进 shell/batch 脚本，调用方必须
 /// 保证它是可信字符串（当前只由后端硬编码调用）。
-pub(crate) fn launch_terminal_running(command_line: &str, label: &str) -> Result<(), String> {
+pub(crate) fn launch_terminal_running(
+    command_line: &str,
+    label: &str,
+    cwd: Option<&Path>,
+) -> Result<(), String> {
     let temp_dir = std::env::temp_dir();
     let pid = std::process::id();
 
     #[cfg(any(target_os = "macos", target_os = "linux"))]
     let (script_file, script_content) = {
         let file = temp_dir.join(format!("yuanheng_switch_{}_{}.sh", label, pid));
+        let cwd_command = build_unix_cwd_command(cwd);
         let content = format!(
             r#"#!/usr/bin/env sh
 trap 'rm -f "{script_path}"' EXIT
 echo "[yuanheng-switch] Starting: {label}"
 echo ""
-{cmd}
+{cwd_command}{cmd}
 echo ""
 echo "[yuanheng-switch] Command exited. Press Enter to close."
 read -r _
 "#,
             script_path = file.display(),
             label = label,
+            cwd_command = cwd_command,
             cmd = command_line,
         );
         (file, content)
@@ -4020,9 +4092,11 @@ read -r _
         let terminal = preferred.as_deref().unwrap_or("cmd");
 
         let bat_file = temp_dir.join(format!("yuanheng_switch_{}_{}.bat", label, pid));
+        let cwd_command = build_windows_cwd_command(cwd);
         let content = format!(
-            "@echo off\r\necho [yuanheng-switch] Starting: {label}\r\necho.\r\n{cmd}\r\necho.\r\necho [yuanheng-switch] Command exited. Press any key to close.\r\npause >nul\r\ndel \"%~f0\" >nul 2>&1\r\n",
+            "@echo off\r\necho [yuanheng-switch] Starting: {label}\r\necho.\r\n{cwd_command}{cmd}\r\necho.\r\necho [yuanheng-switch] Command exited. Press any key to close.\r\npause >nul\r\ndel \"%~f0\" >nul 2>&1\r\n",
             label = label,
+            cwd_command = cwd_command,
             cmd = command_line,
         );
         std::fs::write(&bat_file, &content).map_err(|e| format!("写入批处理文件失败: {e}"))?;
@@ -4061,7 +4135,7 @@ read -r _
 
     #[cfg(not(any(target_os = "macos", target_os = "linux", target_os = "windows")))]
     {
-        let _ = (temp_dir, pid, command_line, label);
+        let _ = (temp_dir, pid, command_line, label, cwd);
         Err("不支持的操作系统".to_string())
     }
 }
@@ -5934,6 +6008,23 @@ mod tests {
         assert_eq!(tool_command("claude-desktop"), None);
     }
 
+    #[test]
+    fn launch_cwd_support_matches_cli_tools() {
+        for tool in [
+            "claude",
+            "codex",
+            "gemini",
+            "grokbuild",
+            "opencode",
+            "openclaw",
+            "hermes",
+        ] {
+            assert!(ensure_launch_cwd_tool(tool).is_ok(), "{tool}");
+        }
+        assert!(ensure_launch_cwd_tool("claude-desktop").is_err());
+        assert!(ensure_launch_cwd_tool("unknown").is_err());
+    }
+
     #[cfg(target_os = "macos")]
     #[test]
     fn iterm2_applescript_cold_start_avoids_current_window_before_one_exists() {
@@ -6100,6 +6191,18 @@ mod tests {
             build_macos_ghostty_applescript(p).contains(expected),
             "Ghostty did not keep the non-exec launcher"
         );
+    }
+
+    #[test]
+    fn build_unix_cwd_command_quotes_spaces_and_single_quotes() {
+        let command = build_unix_cwd_command(Some(Path::new("/Users/me/project O'Brien")));
+
+        assert_eq!(command, "cd '/Users/me/project O'\"'\"'Brien' || exit 1\n");
+    }
+
+    #[test]
+    fn build_unix_cwd_command_is_empty_without_a_directory() {
+        assert_eq!(build_unix_cwd_command(None), "");
     }
 
     #[test]

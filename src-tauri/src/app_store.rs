@@ -9,6 +9,7 @@ use crate::error::AppError;
 /// Store 中的键名
 const STORE_KEY_APP_CONFIG_DIR: &str = "app_config_dir_override";
 const STORE_KEY_DESKTOP_APP_PATHS: &str = "desktop_app_paths";
+const STORE_KEY_TOOL_LAUNCH_CWDS: &str = "tool_launch_cwds";
 
 /// 缓存当前的 app_config_dir 覆盖路径，避免存储 AppHandle
 static APP_CONFIG_DIR_OVERRIDE: OnceLock<RwLock<Option<PathBuf>>> = OnceLock::new();
@@ -153,6 +154,53 @@ pub fn set_desktop_app_path_to_store(
         store.delete(STORE_KEY_DESKTOP_APP_PATHS);
     } else {
         store.set(STORE_KEY_DESKTOP_APP_PATHS, Value::Object(paths));
+    }
+    store
+        .save()
+        .map_err(|e| AppError::Message(format!("保存 Store 失败: {e}")))?;
+    Ok(())
+}
+
+/// 读取 CLI 工具上次选择的本地工作目录。目录仅保存在本机 Store 中。
+pub fn get_tool_launch_cwd_from_store(app: &tauri::AppHandle, tool: &str) -> Option<String> {
+    let store = app.store_builder("app_paths.json").build().ok()?;
+    store
+        .get(STORE_KEY_TOOL_LAUNCH_CWDS)
+        .and_then(|value| value.as_object().cloned())
+        .and_then(|paths| paths.get(tool).cloned())
+        .and_then(|value| value.as_str().map(str::to_string))
+        .map(|path| path.trim().to_string())
+        .filter(|path| !path.is_empty())
+}
+
+/// 保存或清除 CLI 工具的本地工作目录。不同工具互不覆盖。
+pub fn set_tool_launch_cwd_to_store(
+    app: &tauri::AppHandle,
+    tool: &str,
+    path: Option<&str>,
+) -> Result<(), AppError> {
+    let store = app
+        .store_builder("app_paths.json")
+        .build()
+        .map_err(|e| AppError::Message(format!("创建 Store 失败: {e}")))?;
+    let mut paths = store
+        .get(STORE_KEY_TOOL_LAUNCH_CWDS)
+        .and_then(|value| value.as_object().cloned())
+        .unwrap_or_else(Map::new);
+
+    match path.map(str::trim).filter(|path| !path.is_empty()) {
+        Some(path) => {
+            paths.insert(tool.to_string(), Value::String(path.to_string()));
+        }
+        None => {
+            paths.remove(tool);
+        }
+    }
+
+    if paths.is_empty() {
+        store.delete(STORE_KEY_TOOL_LAUNCH_CWDS);
+    } else {
+        store.set(STORE_KEY_TOOL_LAUNCH_CWDS, Value::Object(paths));
     }
     store
         .save()

@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import {
+  isYuanhengCliTool,
   type YuanhengReasoningLevel,
   type YuanhengToolId,
   yuanhengTerminalModels,
@@ -29,6 +30,10 @@ import {
   subscribeRestartRequired,
 } from "./desktopRestartState";
 import { dt } from "./desktopI18n";
+import {
+  launchDirectoryLabel,
+  useToolLaunchDirectories,
+} from "./useToolLaunchDirectories";
 
 export const providerIconOf = (app: YuanhengToolId) =>
   app === "codex" || app === "chatgpt-desktop"
@@ -150,6 +155,9 @@ export function useModelSwitchCenter() {
       }),
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [statusMap, versionMap],
+  );
+  const launchDirectoryState = useToolLaunchDirectories(
+    Boolean(connection?.connected),
   );
 
   const hasInventory = inventory.data !== undefined;
@@ -340,6 +348,21 @@ export function useModelSwitchCenter() {
       dt("{{v0}} 推理等级已更新 · {{v1}}", { v0: toolLabel(app), v1: model }),
     );
 
+  const chooseLaunchDirectory = async (app: YuanhengToolId) => {
+    try {
+      const saved = await launchDirectoryState.chooseDirectory(app);
+      if (!saved) return;
+      toast.success(
+        dt("已将 {{tool}} 工作目录切换为 {{directory}}", {
+          tool: toolLabel(app),
+          directory: launchDirectoryLabel(saved),
+        }),
+      );
+    } catch (error) {
+      toast.error(extractErrorMessage(error) || dt("选择工作目录失败"));
+    }
+  };
+
   const launch = async (app: YuanhengToolId) => {
     const operationId = beginOperation(app);
     try {
@@ -388,7 +411,13 @@ export function useModelSwitchCenter() {
       }
       if (!isCurrentOperation(app, operationId)) return;
       const shouldRestart = isDesktopApp(app) && (dirty || restartPending);
-      await yuanhengApi.launchTool(app, shouldRestart);
+      await yuanhengApi.launchTool(
+        app,
+        shouldRestart,
+        isYuanhengCliTool(app)
+          ? launchDirectoryState.directories[app]
+          : undefined,
+      );
       if (shouldRestart) clearRestartRequired(app);
       if (!isCurrentOperation(app, operationId)) return;
       if (app === "codex") await codexBridge.refetch();
@@ -416,12 +445,15 @@ export function useModelSwitchCenter() {
     reasoning,
     pendingApps,
     restartRequiredApps,
+    launchDirectories: launchDirectoryState.directories,
+    launchDirectoryPendingApps: launchDirectoryState.pendingApps,
     statusMap,
     codexBridge,
     refreshModels,
     applyModel,
     applyGroup,
     applyReasoning,
+    chooseLaunchDirectory,
     launch,
   };
 }
