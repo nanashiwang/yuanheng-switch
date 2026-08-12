@@ -78,10 +78,7 @@ fn normalize_installed_skill_order(skills: &[InstalledSkill], requested: &[Strin
     normalized
 }
 
-fn sort_installed_skills(
-    skills: Vec<InstalledSkill>,
-    requested: &[String],
-) -> Vec<InstalledSkill> {
+fn sort_installed_skills(skills: Vec<InstalledSkill>, requested: &[String]) -> Vec<InstalledSkill> {
     let normalized = normalize_installed_skill_order(&skills, requested);
     let mut by_id: HashMap<String, InstalledSkill> = skills
         .into_iter()
@@ -118,11 +115,7 @@ mod order_tests {
     #[test]
     fn normalizes_stale_duplicate_and_unknown_ids() {
         let skills = vec![skill("a"), skill("b"), skill("c")];
-        let requested = vec![
-            "c".to_string(),
-            "deleted".to_string(),
-            "c".to_string(),
-        ];
+        let requested = vec!["c".to_string(), "deleted".to_string(), "c".to_string()];
 
         assert_eq!(
             normalize_installed_skill_order(&skills, &requested),

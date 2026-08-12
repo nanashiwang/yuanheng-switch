@@ -244,7 +244,9 @@ pub fn set_installed_skill_order_to_store(
 ) -> Result<(), AppError> {
     const MAX_INSTALLED_SKILL_ORDER_ITEMS: usize = 10_000;
     if order.len() > MAX_INSTALLED_SKILL_ORDER_ITEMS {
-        return Err(AppError::Message("Skill 排序项数量超过安全限制".to_string()));
+        return Err(AppError::Message(
+            "Skill 排序项数量超过安全限制".to_string(),
+        ));
     }
 
     let store = app
