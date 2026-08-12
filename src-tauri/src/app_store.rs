@@ -10,6 +10,7 @@ use crate::error::AppError;
 const STORE_KEY_APP_CONFIG_DIR: &str = "app_config_dir_override";
 const STORE_KEY_DESKTOP_APP_PATHS: &str = "desktop_app_paths";
 const STORE_KEY_TOOL_LAUNCH_CWDS: &str = "tool_launch_cwds";
+const STORE_KEY_INSTALLED_SKILL_ORDER: &str = "installed_skill_order";
 
 /// 缓存当前的 app_config_dir 覆盖路径，避免存储 AppHandle
 static APP_CONFIG_DIR_OVERRIDE: OnceLock<RwLock<Option<PathBuf>>> = OnceLock::new();
@@ -202,6 +203,64 @@ pub fn set_tool_launch_cwd_to_store(
     } else {
         store.set(STORE_KEY_TOOL_LAUNCH_CWDS, Value::Object(paths));
     }
+    store
+        .save()
+        .map_err(|e| AppError::Message(format!("保存 Store 失败: {e}")))?;
+    Ok(())
+}
+
+/// 读取已安装 Skill 的本机展示顺序。
+///
+/// 这里只保存 Skill 内部 ID，不保存绝对路径或描述；Store 文件始终留在本机。
+pub fn get_installed_skill_order_from_store(app: &tauri::AppHandle) -> Vec<String> {
+    let store = match app.store_builder("app_paths.json").build() {
+        Ok(store) => store,
+        Err(error) => {
+            log::warn!("无法读取已安装 Skill 排序 Store: {error}");
+            return Vec::new();
+        }
+    };
+    let values = match store.get(STORE_KEY_INSTALLED_SKILL_ORDER) {
+        Some(Value::Array(values)) => values,
+        Some(_) => {
+            log::warn!("Store 中的 {STORE_KEY_INSTALLED_SKILL_ORDER} 类型不正确，应为数组");
+            return Vec::new();
+        }
+        None => return Vec::new(),
+    };
+
+    let mut seen = std::collections::HashSet::new();
+    values
+        .into_iter()
+        .filter_map(|value| value.as_str().map(str::to_string))
+        .filter(|id| !id.is_empty() && seen.insert(id.clone()))
+        .collect()
+}
+
+/// 保存已安装 Skill 的本机展示顺序。
+pub fn set_installed_skill_order_to_store(
+    app: &tauri::AppHandle,
+    order: &[String],
+) -> Result<(), AppError> {
+    const MAX_INSTALLED_SKILL_ORDER_ITEMS: usize = 10_000;
+    if order.len() > MAX_INSTALLED_SKILL_ORDER_ITEMS {
+        return Err(AppError::Message("Skill 排序项数量超过安全限制".to_string()));
+    }
+
+    let store = app
+        .store_builder("app_paths.json")
+        .build()
+        .map_err(|e| AppError::Message(format!("创建 Store 失败: {e}")))?;
+
+    if order.is_empty() {
+        store.delete(STORE_KEY_INSTALLED_SKILL_ORDER);
+    } else {
+        store.set(
+            STORE_KEY_INSTALLED_SKILL_ORDER,
+            Value::Array(order.iter().cloned().map(Value::String).collect()),
+        );
+    }
+
     store
         .save()
         .map_err(|e| AppError::Message(format!("保存 Store 失败: {e}")))?;

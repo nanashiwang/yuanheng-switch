@@ -12,9 +12,10 @@ use crate::services::skill::{
     SkillsShSearchResult,
 };
 use crate::store::AppState;
+use std::collections::{HashMap, HashSet};
 use std::str::FromStr;
 use std::sync::Arc;
-use tauri::State;
+use tauri::{AppHandle, State};
 
 /// SkillService 状态包装
 pub struct SkillServiceState(pub Arc<SkillService>);
@@ -28,8 +29,117 @@ fn parse_app_type(app: &str) -> Result<AppType, String> {
 
 /// 获取所有已安装的 Skills
 #[tauri::command]
-pub fn get_installed_skills(app_state: State<'_, AppState>) -> Result<Vec<InstalledSkill>, String> {
-    SkillService::get_all_installed(&app_state.db).map_err(|e| e.to_string())
+pub fn get_installed_skills(
+    app: AppHandle,
+    app_state: State<'_, AppState>,
+) -> Result<Vec<InstalledSkill>, String> {
+    let skills = SkillService::get_all_installed(&app_state.db).map_err(|e| e.to_string())?;
+    let order = crate::app_store::get_installed_skill_order_from_store(&app);
+    Ok(sort_installed_skills(skills, &order))
+}
+
+/// 保存已安装 Skills 的本机展示顺序。
+///
+/// 客户端提交的 ID 会与数据库中的已安装项求交集、去重，并自动补齐遗漏项，
+/// 避免恶意或过期输入污染 Store。该顺序不改变任何 CLI 的 Skill 加载优先级。
+#[tauri::command]
+pub fn set_installed_skill_order(
+    app: AppHandle,
+    ids: Vec<String>,
+    app_state: State<'_, AppState>,
+) -> Result<Vec<String>, String> {
+    const MAX_REQUESTED_SKILL_ORDER_ITEMS: usize = 10_000;
+    if ids.len() > MAX_REQUESTED_SKILL_ORDER_ITEMS {
+        return Err("Skill 排序项数量超过安全限制".to_string());
+    }
+
+    let skills = SkillService::get_all_installed(&app_state.db).map_err(|e| e.to_string())?;
+    let normalized = normalize_installed_skill_order(&skills, &ids);
+    crate::app_store::set_installed_skill_order_to_store(&app, &normalized)
+        .map_err(|e| e.to_string())?;
+    Ok(normalized)
+}
+
+fn normalize_installed_skill_order(skills: &[InstalledSkill], requested: &[String]) -> Vec<String> {
+    let known: HashSet<String> = skills.iter().map(|skill| skill.id.clone()).collect();
+    let mut seen: HashSet<String> = HashSet::new();
+    let mut normalized: Vec<String> = requested
+        .iter()
+        .filter(|id| known.contains(*id) && seen.insert((*id).clone()))
+        .cloned()
+        .collect();
+
+    normalized.extend(
+        skills
+            .iter()
+            .filter(|skill| seen.insert(skill.id.clone()))
+            .map(|skill| skill.id.clone()),
+    );
+    normalized
+}
+
+fn sort_installed_skills(
+    skills: Vec<InstalledSkill>,
+    requested: &[String],
+) -> Vec<InstalledSkill> {
+    let normalized = normalize_installed_skill_order(&skills, requested);
+    let mut by_id: HashMap<String, InstalledSkill> = skills
+        .into_iter()
+        .map(|skill| (skill.id.clone(), skill))
+        .collect();
+    normalized
+        .into_iter()
+        .filter_map(|id| by_id.remove(&id))
+        .collect()
+}
+
+#[cfg(test)]
+mod order_tests {
+    use super::{normalize_installed_skill_order, sort_installed_skills};
+    use crate::app_config::{InstalledSkill, SkillApps};
+
+    fn skill(id: &str) -> InstalledSkill {
+        InstalledSkill {
+            id: id.to_string(),
+            name: id.to_uppercase(),
+            description: None,
+            directory: id.to_string(),
+            repo_owner: None,
+            repo_name: None,
+            repo_branch: None,
+            readme_url: None,
+            apps: SkillApps::default(),
+            installed_at: 0,
+            content_hash: None,
+            updated_at: 0,
+        }
+    }
+
+    #[test]
+    fn normalizes_stale_duplicate_and_unknown_ids() {
+        let skills = vec![skill("a"), skill("b"), skill("c")];
+        let requested = vec![
+            "c".to_string(),
+            "deleted".to_string(),
+            "c".to_string(),
+        ];
+
+        assert_eq!(
+            normalize_installed_skill_order(&skills, &requested),
+            vec!["c", "a", "b"]
+        );
+    }
+
+    #[test]
+    fn appends_new_skills_in_the_existing_stable_order() {
+        let skills = vec![skill("a"), skill("b"), skill("new")];
+        let sorted = sort_installed_skills(skills, &["b".to_string(), "a".to_string()]);
+
+        assert_eq!(
+            sorted.into_iter().map(|item| item.id).collect::<Vec<_>>(),
+            vec!["b", "a", "new"]
+        );
+    }
 }
 
 #[tauri::command]

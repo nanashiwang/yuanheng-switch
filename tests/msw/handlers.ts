@@ -253,6 +253,13 @@ export const handlers = [
     return success(setToolLaunchDirectory(tool, cwd));
   }),
   http.post(`${TAURI_ENDPOINT}/get_installed_skills`, () => success([])),
+  http.post(
+    `${TAURI_ENDPOINT}/set_installed_skill_order`,
+    async ({ request }) => {
+      const { ids } = await withJson<{ ids: string[] }>(request);
+      return success(ids);
+    },
+  ),
   http.post(`${TAURI_ENDPOINT}/get_mcp_servers`, () => success({})),
   http.post(`${TAURI_ENDPOINT}/get_prompts`, () => success({})),
   http.post(`${TAURI_ENDPOINT}/get_tool_versions`, async ({ request }) => {

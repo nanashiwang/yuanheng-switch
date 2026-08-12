@@ -2335,6 +2335,10 @@
     "updateAll": "全部更新 ({{count}})",
     "updatingAll": "更新中...",
     "updateAllSuccess": "已成功更新 {{count}} 个技能",
+    "dragHandle": "拖动技能 {{name}} 进行排序",
+    "dragHint": "拖动调整客户端显示顺序，不影响 CLI 加载优先级",
+    "sortUpdated": "技能顺序已保存",
+    "sortUpdateFailed": "技能排序保存失败，已恢复原顺序",
     "error": {
       "skillNotFound": "技能不存在：{{directory}}",
       "missingRepoInfo": "缺少仓库信息（owner 或 name）",

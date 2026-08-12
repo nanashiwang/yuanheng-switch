@@ -2335,6 +2335,10 @@
     "updateAll": "Update All ({{count}})",
     "updatingAll": "Updating...",
     "updateAllSuccess": "Successfully updated {{count}} skill(s)",
+    "dragHandle": "Drag {{name}} to reorder",
+    "dragHint": "Changes the client display order only; CLI loading priority is unaffected",
+    "sortUpdated": "Skill order saved",
+    "sortUpdateFailed": "Failed to save skill order; the previous order was restored",
     "error": {
       "skillNotFound": "Skill not found: {{directory}}",
       "missingRepoInfo": "Missing repository info (owner or name)",
