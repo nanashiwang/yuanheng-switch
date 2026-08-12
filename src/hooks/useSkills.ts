@@ -30,6 +30,38 @@ export function useInstalledSkills() {
   });
 }
 
+/**
+ * 调整已安装 Skills 的本机展示顺序。
+ * 使用乐观更新保证拖拽即时反馈；持久化失败时恢复原顺序。
+ */
+export function useReorderInstalledSkills() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (skills: InstalledSkill[]) =>
+      skillsApi.setInstalledOrder(skills.map((skill) => skill.id)),
+    onMutate: async (skills) => {
+      await queryClient.cancelQueries({ queryKey: ["skills", "installed"] });
+      const previous = queryClient.getQueryData<InstalledSkill[]>([
+        "skills",
+        "installed",
+      ]);
+      queryClient.setQueryData(["skills", "installed"], skills);
+      return { previous };
+    },
+    onError: (_error, _skills, context) => {
+      if (context?.previous) {
+        queryClient.setQueryData(["skills", "installed"], context.previous);
+      }
+    },
+    onSuccess: async () => {
+      // 重新读取后端规范化后的完整顺序，避免并发安装的新 Skill 被旧快照覆盖。
+      await queryClient.invalidateQueries({
+        queryKey: ["skills", "installed"],
+      });
+    },
+  });
+}
+
 export function useSkillBackups() {
   return useQuery({
     queryKey: ["skills", "backups"],

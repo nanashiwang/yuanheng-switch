@@ -143,6 +143,11 @@ export const skillsApi = {
     return await invoke("get_installed_skills");
   },
 
+  /** 保存已安装 Skills 的本机展示顺序 */
+  async setInstalledOrder(ids: string[]): Promise<string[]> {
+    return await invoke("set_installed_skill_order", { ids });
+  },
+
   /** 获取可恢复的 Skill 备份列表 */
   async getBackups(): Promise<SkillBackupEntry[]> {
     return await invoke("get_skill_backups");

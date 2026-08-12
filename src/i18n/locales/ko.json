@@ -2335,6 +2335,10 @@
     "updateAll": "모두 업데이트 ({{count}})",
     "updatingAll": "업데이트 중입니다...",
     "updateAllSuccess": "{{count}} 스킬을 성공적으로 업데이트했습니다",
+    "dragHandle": "{{name}} 스킬을 드래그하여 순서 변경",
+    "dragHint": "클라이언트 표시 순서만 변경하며 CLI 로딩 우선순위에는 영향을 주지 않습니다",
+    "sortUpdated": "스킬 순서가 저장되었습니다",
+    "sortUpdateFailed": "스킬 순서를 저장하지 못해 이전 순서로 복원했습니다",
     "error": {
       "skillNotFound": "미발견 스킬: {{directory}}",
       "missingRepoInfo": "저장소 정보 누락(소유자 또는 이름)",

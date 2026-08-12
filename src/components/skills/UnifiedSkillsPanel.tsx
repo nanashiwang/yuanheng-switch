@@ -1,4 +1,21 @@
-import React, { useMemo, useState } from "react";
+import React, { useMemo, useState, type CSSProperties } from "react";
+import {
+  DndContext,
+  KeyboardSensor,
+  PointerSensor,
+  closestCenter,
+  useSensor,
+  useSensors,
+  type DragEndEvent,
+} from "@dnd-kit/core";
+import {
+  SortableContext,
+  arrayMove,
+  sortableKeyboardCoordinates,
+  useSortable,
+  verticalListSortingStrategy,
+} from "@dnd-kit/sortable";
+import { CSS } from "@dnd-kit/utilities";
 import { useTranslation } from "react-i18next";
 import {
   Sparkles,
@@ -8,6 +25,7 @@ import {
   Loader2,
   Search,
   Download,
+  GripVertical,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -17,6 +35,7 @@ import {
   type SkillBackupEntry,
   useDeleteSkillBackup,
   useInstalledSkills,
+  useReorderInstalledSkills,
   useSkillBackups,
   useRestoreSkillBackup,
   useToggleSkillApp,
@@ -90,6 +109,7 @@ const UnifiedSkillsPanel = React.forwardRef<
   } = useSkillBackups();
   const deleteBackupMutation = useDeleteSkillBackup();
   const toggleAppMutation = useToggleSkillApp();
+  const reorderMutation = useReorderInstalledSkills();
   const uninstallMutation = useUninstallSkill();
   const restoreBackupMutation = useRestoreSkillBackup();
   // enabled: true —— 进入 Skill 页面时自动静默扫描一次（绿点提示来源）
@@ -104,6 +124,38 @@ const UnifiedSkillsPanel = React.forwardRef<
   } = useCheckSkillUpdates();
   const updateSkillMutation = useUpdateSkill();
   const [isUpdatingAll, setIsUpdatingAll] = useState(false);
+  const sensors = useSensors(
+    useSensor(PointerSensor, {
+      activationConstraint: { distance: 8 },
+    }),
+    useSensor(KeyboardSensor, {
+      coordinateGetter: sortableKeyboardCoordinates,
+    }),
+  );
+
+  const handleDragEnd = async ({ active, over }: DragEndEvent) => {
+    if (
+      !skills ||
+      !over ||
+      active.id === over.id ||
+      reorderMutation.isPending
+    ) {
+      return;
+    }
+
+    const oldIndex = skills.findIndex((skill) => skill.id === active.id);
+    const newIndex = skills.findIndex((skill) => skill.id === over.id);
+    if (oldIndex < 0 || newIndex < 0) return;
+
+    try {
+      await reorderMutation.mutateAsync(arrayMove(skills, oldIndex, newIndex));
+      toast.success(t("skills.sortUpdated"), { closeButton: true });
+    } catch (error) {
+      toast.error(t("skills.sortUpdateFailed"), {
+        description: String(error),
+      });
+    }
+  };
 
   const updatesMap = useMemo(() => {
     const map: Record<string, SkillUpdateInfo> = {};
@@ -432,23 +484,37 @@ const UnifiedSkillsPanel = React.forwardRef<
           </div>
         ) : (
           <TooltipProvider delayDuration={300}>
-            <div className="rounded-xl border border-border-default overflow-hidden">
-              {skills.map((skill, index) => (
-                <InstalledSkillListItem
-                  key={skill.id}
-                  skill={skill}
-                  hasUpdate={!!updatesMap[skill.id]}
-                  isUpdating={
-                    updateSkillMutation.isPending &&
-                    updateSkillMutation.variables === skill.id
-                  }
-                  onToggleApp={handleToggleApp}
-                  onUninstall={() => handleUninstall(skill)}
-                  onUpdate={() => handleUpdateSkill(skill)}
-                  isLast={index === skills.length - 1}
-                />
-              ))}
-            </div>
+            <DndContext
+              sensors={sensors}
+              collisionDetection={closestCenter}
+              onDragEnd={handleDragEnd}
+            >
+              <SortableContext
+                items={skills.map((skill) => skill.id)}
+                strategy={verticalListSortingStrategy}
+              >
+                <div className="rounded-xl border border-border-default overflow-hidden">
+                  {skills.map((skill, index) => (
+                    <InstalledSkillListItem
+                      key={skill.id}
+                      skill={skill}
+                      hasUpdate={!!updatesMap[skill.id]}
+                      isUpdating={
+                        updateSkillMutation.isPending &&
+                        updateSkillMutation.variables === skill.id
+                      }
+                      isSortingDisabled={
+                        skills.length < 2 || reorderMutation.isPending
+                      }
+                      onToggleApp={handleToggleApp}
+                      onUninstall={() => handleUninstall(skill)}
+                      onUpdate={() => handleUpdateSkill(skill)}
+                      isLast={index === skills.length - 1}
+                    />
+                  ))}
+                </div>
+              </SortableContext>
+            </DndContext>
           </TooltipProvider>
         )}
       </div>
@@ -498,6 +564,7 @@ interface InstalledSkillListItemProps {
   onToggleApp: (id: string, app: AppId, enabled: boolean) => void;
   onUninstall: () => void;
   onUpdate?: () => void;
+  isSortingDisabled?: boolean;
   isLast?: boolean;
 }
 
@@ -508,9 +575,25 @@ const InstalledSkillListItem: React.FC<InstalledSkillListItemProps> = ({
   onToggleApp,
   onUninstall,
   onUpdate,
+  isSortingDisabled = false,
   isLast,
 }) => {
   const { t } = useTranslation();
+  const {
+    setNodeRef,
+    attributes,
+    listeners,
+    transform,
+    transition,
+    isDragging,
+  } = useSortable({ id: skill.id, disabled: isSortingDisabled });
+
+  const style: CSSProperties = {
+    transform: CSS.Transform.toString(transform),
+    transition,
+    position: "relative",
+    zIndex: isDragging ? 10 : undefined,
+  };
 
   const openDocs = async () => {
     if (!skill.readmeUrl) return;
@@ -529,7 +612,24 @@ const InstalledSkillListItem: React.FC<InstalledSkillListItemProps> = ({
   }, [skill.repoOwner, skill.repoName, t]);
 
   return (
-    <ListItemRow isLast={isLast}>
+    <ListItemRow
+      ref={setNodeRef}
+      isLast={isLast}
+      style={style}
+      className={isDragging ? "bg-muted shadow-lg opacity-90" : "bg-background"}
+      data-testid={`installed-skill-${skill.id}`}
+    >
+      <button
+        type="button"
+        className="-ml-1.5 flex-shrink-0 cursor-grab touch-none rounded p-1 text-muted-foreground/50 transition-colors hover:bg-muted hover:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-default disabled:opacity-30"
+        aria-label={t("skills.dragHandle", { name: skill.name })}
+        title={t("skills.dragHint")}
+        disabled={isSortingDisabled}
+        {...attributes}
+        {...listeners}
+      >
+        <GripVertical className="h-4 w-4" />
+      </button>
       <div className="flex-1 min-w-0">
         <div className="flex items-center gap-1.5">
           <span className="font-medium text-sm text-foreground truncate">

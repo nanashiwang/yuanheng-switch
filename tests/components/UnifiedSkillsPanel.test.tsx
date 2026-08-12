@@ -13,19 +13,63 @@ const importSkillsMock = vi.fn();
 const installFromZipMock = vi.fn();
 const deleteSkillBackupMock = vi.fn();
 const restoreSkillBackupMock = vi.fn();
+const reorderSkillsMock = vi.fn();
+const toastErrorMock = vi.fn();
+const dndState = vi.hoisted(() => ({
+  onDragEnd: undefined as undefined | ((event: unknown) => Promise<void>),
+}));
+let installedSkillsData: any[] = [];
+
+vi.mock("@dnd-kit/core", async () => {
+  const React = await import("react");
+  return {
+    DndContext: ({ children, onDragEnd }: any) => {
+      dndState.onDragEnd = onDragEnd;
+      return React.createElement(React.Fragment, null, children);
+    },
+    KeyboardSensor: class {},
+    PointerSensor: class {},
+    closestCenter: vi.fn(),
+    useSensor: vi.fn(() => ({})),
+    useSensors: vi.fn((...sensors) => sensors),
+  };
+});
+
+vi.mock("@dnd-kit/sortable", async () => {
+  const React = await import("react");
+  const actual = await vi.importActual<any>("@dnd-kit/sortable");
+  return {
+    ...actual,
+    SortableContext: ({ children }: any) =>
+      React.createElement(React.Fragment, null, children),
+    useSortable: ({ id, disabled }: any) => ({
+      setNodeRef: vi.fn(),
+      attributes: { "data-sortable-id": id },
+      listeners: { onPointerDown: vi.fn() },
+      transform: null,
+      transition: null,
+      isDragging: false,
+      disabled,
+    }),
+  };
+});
 
 vi.mock("sonner", () => ({
   toast: {
     success: vi.fn(),
-    error: vi.fn(),
+    error: (...args: unknown[]) => toastErrorMock(...args),
     info: vi.fn(),
   },
 }));
 
 vi.mock("@/hooks/useSkills", () => ({
   useInstalledSkills: () => ({
-    data: [],
+    data: installedSkillsData,
     isLoading: false,
+  }),
+  useReorderInstalledSkills: () => ({
+    mutateAsync: reorderSkillsMock,
+    isPending: false,
   }),
   useSkillBackups: () => ({
     data: [],
@@ -94,6 +138,84 @@ describe("UnifiedSkillsPanel", () => {
     installFromZipMock.mockReset();
     deleteSkillBackupMock.mockReset();
     restoreSkillBackupMock.mockReset();
+    reorderSkillsMock.mockReset();
+    toastErrorMock.mockReset();
+    installedSkillsData = [];
+    dndState.onDragEnd = undefined;
+  });
+
+  it("reorders installed skills using the drag handle", async () => {
+    installedSkillsData = [
+      {
+        id: "a",
+        name: "Skill A",
+        directory: "a",
+        apps: {},
+        installedAt: 0,
+        updatedAt: 0,
+      },
+      {
+        id: "b",
+        name: "Skill B",
+        directory: "b",
+        apps: {},
+        installedAt: 0,
+        updatedAt: 0,
+      },
+    ];
+    reorderSkillsMock.mockResolvedValue(["b", "a"]);
+
+    render(
+      <UnifiedSkillsPanel onOpenDiscovery={() => {}} currentApp="claude" />,
+    );
+
+    expect(
+      screen.getAllByRole("button", { name: "skills.dragHandle" })[0],
+    ).toHaveAttribute("data-sortable-id", "a");
+
+    await act(async () => {
+      await dndState.onDragEnd?.({ active: { id: "a" }, over: { id: "b" } });
+    });
+
+    expect(reorderSkillsMock).toHaveBeenCalledWith([
+      expect.objectContaining({ id: "b" }),
+      expect.objectContaining({ id: "a" }),
+    ]);
+  });
+
+  it("reports a save failure without swallowing it", async () => {
+    installedSkillsData = [
+      {
+        id: "a",
+        name: "Skill A",
+        directory: "a",
+        apps: {},
+        installedAt: 0,
+        updatedAt: 0,
+      },
+      {
+        id: "b",
+        name: "Skill B",
+        directory: "b",
+        apps: {},
+        installedAt: 0,
+        updatedAt: 0,
+      },
+    ];
+    reorderSkillsMock.mockRejectedValue(new Error("disk full"));
+
+    render(
+      <UnifiedSkillsPanel onOpenDiscovery={() => {}} currentApp="claude" />,
+    );
+
+    await act(async () => {
+      await dndState.onDragEnd?.({ active: { id: "a" }, over: { id: "b" } });
+    });
+
+    expect(toastErrorMock).toHaveBeenCalledWith(
+      "skills.sortUpdateFailed",
+      expect.objectContaining({ description: "Error: disk full" }),
+    );
   });
 
   it("opens the import dialog without crashing when app toggles render", async () => {
