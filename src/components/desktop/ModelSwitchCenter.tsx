@@ -2,6 +2,8 @@ import {
   AlertTriangle,
   ArrowRight,
   CheckCircle2,
+  Download,
+  FolderOpen,
   Loader2,
   Play,
   RefreshCw,
@@ -11,7 +13,14 @@ import { Button } from "@/components/ui/button";
 import { ProviderIcon } from "@/components/ProviderIcon";
 import type { YuanhengReasoningLevel, YuanhengToolId } from "@/lib/api";
 import { ModelPicker } from "./ModelPicker";
-import { pickPreferredGroup, reasoningLabel, toolLabel } from "./ToolSetupGrid";
+import { CompactSelectPicker } from "./CompactSelectPicker";
+import {
+  DESKTOP_DOWNLOAD_URLS,
+  isDesktopApp,
+  pickPreferredGroup,
+  reasoningLabel,
+  toolLabel,
+} from "./ToolSetupGrid";
 import {
   providerIconOf,
   type ModelSwitchCenterState,
@@ -37,6 +46,7 @@ export function ModelSwitchCenter({
     bootstrapRefreshing,
     retryBootstrap,
     rows,
+    installedApps,
     models,
     groups,
     reasoning,
@@ -45,6 +55,8 @@ export function ModelSwitchCenter({
     statusMap,
     codexBridge,
     refreshModels,
+    install,
+    chooseDesktopPath,
     applyModel,
     applyGroup,
     applyReasoning,
@@ -53,20 +65,7 @@ export function ModelSwitchCenter({
   const groupMap = new Map(
     connection?.groups.map((group) => [group.id, group]),
   );
-
-  if (!connection?.connected) {
-    return (
-      <section className="flex min-h-40 flex-col items-center justify-center gap-2 rounded-2xl border bg-card p-6 text-center shadow-sm">
-        <Settings2 className="h-5 w-5 text-muted-foreground" />
-        <p className="text-[13px] font-medium">
-          {dt("连接元衡后即可在此切换模型")}
-        </p>
-        <p className="text-[11px] text-muted-foreground">
-          {dt("模型目录与可用分组来自你的元衡账号。")}
-        </p>
-      </section>
-    );
-  }
+  const connected = Boolean(connection?.connected);
 
   if (bootstrapPhase === "loading") {
     return (
@@ -111,27 +110,6 @@ export function ModelSwitchCenter({
     );
   }
 
-  if (bootstrapPhase === "error") {
-    return (
-      <section className="flex min-h-40 flex-col items-center justify-center gap-2 rounded-2xl border bg-card p-6 text-center shadow-sm">
-        <AlertTriangle className="h-5 w-5 text-amber-500" />
-        <p className="text-[13px] font-medium">{dt("本机工具检测失败")}</p>
-        <p className="text-[11px] text-muted-foreground">
-          {dt("检测失败不会再显示成“未安装”，请重新检测。")}
-        </p>
-        <Button
-          variant="outline"
-          size="sm"
-          className="mt-1"
-          onClick={() => void retryBootstrap()}
-        >
-          <RefreshCw className="h-3.5 w-3.5" />
-          {dt("重新检测")}
-        </Button>
-      </section>
-    );
-  }
-
   return (
     <section className="flex flex-col rounded-2xl border bg-card p-4 shadow-sm">
       <div className="flex items-center justify-between px-1 pb-3">
@@ -140,7 +118,9 @@ export function ModelSwitchCenter({
             {dt("快捷控制台")}
           </h2>
           <p className="mt-0.5 text-[11px] text-muted-foreground">
-            {dt("直接调整模型、令牌分组和推理等级")}
+            {connected
+              ? dt("直接调整模型、令牌分组和推理等级")
+              : dt("连接元衡后即可在此切换模型")}
           </p>
         </div>
         {bootstrapRefreshing && (
@@ -149,13 +129,40 @@ export function ModelSwitchCenter({
             aria-label={dt("正在核验工具状态")}
           />
         )}
+        <Button
+          variant="ghost"
+          size="sm"
+          disabled={bootstrapRefreshing}
+          onClick={() => void retryBootstrap()}
+        >
+          <RefreshCw
+            className={
+              bootstrapRefreshing ? "h-3.5 w-3.5 animate-spin" : "h-3.5 w-3.5"
+            }
+          />
+          {dt("重新检测")}
+        </Button>
         <Button variant="ghost" size="sm" onClick={onOpenTools}>
           {dt("安装与维护")}
           <ArrowRight className="h-3.5 w-3.5" />
         </Button>
       </div>
 
-      {bootstrapPhase === "empty" || rows.length === 0 ? (
+      {!connected && (
+        <div className="mb-3 flex items-center gap-2 rounded-xl border border-amber-500/25 bg-amber-500/[0.06] px-3 py-2 text-[10px] text-amber-800 dark:text-amber-200">
+          <Settings2 className="h-3.5 w-3.5 shrink-0" />
+          <span>{dt("模型目录与可用分组来自你的元衡账号。")}</span>
+        </div>
+      )}
+
+      {bootstrapPhase === "error" && (
+        <div className="mb-3 flex items-center gap-2 rounded-xl border border-amber-500/25 bg-amber-500/[0.06] px-3 py-2 text-[10px] text-amber-800 dark:text-amber-200">
+          <AlertTriangle className="h-3.5 w-3.5 shrink-0" />
+          <span>{dt("检测失败不会再显示成“未安装”，请重新检测。")}</span>
+        </div>
+      )}
+
+      {rows.length === 0 ? (
         <div className="flex min-h-32 flex-col items-center justify-center gap-3 rounded-xl border border-dashed text-center">
           <p className="text-[12px] text-muted-foreground">
             {dt("未检测到已安装的 AI 工具")}
@@ -168,7 +175,11 @@ export function ModelSwitchCenter({
         <div className="space-y-2">
           {rows.map((app) => {
             const status = statusMap.get(app);
-            const configured = Boolean(status?.configured);
+            const detectionFailed = bootstrapPhase === "error";
+            const installed = installedApps.has(app);
+            const supported = Boolean(status?.supported);
+            const runnable = connected && installed && supported;
+            const configured = Boolean(installed && status?.configured);
             const pending = pendingApps.has(app);
             const selectedModel =
               models[app] ??
@@ -176,7 +187,7 @@ export function ModelSwitchCenter({
               status?.recommendedModel ??
               undefined;
             const availableGroups = selectedModel
-              ? (connection.modelGroups[selectedModel] ?? [])
+              ? (connection?.modelGroups[selectedModel] ?? [])
               : [];
             const selectedGroup = selectedModel
               ? pickPreferredGroup(
@@ -186,10 +197,10 @@ export function ModelSwitchCenter({
                 )
               : undefined;
             const supportedReasoning = selectedModel
-              ? (connection.reasoningLevels[selectedModel] ?? [])
+              ? (connection?.reasoningLevels[selectedModel] ?? [])
               : [];
             const defaultReasoning = selectedModel
-              ? connection.reasoningDefaults?.[selectedModel]
+              ? connection?.reasoningDefaults?.[selectedModel]
               : undefined;
             const reasoningOptions: YuanhengReasoningLevel[] = [
               "auto",
@@ -249,114 +260,156 @@ export function ModelSwitchCenter({
                               : (codexStatus ?? dt("配置已生效"))}
                           </span>
                         </>
-                      ) : (
+                      ) : detectionFailed ? (
+                        dt("本机工具检测失败")
+                      ) : !installed ? (
+                        dt("未检测到")
+                      ) : supported ? (
                         dt("待配置")
+                      ) : (
+                        (status?.message ??
+                        dt("{{v0}} 没有可用模型", { v0: toolLabel(app) }))
                       )}
                     </p>
                   </div>
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    className="h-8 shrink-0 px-3 text-[11px]"
-                    disabled={pending}
-                    aria-label={
-                      restartRequired
-                        ? dt("重启并应用 {{v0}}", { v0: toolLabel(app) })
-                        : dt("启动 {{v0}}", { v0: toolLabel(app) })
-                    }
-                    title={
-                      restartRequired
-                        ? dt("重启并应用 {{v0}}", { v0: toolLabel(app) })
-                        : dt("启动 {{v0}}", { v0: toolLabel(app) })
-                    }
-                    onClick={() => void launch(app)}
-                  >
-                    {pending ? (
-                      <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                    ) : (
-                      <Play className="h-3.5 w-3.5 fill-current" />
-                    )}
-                    {restartRequired ? dt("重启并应用") : dt("启动")}
-                  </Button>
-                </div>
-
-                <div className="mt-2.5 grid gap-2 sm:grid-cols-[minmax(0,1.55fr)_minmax(92px,.8fr)_minmax(92px,.8fr)]">
-                  <label className="min-w-0">
-                    <span className="mb-1 block text-[9px] font-medium text-muted-foreground">
-                      {dt("模型")}
-                    </span>
-                    <ModelPicker
-                      models={terminalModels}
-                      value={selectedModel}
-                      recommended={status?.recommendedModel}
-                      label={dt("{{v0}} 模型选择", { v0: toolLabel(app) })}
+                  {runnable ? (
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="h-8 shrink-0 px-3 text-[11px]"
                       disabled={pending}
-                      className="mt-0 h-8"
-                      onRefresh={refreshModels}
-                      onChange={(model) => void applyModel(app, model)}
-                    />
-                  </label>
-
-                  <label className="min-w-0">
-                    <span className="mb-1 block text-[9px] font-medium text-muted-foreground">
-                      {dt("令牌分组")}
-                    </span>
-                    <select
-                      aria-label={dt("{{v0}} 快捷令牌分组", {
-                        v0: toolLabel(app),
-                      })}
-                      className="h-8 w-full min-w-0 rounded-md border bg-background px-2 text-[10px] shadow-sm disabled:cursor-not-allowed disabled:opacity-60"
-                      value={selectedGroup ?? ""}
-                      disabled={pending || availableGroups.length <= 1}
-                      onChange={(event) =>
-                        void applyGroup(app, event.target.value)
+                      aria-label={
+                        restartRequired
+                          ? dt("重启并应用 {{v0}}", { v0: toolLabel(app) })
+                          : dt("启动 {{v0}}", { v0: toolLabel(app) })
                       }
-                    >
-                      {availableGroups.length === 0 && (
-                        <option value="">{dt("账号默认")}</option>
-                      )}
-                      {availableGroups.map((group) => {
-                        const option = groupMap.get(group);
-                        return (
-                          <option key={group} value={group}>
-                            {group}
-                            {option?.ratio != null ? ` · ${option.ratio}x` : ""}
-                          </option>
-                        );
-                      })}
-                    </select>
-                  </label>
-
-                  <label className="min-w-0">
-                    <span className="mb-1 block text-[9px] font-medium text-muted-foreground">
-                      {dt("推理等级")}
-                    </span>
-                    <select
-                      aria-label={dt("{{v0}} 快捷推理等级", {
-                        v0: toolLabel(app),
-                      })}
-                      className="h-8 w-full min-w-0 rounded-md border bg-background px-2 text-[10px] shadow-sm disabled:cursor-not-allowed disabled:opacity-60"
-                      value={showReasoning ? selectedReasoning : "unsupported"}
-                      disabled={pending || !showReasoning}
-                      onChange={(event) =>
-                        void applyReasoning(
-                          app,
-                          event.target.value as YuanhengReasoningLevel,
-                        )
+                      title={
+                        restartRequired
+                          ? dt("重启并应用 {{v0}}", { v0: toolLabel(app) })
+                          : dt("启动 {{v0}}", { v0: toolLabel(app) })
                       }
+                      onClick={() => void launch(app)}
                     >
-                      {!showReasoning ? (
-                        <option value="unsupported">{dt("不适用")}</option>
+                      {pending ? (
+                        <Loader2 className="h-3.5 w-3.5 animate-spin" />
                       ) : (
-                        reasoningOptions.map((level) => (
-                          <option key={level} value={level}>
-                            {reasoningLabel(level, defaultReasoning)}
-                          </option>
-                        ))
+                        <Play className="h-3.5 w-3.5 fill-current" />
                       )}
-                    </select>
-                  </label>
+                      {restartRequired ? dt("重启并应用") : dt("启动")}
+                    </Button>
+                  ) : (
+                    <div className="flex shrink-0 gap-1.5">
+                      {isDesktopApp(app) && (
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          className="h-8 px-2.5 text-[10px]"
+                          onClick={() => void chooseDesktopPath(app)}
+                        >
+                          <FolderOpen className="h-3.5 w-3.5" />
+                          {dt("选择路径")}
+                        </Button>
+                      )}
+                      {!installed && !detectionFailed && (
+                        <Button
+                          size="sm"
+                          className="h-8 px-2.5 text-[10px]"
+                          onClick={() => void install(app)}
+                        >
+                          <Download className="h-3.5 w-3.5" />
+                          {DESKTOP_DOWNLOAD_URLS[app]
+                            ? dt("官方下载")
+                            : dt("一键安装")}
+                        </Button>
+                      )}
+                    </div>
+                  )}
                 </div>
+
+                {runnable ? (
+                  <div className="mt-2.5 grid gap-2 sm:grid-cols-[minmax(0,1.55fr)_minmax(92px,.8fr)_minmax(92px,.8fr)]">
+                    <label className="min-w-0">
+                      <span className="mb-1 block text-[9px] font-medium text-muted-foreground">
+                        {dt("模型")}
+                      </span>
+                      <ModelPicker
+                        models={terminalModels}
+                        value={selectedModel}
+                        recommended={status?.recommendedModel}
+                        label={dt("{{v0}} 模型选择", { v0: toolLabel(app) })}
+                        disabled={pending}
+                        className="mt-0 h-8"
+                        onRefresh={refreshModels}
+                        onChange={(model) => void applyModel(app, model)}
+                      />
+                    </label>
+
+                    <label className="min-w-0">
+                      <span className="mb-1 block text-[9px] font-medium text-muted-foreground">
+                        {dt("令牌分组")}
+                      </span>
+                      <CompactSelectPicker
+                        label={dt("{{v0}} 快捷令牌分组", {
+                          v0: toolLabel(app),
+                        })}
+                        value={selectedGroup ?? ""}
+                        disabled={pending || availableGroups.length <= 1}
+                        options={
+                          availableGroups.length === 0
+                            ? [{ value: "", label: dt("账号默认") }]
+                            : availableGroups.map((group) => {
+                                const option = groupMap.get(group);
+                                return {
+                                  value: group,
+                                  label: `${group}${option?.ratio != null ? ` · ${option.ratio}x` : ""}`,
+                                };
+                              })
+                        }
+                        onChange={(group) => void applyGroup(app, group)}
+                      />
+                    </label>
+
+                    <label className="min-w-0">
+                      <span className="mb-1 block text-[9px] font-medium text-muted-foreground">
+                        {dt("推理等级")}
+                      </span>
+                      <CompactSelectPicker
+                        label={dt("{{v0}} 快捷推理等级", {
+                          v0: toolLabel(app),
+                        })}
+                        value={
+                          showReasoning ? selectedReasoning : "unsupported"
+                        }
+                        disabled={pending || !showReasoning}
+                        options={
+                          !showReasoning
+                            ? [{ value: "unsupported", label: dt("不适用") }]
+                            : reasoningOptions.map((level) => ({
+                                value: level,
+                                label: reasoningLabel(level, defaultReasoning),
+                              }))
+                        }
+                        onChange={(level) =>
+                          void applyReasoning(
+                            app,
+                            level as YuanhengReasoningLevel,
+                          )
+                        }
+                      />
+                    </label>
+                  </div>
+                ) : (
+                  <p className="mt-2.5 rounded-lg bg-muted/45 px-3 py-2 text-[10px] leading-4 text-muted-foreground">
+                    {detectionFailed
+                      ? dt("检测失败不会再显示成“未安装”，请重新检测。")
+                      : !installed
+                        ? dt("安装后即可由元衡自动配置。")
+                        : !connected
+                          ? dt("连接元衡后即可在此切换模型")
+                          : (status?.message ??
+                            dt("{{v0}} 没有可用模型", { v0: toolLabel(app) }))}
+                  </p>
+                )}
               </div>
             );
           })}

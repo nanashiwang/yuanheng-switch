@@ -35,6 +35,7 @@ import { APP_ICON_MAP } from "@/config/appConfig";
 import { ProviderIcon } from "@/components/ProviderIcon";
 import { Button } from "@/components/ui/button";
 import { ModelPicker } from "./ModelPicker";
+import { CompactSelectPicker } from "./CompactSelectPicker";
 import { cn } from "@/lib/utils";
 import { extractErrorMessage } from "@/utils/errorUtils";
 import { dt } from "./desktopI18n";
@@ -77,7 +78,7 @@ export const TOOL_VERSION_TARGETS: Partial<Record<YuanhengToolId, string>> = {
   "claude-desktop": "claude-desktop",
 };
 
-const DESKTOP_DOWNLOAD_URLS: Partial<Record<YuanhengToolId, string>> = {
+export const DESKTOP_DOWNLOAD_URLS: Partial<Record<YuanhengToolId, string>> = {
   "claude-desktop": "https://claude.ai/download",
   "chatgpt-desktop": "https://openai.com/chatgpt/desktop/",
   workbuddy: "https://www.codebuddy.cn/work/",
@@ -138,7 +139,6 @@ export function pickPreferredGroup(
 
 interface ToolSetupGridProps {
   activeApp?: AppId;
-  visibleApps?: Partial<Record<AppId, boolean>>;
   compact?: boolean;
   onSetActiveApp?: (app: AppId) => void;
   onConfigured?: () => void;
@@ -146,7 +146,6 @@ interface ToolSetupGridProps {
 
 export function ToolSetupGrid({
   activeApp,
-  visibleApps,
   compact = false,
   onSetActiveApp,
   onConfigured,
@@ -181,9 +180,7 @@ export function ToolSetupGrid({
     () => new Map((statuses.data ?? []).map((item) => [item.app, item])),
     [statuses.data],
   );
-  const tools = DESKTOP_TOOLS.filter(
-    (app) => !isCoreApp(app) || visibleApps?.[app] !== false,
-  );
+  const tools = DESKTOP_TOOLS;
   const groupMap = useMemo(
     () => new Map((connection?.groups ?? []).map((group) => [group.id, group])),
     [connection?.groups],
@@ -613,8 +610,7 @@ export function ToolSetupGrid({
             app === "claude-desktop" ||
             app === "codex" ||
             app === "chatgpt-desktop";
-          const supportsCustomPath =
-            app === "chatgpt-desktop" || app === "workbuddy";
+          const supportsCustomPath = isDesktopApp(app);
           const supportsLaunchDirectory = isYuanhengCliTool(app);
           const launchDirectory = launchDirectoryState.directories[app];
           const launchDirectoryPending =
@@ -925,33 +921,26 @@ export function ToolSetupGrid({
                             ` · ${groupMap.get(availableGroups[0])?.ratio}x`}
                         </span>
                       ) : (
-                        <select
-                          aria-label={dt("{{v0}} 令牌分组", {
+                        <CompactSelectPicker
+                          label={dt("{{v0}} 令牌分组", {
                             v0: toolLabel(app),
                           })}
-                          className="h-7 min-w-0 flex-1 rounded-md border bg-background px-2 text-[10px]"
-                          value={selectedGroup}
-                          onClick={(event) => event.stopPropagation()}
-                          onChange={(event) => {
-                            const value = event.target.value;
+                          triggerClassName="h-7 flex-1"
+                          value={selectedGroup ?? ""}
+                          options={availableGroups.map((group) => {
+                            const option = groupMap.get(group);
+                            return {
+                              value: group,
+                              label: `${group}${option?.ratio != null ? ` · ${option.ratio}x` : ""}`,
+                            };
+                          })}
+                          onChange={(value) => {
                             setGroups((current) => ({
                               ...current,
                               [app]: value,
                             }));
                           }}
-                        >
-                          {availableGroups.map((group) => {
-                            const option = groupMap.get(group);
-                            return (
-                              <option key={group} value={group}>
-                                {group}
-                                {option?.ratio != null
-                                  ? ` · ${option.ratio}x`
-                                  : ""}
-                              </option>
-                            );
-                          })}
-                        </select>
+                        />
                       )}
                     </div>
                   )}
@@ -962,37 +951,32 @@ export function ToolSetupGrid({
                         {supportedReasoning.length > 0 &&
                           dt(" · {{v0}} 档", { v0: supportedReasoning.length })}
                       </span>
-                      <select
-                        aria-label={dt("{{v0}} 推理等级", {
+                      <CompactSelectPicker
+                        label={dt("{{v0}} 推理等级", {
                           v0: toolLabel(app),
                         })}
-                        className="h-7 min-w-0 flex-1 rounded-md border bg-background px-2 text-[10px]"
+                        triggerClassName="h-7 flex-1"
                         value={
                           supportedReasoning.length > 0
                             ? selectedReasoning
                             : "unsupported"
                         }
                         disabled={supportedReasoning.length === 0}
-                        onClick={(event) => event.stopPropagation()}
-                        onChange={(event) => {
-                          const value = event.target
-                            .value as YuanhengReasoningLevel;
+                        options={
+                          supportedReasoning.length === 0
+                            ? [{ value: "unsupported", label: dt("不适用") }]
+                            : reasoningOptions.map((level) => ({
+                                value: level,
+                                label: reasoningLabel(level, defaultReasoning),
+                              }))
+                        }
+                        onChange={(value) => {
                           setReasoning((current) => ({
                             ...current,
-                            [app]: value,
+                            [app]: value as YuanhengReasoningLevel,
                           }));
                         }}
-                      >
-                        {supportedReasoning.length === 0 ? (
-                          <option value="unsupported">{dt("不适用")}</option>
-                        ) : (
-                          reasoningOptions.map((level) => (
-                            <option key={level} value={level}>
-                              {reasoningLabel(level, defaultReasoning)}
-                            </option>
-                          ))
-                        )}
-                      </select>
+                      />
                     </div>
                   )}
                   {app === "claude-desktop" && (

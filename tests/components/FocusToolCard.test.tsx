@@ -28,6 +28,8 @@ function createSwitcher(
     bootstrapRefreshing: false,
     retryBootstrap,
     rows: [],
+    runnableRows: [],
+    installedApps: new Set(),
     models: {},
     groups: {},
     reasoning: {},
@@ -38,6 +40,8 @@ function createSwitcher(
     statusMap: new Map(),
     codexBridge: {} as ModelSwitchCenterState["codexBridge"],
     refreshModels: vi.fn(),
+    install: vi.fn(),
+    chooseDesktopPath: vi.fn(),
     applyModel: vi.fn(),
     applyGroup: vi.fn(),
     applyReasoning: vi.fn(),
@@ -61,10 +65,10 @@ describe("FocusToolCard", () => {
     ).not.toBeInTheDocument();
   });
 
-  it("检测完成且为空时才显示安装引导", () => {
+  it("没有可运行工具时显示安装引导", () => {
     render(
       <FocusToolCard
-        switcher={createSwitcher("empty")}
+        switcher={createSwitcher("ready")}
         onOpenTools={vi.fn()}
       />,
     );
@@ -89,6 +93,8 @@ describe("FocusToolCard", () => {
   it("为非 Codex CLI 提供独立工作目录入口", () => {
     const switcher = createSwitcher("ready");
     switcher.rows = ["claude"];
+    switcher.runnableRows = ["claude"];
+    switcher.installedApps = new Set(["claude"]);
     switcher.models = { claude: "claude-sonnet" };
     switcher.launchDirectories = { claude: "/tmp/claude-project" };
     switcher.statusMap = new Map([

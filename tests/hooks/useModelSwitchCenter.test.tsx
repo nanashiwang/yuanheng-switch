@@ -163,7 +163,8 @@ describe("useModelSwitchCenter", () => {
 
     await waitFor(() => {
       expect(result.current.bootstrapPhase).toBe("loading");
-      expect(result.current.rows).toEqual([]);
+      expect(result.current.rows).toHaveLength(10);
+      expect(result.current.runnableRows).toEqual([]);
     });
 
     await act(async () => {
@@ -172,7 +173,20 @@ describe("useModelSwitchCenter", () => {
     });
 
     await waitFor(() => {
-      expect(result.current.bootstrapPhase).toBe("empty");
+      expect(result.current.bootstrapPhase).toBe("ready");
+      expect(result.current.rows).toEqual([
+        "claude",
+        "claude-desktop",
+        "codex",
+        "chatgpt-desktop",
+        "workbuddy",
+        "gemini",
+        "grokbuild",
+        "opencode",
+        "openclaw",
+        "hermes",
+      ]);
+      expect(result.current.runnableRows).toEqual([]);
     });
   });
 
@@ -192,7 +206,44 @@ describe("useModelSwitchCenter", () => {
 
     await waitFor(() => {
       expect(result.current.bootstrapPhase).toBe("error");
-      expect(result.current.rows).toEqual([]);
+      expect(result.current.rows).toHaveLength(10);
+      expect(result.current.runnableRows).toEqual([]);
+    });
+  });
+
+  it("keeps every supported agent visible while focus only uses runnable tools", async () => {
+    const defaultImplementation = invokeMock.getMockImplementation();
+    invokeMock.mockImplementation(
+      (command: string, payload: Record<string, unknown> = {}) => {
+        if (command === "get_installed_tool_versions") {
+          return Promise.resolve([
+            {
+              name: "codex",
+              version: "1.0.0",
+              latest_version: "1.0.0",
+              error: null,
+              installed_but_broken: false,
+              env_type: "windows",
+              wsl_distro: null,
+              install_path: null,
+              detection_source: null,
+              custom_path: null,
+              custom_path_valid: true,
+            },
+          ]);
+        }
+        return defaultImplementation?.(command, payload);
+      },
+    );
+
+    const { wrapper } = createWrapper();
+    const { result } = renderHook(() => useModelSwitchCenter(), { wrapper });
+
+    await waitFor(() => {
+      expect(result.current.rows).toHaveLength(10);
+      expect(result.current.rows).toContain("workbuddy");
+      expect(result.current.runnableRows).toEqual(["codex"]);
+      expect(result.current.installedApps).toEqual(new Set(["codex"]));
     });
   });
 
