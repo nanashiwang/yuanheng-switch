@@ -5,15 +5,10 @@ import { ToolSetupGrid } from "./ToolSetupGrid";
 
 interface ToolsPageProps {
   activeApp: AppId;
-  visibleApps: Partial<Record<AppId, boolean>>;
   onSetActiveApp: (app: AppId) => void;
 }
 
-export function ToolsPage({
-  activeApp,
-  visibleApps,
-  onSetActiveApp,
-}: ToolsPageProps) {
+export function ToolsPage({ activeApp, onSetActiveApp }: ToolsPageProps) {
   return (
     <div className="mx-auto flex h-full w-full max-w-[1120px] flex-col overflow-hidden px-7 pt-6">
       <PageHeader
@@ -24,11 +19,7 @@ export function ToolsPage({
         )}
       />
       <div className="min-h-0 flex-1 overflow-y-auto pb-8">
-        <ToolSetupGrid
-          activeApp={activeApp}
-          visibleApps={visibleApps}
-          onSetActiveApp={onSetActiveApp}
-        />
+        <ToolSetupGrid activeApp={activeApp} onSetActiveApp={onSetActiveApp} />
       </div>
     </div>
   );

@@ -10,13 +10,8 @@ import {
 } from "lucide-react";
 import { isYuanhengCliTool, type YuanhengToolId } from "@/lib/api";
 import { ProviderIcon } from "@/components/ProviderIcon";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-} from "@/components/ui/select";
 import { ModelPicker } from "./ModelPicker";
+import { CompactSelectPicker } from "./CompactSelectPicker";
 import { pickPreferredGroup, toolLabel } from "./ToolSetupGrid";
 import {
   providerIconOf,
@@ -34,90 +29,6 @@ interface FocusToolCardProps {
 
 const focusCardShell =
   "relative min-h-[246px] overflow-hidden rounded-2xl bg-gradient-to-br from-[#0f2a26] to-[#173f3a] p-5 text-[#eef5f2] shadow-[0_18px_40px_-22px_rgba(15,42,38,0.55)]";
-
-interface FocusSelectOption {
-  value: string;
-  label: string;
-  icon?: string;
-  iconName?: string;
-}
-
-/**
- * 焦点卡内的紧凑选择器。
- *
- * 不使用原生 select：macOS WebView 会把深色触发器的浅色文字继承给
- * 系统白色弹层，导致选项只有悬停时才可见。应用自绘弹层使用主题色，
- * 与模型选择器保持一致，也避免不同系统的原生菜单行为差异。
- */
-function FocusSelectPicker({
-  label,
-  value,
-  options,
-  disabled,
-  onChange,
-}: {
-  label: string;
-  value: string;
-  options: FocusSelectOption[];
-  disabled?: boolean;
-  onChange: (value: string) => void;
-}) {
-  const selected =
-    options.find((option) => option.value === value) ?? options[0];
-  const selectedValue = selected ? `value:${selected.value}` : undefined;
-
-  return (
-    <Select
-      value={selectedValue}
-      disabled={disabled || options.length === 0}
-      onValueChange={(nextValue) => onChange(nextValue.slice("value:".length))}
-    >
-      <SelectTrigger
-        aria-label={label}
-        className="h-8 min-w-0 gap-2 border-white/15 bg-white/[0.08] px-2.5 text-left text-[10.5px] text-white shadow-sm transition-colors hover:bg-white/[0.12] focus:border-[#e9b67c]/70 disabled:cursor-not-allowed disabled:opacity-60"
-        onClick={(event) => event.stopPropagation()}
-      >
-        <span className="flex min-w-0 flex-1 items-center gap-2">
-          {selected?.icon && (
-            <ProviderIcon
-              icon={selected.icon}
-              name={selected.iconName ?? selected.label}
-              size={14}
-            />
-          )}
-          <span className="min-w-0 flex-1 truncate">
-            {selected?.label ?? value}
-          </span>
-        </span>
-      </SelectTrigger>
-      <SelectContent
-        position="popper"
-        sideOffset={6}
-        className="z-[1000] max-h-[240px] min-w-[var(--radix-select-trigger-width)]"
-        onClick={(event) => event.stopPropagation()}
-      >
-        {options.map((option) => (
-          <SelectItem
-            key={option.value || "__default__"}
-            value={`value:${option.value}`}
-            className="text-[10.5px]"
-          >
-            <span className="flex min-w-0 items-center gap-2">
-              {option.icon && (
-                <ProviderIcon
-                  icon={option.icon}
-                  name={option.iconName ?? option.label}
-                  size={14}
-                />
-              )}
-              <span className="min-w-0 flex-1 truncate">{option.label}</span>
-            </span>
-          </SelectItem>
-        ))}
-      </SelectContent>
-    </Select>
-  );
-}
 
 function FocusToolDecoration() {
   return (
@@ -236,7 +147,7 @@ export function FocusToolCard({
     terminalModels,
     bootstrapPhase,
     retryBootstrap,
-    rows,
+    runnableRows,
     models,
     groups,
     reasoning,
@@ -253,7 +164,8 @@ export function FocusToolCard({
   } = switcher;
 
   const app =
-    (focusApp && rows.includes(focusApp) ? focusApp : undefined) ?? rows[0];
+    (focusApp && runnableRows.includes(focusApp) ? focusApp : undefined) ??
+    runnableRows[0];
   const status = app ? statusMap.get(app) : undefined;
   const current = app ? models[app] : undefined;
   const currentGroup = app ? (groups[app] ?? status?.group) : undefined;
@@ -281,7 +193,7 @@ export function FocusToolCard({
       />
     );
   }
-  if (bootstrapPhase === "empty" || !app) {
+  if (!app) {
     return (
       <FocusToolStateCard onOpenTools={onOpenTools} onRetry={retryBootstrap} />
     );
@@ -430,11 +342,12 @@ export function FocusToolCard({
             <span className="mb-1 block text-[9px] font-medium text-white/50">
               {dt("1 · 模型供应商")}
             </span>
-            <FocusSelectPicker
+            <CompactSelectPicker
               label={dt("{{v0}} 模型供应商", { v0: toolLabel(app) })}
               value={selectedVendor?.id ?? ""}
               options={vendorOptions}
               disabled={pending || vendorGroups.length === 0}
+              triggerClassName="border-white/15 bg-white/[0.08] px-2.5 text-[10.5px] text-white transition-colors hover:bg-white/[0.12] focus:border-[#e9b67c]/70"
               onChange={(vendor) =>
                 setSelectedVendors((currentSelections) => ({
                   ...currentSelections,
@@ -473,13 +386,14 @@ export function FocusToolCard({
             <span className="mb-1 block text-[9px] font-medium text-white/50">
               {dt("3 · 令牌分组")}
             </span>
-            <FocusSelectPicker
+            <CompactSelectPicker
               label={dt("{{v0}} 当前工具令牌分组", {
                 v0: toolLabel(app),
               })}
               value={selectedGroup ?? ""}
               options={groupOptions}
               disabled={pending || availableGroups.length <= 1}
+              triggerClassName="border-white/15 bg-white/[0.08] px-2.5 text-[10.5px] text-white transition-colors hover:bg-white/[0.12] focus:border-[#e9b67c]/70"
               onChange={(group) => void applyGroup(app, group)}
             />
           </label>

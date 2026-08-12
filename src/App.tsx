@@ -437,11 +437,7 @@ function App() {
         );
       case "tools":
         return (
-          <ToolsPage
-            activeApp={activeApp}
-            visibleApps={visibleApps}
-            onSetActiveApp={persistActiveApp}
-          />
+          <ToolsPage activeApp={activeApp} onSetActiveApp={persistActiveApp} />
         );
       case "capabilities":
         return <CapabilityCenter activeApp={activeApp} onOpen={navigate} />;

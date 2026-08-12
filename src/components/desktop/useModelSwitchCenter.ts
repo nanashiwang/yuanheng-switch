@@ -18,6 +18,7 @@ import {
 import { extractErrorMessage } from "@/utils/errorUtils";
 import {
   DESKTOP_TOOLS,
+  DESKTOP_DOWNLOAD_URLS,
   TOOL_VERSION_TARGETS,
   isDesktopApp,
   pickPreferredGroup,
@@ -42,7 +43,7 @@ export const providerIconOf = (app: YuanhengToolId) =>
       ? "claude"
       : app;
 
-export type ModelSwitchBootstrapPhase = "loading" | "ready" | "empty" | "error";
+export type ModelSwitchBootstrapPhase = "loading" | "ready" | "error";
 
 /**
  * 首页模型切换的共享状态：焦点卡与全部工具列表共用一份选择/提交逻辑，
@@ -143,8 +144,13 @@ export function useModelSwitchCenter() {
     const versionTarget = TOOL_VERSION_TARGETS[app];
     return Boolean(versionTarget && versionMap.get(versionTarget)?.version);
   };
+  const installedApps = useMemo(
+    () => new Set(DESKTOP_TOOLS.filter((app) => isInstalled(app))),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [versionMap],
+  );
 
-  const rows = useMemo(
+  const runnableRows = useMemo(
     () =>
       DESKTOP_TOOLS.filter(
         (app) => isInstalled(app) && statusMap.get(app)?.supported,
@@ -152,6 +158,20 @@ export function useModelSwitchCenter() {
         const leftConfigured = statusMap.get(left)?.configured ? 0 : 1;
         const rightConfigured = statusMap.get(right)?.configured ? 0 : 1;
         return leftConfigured - rightConfigured;
+      }),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [statusMap, versionMap],
+  );
+  const rows = useMemo(
+    () =>
+      [...DESKTOP_TOOLS].sort((left, right) => {
+        const rank = (app: YuanhengToolId) => {
+          if (statusMap.get(app)?.configured && isInstalled(app)) return 0;
+          if (isInstalled(app) && statusMap.get(app)?.supported) return 1;
+          if (isInstalled(app)) return 2;
+          return 3;
+        };
+        return rank(left) - rank(right);
       }),
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [statusMap, versionMap],
@@ -168,9 +188,7 @@ export function useModelSwitchCenter() {
         (!hasStatuses && statuses.isError)
         ? "error"
         : "loading"
-      : rows.length > 0
-        ? "ready"
-        : "empty";
+      : "ready";
 
   const retryBootstrap = async () => {
     await Promise.all([inventory.refetch(), statuses.refetch()]);
@@ -181,6 +199,41 @@ export function useModelSwitchCenter() {
     void refreshConnection.mutateAsync().catch(() => {
       toast.error(dt("网站模型同步失败，已保留上次可用列表"));
     });
+  };
+
+  const install = async (app: YuanhengToolId) => {
+    const command = TOOL_VERSION_TARGETS[app];
+    const downloadUrl = DESKTOP_DOWNLOAD_URLS[app];
+    if (!command && !downloadUrl) return;
+    try {
+      if (downloadUrl) {
+        await settingsApi.openExternal(downloadUrl);
+        toast.success(
+          dt("已打开 {{v0}} 官方下载页，安装完成后请刷新检测", {
+            v0: toolLabel(app),
+          }),
+        );
+        return;
+      }
+      if (!command) return;
+      await settingsApi.runToolLifecycleAction([command], "install");
+      toast.success(dt("{{v0}} 安装任务已完成", { v0: toolLabel(app) }));
+      await inventory.refetch();
+    } catch (error) {
+      toast.error(extractErrorMessage(error) || dt("安装失败"));
+    }
+  };
+
+  const chooseDesktopPath = async (app: YuanhengToolId) => {
+    if (!isDesktopApp(app)) return;
+    try {
+      const selected = await settingsApi.pickDesktopAppPath(app);
+      if (!selected) return;
+      await inventory.refetch();
+      toast.success(dt("已保存 {{v0}} 应用路径", { v0: toolLabel(app) }));
+    } catch (error) {
+      toast.error(extractErrorMessage(error) || dt("应用路径无效"));
+    }
   };
 
   const beginOperation = (app: YuanhengToolId) => {
@@ -440,6 +493,8 @@ export function useModelSwitchCenter() {
     bootstrapRefreshing: inventory.isFetching || statuses.isFetching,
     retryBootstrap,
     rows,
+    runnableRows,
+    installedApps,
     models,
     groups,
     reasoning,
@@ -450,6 +505,8 @@ export function useModelSwitchCenter() {
     statusMap,
     codexBridge,
     refreshModels,
+    install,
+    chooseDesktopPath,
     applyModel,
     applyGroup,
     applyReasoning,

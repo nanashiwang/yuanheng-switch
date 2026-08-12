@@ -580,13 +580,15 @@ describe("App integration with MSW", { timeout: 15_000 }, () => {
     const groupPicker = screen.getByLabelText("Codex 快捷令牌分组");
     const reasoningPicker = screen.getByLabelText("Codex 快捷推理等级");
 
-    fireEvent.change(groupPicker, { target: { value: "vip" } });
+    fireEvent.click(groupPicker);
+    fireEvent.click(await screen.findByRole("option", { name: /vip · 0.8x/ }));
     await waitFor(() =>
       expect(getConfiguredToolGroupCalls()).toContainEqual({ codex: "vip" }),
     );
 
     await waitFor(() => expect(reasoningPicker).toBeEnabled());
-    fireEvent.change(reasoningPicker, { target: { value: "high" } });
+    fireEvent.click(reasoningPicker);
+    fireEvent.click(await screen.findByRole("option", { name: "高" }));
     await waitFor(() =>
       expect(getConfiguredToolReasoningCalls()).toContainEqual({
         codex: "high",
@@ -803,15 +805,11 @@ describe("App integration with MSW", { timeout: 15_000 }, () => {
       target: { value: "k3" },
     });
     fireEvent.click(await screen.findByText("k3"));
-    expect(screen.getByLabelText("Claude Desktop 推理等级")).toHaveTextContent(
-      "极简",
-    );
-    expect(screen.getByLabelText("Claude Desktop 推理等级")).toHaveTextContent(
-      "超高",
-    );
-    fireEvent.change(screen.getByLabelText("Claude Desktop 推理等级"), {
-      target: { value: "high" },
-    });
+    const reasoningPicker = screen.getByLabelText("Claude Desktop 推理等级");
+    fireEvent.click(reasoningPicker);
+    expect(await screen.findByRole("option", { name: "极简" })).toBeVisible();
+    expect(screen.getByRole("option", { name: "超高" })).toBeVisible();
+    fireEvent.click(screen.getByRole("option", { name: "高" }));
     fireEvent.click(
       screen.getByRole("button", { name: "配置 Claude Desktop" }),
     );
@@ -863,7 +861,10 @@ describe("App integration with MSW", { timeout: 15_000 }, () => {
     expect(screen.getByLabelText("Claude 模型选择")).toHaveTextContent(
       "gpt-5.6-sol",
     );
-    fireEvent.change(groupPicker, { target: { value: "vip" } });
+    fireEvent.click(groupPicker);
+    fireEvent.click(
+      await screen.findByRole("option", { name: /^vip · 0.5x$/ }),
+    );
     fireEvent.click(screen.getByRole("button", { name: "配置 Claude" }));
 
     await waitFor(() =>
