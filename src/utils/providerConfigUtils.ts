@@ -1456,6 +1456,25 @@ export const setCodexModelName = (
 
 // ========== Codex top-level integer field utils ==========
 
+/**
+ * YuanHeng Switch 为 GPT 系列模型自动声明的 Codex 上下文窗口。
+ *
+ * `model_context_window` 是 Codex config.toml 的顶级字段；只对模型名最后
+ * 一段以 `gpt-` 开头的模型自动应用，避免把 GPT 能力误报给其他厂商模型。
+ */
+export const CODEX_GPT_CONTEXT_WINDOW = 921_000;
+
+// 历史版本曾通过“1M 上下文”开关写入该值。它属于客户端旧默认值，可以
+// 在 GPT 模型上无损迁移；其他显式自定义数值必须保留。
+const LEGACY_CODEX_GPT_CONTEXT_WINDOW = 1_000_000;
+
+export const isCodexGptModel = (
+  modelName: string | undefined | null,
+): boolean => {
+  const normalized = (modelName ?? "").trim().toLowerCase().split("/").pop();
+  return normalized?.startsWith("gpt-") === true;
+};
+
 const tomlTopLevelIntPattern = (field: string) =>
   new RegExp(`^\\s*${field}\\s*=\\s*(\\d+)\\s*(?:#.*)?$`);
 
@@ -1531,4 +1550,38 @@ export const removeCodexTopLevelField = (
     lines.splice(existing.index, 1);
   }
   return finalizeTomlText(lines);
+};
+
+/**
+ * 让 Codex 顶级 `model_context_window` 与当前模型保持一致。
+ *
+ * - GPT：缺失或为历史 1M 默认值时写入 921000；
+ * - 非 GPT / 清空模型：只移除客户端管理过的 921000/1M 默认值；
+ * - 其他正整数视为用户显式配置，始终保留。
+ */
+export const syncCodexGptContextWindow = (
+  configText: string,
+  modelName: string | undefined | null = extractCodexModelName(configText),
+): string => {
+  const current = extractCodexTopLevelInt(configText, "model_context_window");
+
+  if (isCodexGptModel(modelName)) {
+    if (current === undefined || current === LEGACY_CODEX_GPT_CONTEXT_WINDOW) {
+      return setCodexTopLevelInt(
+        configText,
+        "model_context_window",
+        CODEX_GPT_CONTEXT_WINDOW,
+      );
+    }
+    return configText;
+  }
+
+  if (
+    current === CODEX_GPT_CONTEXT_WINDOW ||
+    current === LEGACY_CODEX_GPT_CONTEXT_WINDOW
+  ) {
+    return removeCodexTopLevelField(configText, "model_context_window");
+  }
+
+  return configText;
 };

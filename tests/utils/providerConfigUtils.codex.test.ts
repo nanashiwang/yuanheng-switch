@@ -1,19 +1,74 @@
 import { describe, expect, it } from "vitest";
 import {
+  CODEX_GPT_CONTEXT_WINDOW,
   extractCodexBaseUrl,
   extractCodexExperimentalBearerToken,
   extractCodexModelName,
   extractCodexTopLevelInt,
   isCodexGoalModeEnabled,
+  isCodexGptModel,
   removeCodexTopLevelField,
   setCodexBaseUrl,
   setCodexGoalMode,
   setCodexModelName,
   setCodexTopLevelInt,
+  syncCodexGptContextWindow,
   updateCodexExperimentalBearerToken,
 } from "@/utils/providerConfigUtils";
 
 describe("Codex TOML utils", () => {
+  it("automatically configures the 921K context window for GPT models", () => {
+    const input = [
+      'model_provider = "custom"',
+      'model = "openai/gpt-5.6-sol"',
+      "",
+      "[model_providers.custom]",
+      'name = "Example"',
+      "",
+    ].join("\n");
+
+    const output = syncCodexGptContextWindow(input);
+
+    expect(isCodexGptModel("openai/GPT-5.6-SOL")).toBe(true);
+    expect(extractCodexTopLevelInt(output, "model_context_window")).toBe(
+      CODEX_GPT_CONTEXT_WINDOW,
+    );
+    expect(output).toMatch(/^model_context_window = 921000$/m);
+  });
+
+  it("migrates the legacy 1M GPT default but preserves explicit custom values", () => {
+    const legacy = syncCodexGptContextWindow(
+      'model = "gpt-5.5"\nmodel_context_window = 1000000\n',
+    );
+    expect(extractCodexTopLevelInt(legacy, "model_context_window")).toBe(
+      CODEX_GPT_CONTEXT_WINDOW,
+    );
+
+    const custom = syncCodexGptContextWindow(
+      'model = "gpt-5.5"\nmodel_context_window = 272000\n',
+    );
+    expect(extractCodexTopLevelInt(custom, "model_context_window")).toBe(
+      272000,
+    );
+  });
+
+  it("removes only managed GPT defaults after switching to a non-GPT model", () => {
+    const managed = syncCodexGptContextWindow(
+      'model = "MiniMax-M3"\nmodel_context_window = 921000\n',
+    );
+    expect(
+      extractCodexTopLevelInt(managed, "model_context_window"),
+    ).toBeUndefined();
+
+    const custom = syncCodexGptContextWindow(
+      'model = "MiniMax-M3"\nmodel_context_window = 1000001\n',
+    );
+    expect(extractCodexTopLevelInt(custom, "model_context_window")).toBe(
+      1000001,
+    );
+    expect(isCodexGptModel("not-gpt-5.6")).toBe(false);
+  });
+
   it("removes base_url line when set to empty", () => {
     const input = [
       'model_provider = "openai"',
@@ -70,9 +125,9 @@ describe("Codex TOML utils", () => {
       "",
       "[model_providers.custom]",
       'name = "custom"',
-      "base_url = \"https://su'us.codes/v1\"",
+      'base_url = "https://su\'us.codes/v1"',
       'wire_api = "responses"',
-      'requires_openai_auth = true',
+      "requires_openai_auth = true",
       "",
     ].join("\n");
 
@@ -93,7 +148,7 @@ describe("Codex TOML utils", () => {
       'base_url = "https://old.example/v1"',
       'base_url = "https://older.example/v1"',
       'wire_api = "responses"',
-      'requires_openai_auth = true',
+      "requires_openai_auth = true",
       "",
     ].join("\n");
 

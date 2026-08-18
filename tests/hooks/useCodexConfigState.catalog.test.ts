@@ -1,6 +1,10 @@
-import { renderHook } from "@testing-library/react";
+import { act, renderHook } from "@testing-library/react";
 import { describe, it, expect } from "vitest";
 import { useCodexConfigState } from "@/components/providers/forms/hooks/useCodexConfigState";
+import {
+  CODEX_GPT_CONTEXT_WINDOW,
+  extractCodexTopLevelInt,
+} from "@/utils/providerConfigUtils";
 
 // 回归：编辑已存在的原生 Responses 供应商时，读回 modelCatalog 必须保留隐藏字段
 // (supportsParallelToolCalls / inputModalities / baseInstructions)，否则保存会
@@ -9,6 +13,39 @@ import { useCodexConfigState } from "@/components/providers/forms/hooks/useCodex
 // 注意：initialData 必须是稳定引用（hook 的 init effect 依赖 [initialData]）。
 // 写成内联字面量会每次 re-render 产生新引用 → effect 反复 setState → 死循环 OOM。
 describe("useCodexConfigState catalog load", () => {
+  it("normalizes existing GPT providers and follows later model changes", () => {
+    const initialData = {
+      settingsConfig: {
+        auth: {},
+        config: 'model = "gpt-5.6-sol"\n',
+      },
+    };
+    const { result } = renderHook(() => useCodexConfigState({ initialData }));
+
+    expect(
+      extractCodexTopLevelInt(
+        result.current.codexConfig,
+        "model_context_window",
+      ),
+    ).toBe(CODEX_GPT_CONTEXT_WINDOW);
+
+    act(() => result.current.handleCodexModelChange("MiniMax-M3"));
+    expect(
+      extractCodexTopLevelInt(
+        result.current.codexConfig,
+        "model_context_window",
+      ),
+    ).toBeUndefined();
+
+    act(() => result.current.handleCodexModelChange("gpt-5.5"));
+    expect(
+      extractCodexTopLevelInt(
+        result.current.codexConfig,
+        "model_context_window",
+      ),
+    ).toBe(CODEX_GPT_CONTEXT_WINDOW);
+  });
+
   it("preserves native-profile hidden fields (camelCase, DB SSOT)", () => {
     const initialData = {
       settingsConfig: {

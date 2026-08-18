@@ -9,6 +9,7 @@ import type {
   PromptCacheRoutingMode,
 } from "../types";
 import type { PresetTheme } from "./claudeProviderPresets";
+import { syncCodexGptContextWindow } from "@/utils/providerConfigUtils";
 
 export interface CodexProviderPreset {
   name: string;
@@ -64,7 +65,7 @@ export function generateThirdPartyConfig(
 ): string {
   const tomlString = (value: string) => JSON.stringify(value);
 
-  return `model_provider = "custom"
+  return syncCodexGptContextWindow(`model_provider = "custom"
 model = ${tomlString(modelName)}
 model_reasoning_effort = "high"
 disable_response_storage = true
@@ -73,7 +74,7 @@ disable_response_storage = true
 name = ${tomlString(providerName)}
 base_url = ${tomlString(baseUrl)}
 wire_api = "responses"
-requires_openai_auth = true`;
+requires_openai_auth = true`);
 }
 
 function modelCatalog(
@@ -109,7 +110,7 @@ function modelCatalog(
   );
 }
 
-export const codexProviderPresets: CodexProviderPreset[] = [
+const codexProviderPresetDefinitions: CodexProviderPreset[] = [
   {
     name: "OpenAI Official",
     websiteUrl: "https://chatgpt.com/codex",
@@ -1544,9 +1545,7 @@ personality = "pragmatic"
 name = "E-FlowCode"
 base_url = "https://e-flowcode.cc/v1"
 wire_api = "responses"
-requires_openai_auth = true
-model_context_window = 1000000
-model_auto_compact_token_limit = 9000000`,
+requires_openai_auth = true`,
     category: "third_party",
     endpointCandidates: ["https://e-flowcode.cc/v1"],
     icon: "eflowcode",
@@ -1601,3 +1600,12 @@ base_url = "https://cc-api.pipellm.ai/v1"`,
     category: "aggregator",
   },
 ];
+
+// 预设中既有 generateThirdPartyConfig 生成的配置，也有需要额外字段的手写
+// TOML。统一在导出边界补齐 GPT 上下文，保证新增、切换任何 GPT 预设时都
+// 得到一致的顶级 model_context_window，同时不触碰非 GPT 预设。
+export const codexProviderPresets: CodexProviderPreset[] =
+  codexProviderPresetDefinitions.map((preset) => ({
+    ...preset,
+    config: syncCodexGptContextWindow(preset.config),
+  }));
