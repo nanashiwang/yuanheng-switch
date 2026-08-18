@@ -27,6 +27,8 @@ pub const CC_SWITCH_CODEX_MODEL_CATALOG_FILENAME: &str = "yuanheng-switch-model-
 pub const YUANHENG_TERMINAL_MODEL_CATALOG_FILENAME: &str = "yuanheng-terminal-model-catalog.json";
 pub const YUANHENG_DESKTOP_MODEL_CATALOG_FILENAME: &str = "yuanheng-desktop-model-catalog.json";
 const CODEX_PROXY_AUTH_PLACEHOLDER: &str = "PROXY_MANAGED";
+pub const CODEX_GPT_CONTEXT_WINDOW: i64 = 921_000;
+const LEGACY_CODEX_GPT_CONTEXT_WINDOW: i64 = 1_000_000;
 
 #[cfg(target_os = "windows")]
 const CREATE_NO_WINDOW: u32 = 0x08000000;
@@ -88,6 +90,51 @@ fn codex_top_level_model(config_text: &str) -> Option<String> {
         .and_then(|value| value.as_str())
         .map(|value| value.trim().to_string())
         .filter(|value| !value.is_empty())
+}
+
+fn codex_model_is_gpt(model: &str) -> bool {
+    model
+        .trim()
+        .rsplit('/')
+        .next()
+        .unwrap_or_default()
+        .to_ascii_lowercase()
+        .starts_with("gpt-")
+}
+
+/// Add YuanHeng Switch's GPT context-window default to a Codex config without
+/// clobbering an explicit user value. The former 1M UI value is the only value
+/// migrated automatically because it was written by older client versions.
+fn apply_codex_gpt_context_window_default(config_text: &str) -> Result<String, AppError> {
+    if config_text.trim().is_empty() {
+        return Ok(config_text.to_string());
+    }
+
+    let mut doc = config_text
+        .parse::<DocumentMut>()
+        .map_err(|e| AppError::Message(format!("Invalid Codex config.toml: {e}")))?;
+    let Some(model) = doc
+        .get("model")
+        .and_then(|item| item.as_str())
+        .map(str::trim)
+        .filter(|model| !model.is_empty())
+    else {
+        return Ok(config_text.to_string());
+    };
+
+    if !codex_model_is_gpt(model) {
+        return Ok(config_text.to_string());
+    }
+
+    let current = doc
+        .get("model_context_window")
+        .and_then(|item| item.as_integer());
+    if current.is_none() || current == Some(LEGACY_CODEX_GPT_CONTEXT_WINDOW) {
+        doc["model_context_window"] = toml_edit::value(CODEX_GPT_CONTEXT_WINDOW);
+        return Ok(doc.to_string());
+    }
+
+    Ok(config_text.to_string())
 }
 
 /// Whether a native `/responses` provider's gateway is known to reject the Codex
@@ -1193,9 +1240,10 @@ pub fn prepare_codex_config_text_with_named_model_catalog(
     catalog_filename: &str,
 ) -> Result<String, AppError> {
     let catalog_path = get_codex_named_model_catalog_path(catalog_filename);
+    let config_text = apply_codex_gpt_context_window_default(config_text)?;
 
-    if let Some(catalog) = codex_model_catalog_from_settings(settings, config_text, profile)? {
-        let config_text = set_codex_model_catalog_json_field(config_text, Some(&catalog_path))?;
+    if let Some(catalog) = codex_model_catalog_from_settings(settings, &config_text, profile)? {
+        let config_text = set_codex_model_catalog_json_field(&config_text, Some(&catalog_path))?;
         // Disable web_search only for native gateways on the reject blacklist
         // (MiMo/LongCat/MiniMax by host or model brand; Qwen3-Coder by model).
         // Everything else — relays, DouBao, web-search-capable Qwen models,
@@ -1213,7 +1261,7 @@ pub fn prepare_codex_config_text_with_named_model_catalog(
         write_json_file(&catalog_path, &catalog)?;
         Ok(config_text)
     } else {
-        let config_text = set_codex_model_catalog_json_field(config_text, None)?;
+        let config_text = set_codex_model_catalog_json_field(&config_text, None)?;
         // Even without a generated catalog, the Responses→Anthropic transform drops the
         // Codex web_search hosted tool, so keep the invariant that an Anthropic provider
         // never presents it as a dead tool.
@@ -1948,6 +1996,10 @@ pub fn write_codex_live_for_provider(
     auth: &Value,
     config_text: Option<&str>,
 ) -> Result<(), AppError> {
+    let automatic_context_config = config_text
+        .map(apply_codex_gpt_context_window_default)
+        .transpose()?;
+    let config_text = automatic_context_config.as_deref();
     let unified_official_config =
         if category == Some("official") && crate::settings::unify_codex_session_history() {
             Some(inject_codex_unified_session_bucket(
@@ -2163,6 +2215,38 @@ pub fn remove_codex_toml_base_url_if(toml_str: &str, predicate: impl Fn(&str) ->
 mod tests {
     use super::*;
     use serde_json::json;
+
+    #[test]
+    fn gpt_context_window_default_is_added_and_legacy_value_is_migrated() {
+        for input in [
+            "model = \"gpt-5.6-sol\"\n",
+            "model = \"openai/GPT-5.5\"\nmodel_context_window = 1000000\n",
+        ] {
+            let output = apply_codex_gpt_context_window_default(input).expect("apply GPT default");
+            let doc: toml::Value = toml::from_str(&output).expect("parse GPT config");
+            assert_eq!(
+                doc.get("model_context_window")
+                    .and_then(toml::Value::as_integer),
+                Some(CODEX_GPT_CONTEXT_WINDOW)
+            );
+        }
+    }
+
+    #[test]
+    fn gpt_context_window_default_preserves_user_values_and_non_gpt_configs() {
+        let custom = "model = \"gpt-5.6-sol\"\nmodel_context_window = 272000\n";
+        assert_eq!(
+            apply_codex_gpt_context_window_default(custom).expect("preserve custom"),
+            custom
+        );
+
+        let non_gpt = "model = \"MiniMax-M3\"\n";
+        assert_eq!(
+            apply_codex_gpt_context_window_default(non_gpt).expect("preserve non-GPT"),
+            non_gpt
+        );
+        assert!(!codex_model_is_gpt("not-gpt-5.6"));
+    }
 
     #[test]
     fn catalog_tool_profile_from_api_format() {

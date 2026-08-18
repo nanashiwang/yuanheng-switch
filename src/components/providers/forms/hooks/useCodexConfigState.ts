@@ -5,6 +5,7 @@ import {
   extractCodexModelName,
   setCodexBaseUrl as setCodexBaseUrlInConfig,
   setCodexModelName as setCodexModelNameInConfig,
+  syncCodexGptContextWindow,
   updateCodexExperimentalBearerToken,
 } from "@/utils/providerConfigUtils";
 import { normalizeTomlText } from "@/utils/textNormalization";
@@ -62,7 +63,8 @@ export function useCodexConfigState({ initialData }: UseCodexConfigStateProps) {
         typeof (config as any).config === "string"
           ? (config as any).config
           : "";
-      setCodexConfigState(configStr);
+      const normalizedConfig = syncCodexGptContextWindow(configStr);
+      setCodexConfigState(normalizedConfig);
 
       const modelCatalog = (config as any).modelCatalog;
       const rawCatalogModels = Array.isArray(modelCatalog?.models)
@@ -119,12 +121,12 @@ export function useCodexConfigState({ initialData }: UseCodexConfigStateProps) {
       );
 
       // 提取 Base URL
-      const initialBaseUrl = extractCodexBaseUrl(configStr);
+      const initialBaseUrl = extractCodexBaseUrl(normalizedConfig);
       if (initialBaseUrl) {
         setCodexBaseUrl(initialBaseUrl);
       }
 
-      setCodexApiKey(pickCodexApiKey(auth, configStr));
+      setCodexApiKey(pickCodexApiKey(auth, normalizedConfig));
     }
   }, [initialData]);
 
@@ -247,7 +249,12 @@ export function useCodexConfigState({ initialData }: UseCodexConfigStateProps) {
       setCodexModel(sanitized);
 
       isUpdatingCodexModelRef.current = true;
-      setCodexConfig((prev) => setCodexModelNameInConfig(prev, sanitized));
+      setCodexConfig((prev) =>
+        syncCodexGptContextWindow(
+          setCodexModelNameInConfig(prev, sanitized),
+          sanitized,
+        ),
+      );
       setTimeout(() => {
         isUpdatingCodexModelRef.current = false;
       }, 0);
@@ -280,14 +287,15 @@ export function useCodexConfigState({ initialData }: UseCodexConfigStateProps) {
       modelCatalogModels: CodexCatalogModel[] = [],
     ) => {
       const authString = JSON.stringify(auth, null, 2);
+      const normalizedConfig = syncCodexGptContextWindow(config);
       setCodexAuth(authString);
-      setCodexConfig(config);
+      setCodexConfig(normalizedConfig);
       setCodexCatalogModels(modelCatalogModels);
 
-      const baseUrl = extractCodexBaseUrl(config);
+      const baseUrl = extractCodexBaseUrl(normalizedConfig);
       setCodexBaseUrl(baseUrl || "");
 
-      setCodexApiKey(pickCodexApiKey(auth, config));
+      setCodexApiKey(pickCodexApiKey(auth, normalizedConfig));
     },
     [setCodexAuth, setCodexConfig, setCodexCatalogModels],
   );

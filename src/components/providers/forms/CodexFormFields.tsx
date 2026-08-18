@@ -46,6 +46,10 @@ import type {
   ProviderCategory,
 } from "@/types";
 import type { AppId } from "@/lib/api";
+import {
+  CODEX_GPT_CONTEXT_WINDOW,
+  isCodexGptModel,
+} from "@/utils/providerConfigUtils";
 
 interface EndpointCandidate {
   url: string;
@@ -121,11 +125,14 @@ interface CodexFormFieldsProps {
 type CodexCatalogRow = CodexCatalogModel & { rowId: string };
 
 function createCatalogRow(seed?: Partial<CodexCatalogModel>): CodexCatalogRow {
+  const model = seed?.model ?? "";
   return {
     rowId: crypto.randomUUID(),
-    model: seed?.model ?? "",
+    model,
     displayName: seed?.displayName ?? "",
-    contextWindow: seed?.contextWindow ?? "",
+    contextWindow:
+      seed?.contextWindow ??
+      (isCodexGptModel(model) ? CODEX_GPT_CONTEXT_WINDOW : ""),
     // Carry native-profile overrides verbatim (not user-editable in the row UI,
     // but must survive load->save so the official catalog fidelity is kept).
     ...(seed?.supportsParallelToolCalls !== undefined
@@ -418,7 +425,25 @@ export function CodexFormFields({
   const handleUpdateCatalogRow = useCallback(
     (index: number, patch: Partial<CodexCatalogModel>) => {
       setCatalogRows((current) =>
-        current.map((row, i) => (i === index ? { ...row, ...patch } : row)),
+        current.map((row, i) => {
+          if (i !== index) return row;
+
+          const next = { ...row, ...patch };
+          if (typeof patch.model === "string") {
+            if (
+              isCodexGptModel(patch.model) &&
+              (row.contextWindow === "" || row.contextWindow === undefined)
+            ) {
+              next.contextWindow = CODEX_GPT_CONTEXT_WINDOW;
+            } else if (
+              !isCodexGptModel(patch.model) &&
+              Number(row.contextWindow) === CODEX_GPT_CONTEXT_WINDOW
+            ) {
+              next.contextWindow = "";
+            }
+          }
+          return next;
+        }),
       );
     },
     [],
