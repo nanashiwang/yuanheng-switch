@@ -14,5 +14,7 @@
       </array>
     </dict>
   </array>
+  <key>NSMicrophoneUsageDescription</key>
+  <string>用于录制你主动提供的声音样本，以便生成声音克隆音频。</string>
 </dict>
 </plist>

@@ -4,6 +4,7 @@ export const DESKTOP_JA: Record<string, string> = {
   工具管理: "ツール管理",
   能力中心: "機能センター",
   会话与用量: "セッションと使用量",
+  声音克隆: "音声クローン",
   连接与路由: "接続とルーティング",
   设置: "設定",
   元衡桌面端: "YuanHeng Desktop",

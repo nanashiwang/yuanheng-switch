@@ -10,6 +10,7 @@ export const DESKTOP_EN: Record<string, string> = {
   工具管理: "Tool Management",
   能力中心: "Capability Center",
   会话与用量: "Sessions & Usage",
+  声音克隆: "Voice Clone",
   连接与路由: "Connections & Routing",
   设置: "Settings",
   元衡桌面端: "YuanHeng Desktop",

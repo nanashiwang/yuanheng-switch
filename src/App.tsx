@@ -79,6 +79,7 @@ import { WorkspaceDashboard } from "@/components/desktop/WorkspaceDashboard";
 import { ToolsPage } from "@/components/desktop/ToolsPage";
 import { CapabilityCenter } from "@/components/desktop/CapabilityCenter";
 import { UsageCenter } from "@/components/desktop/UsageCenter";
+import { VoiceClonePage } from "@/components/desktop/VoiceClonePage";
 import { ConnectionCenter } from "@/components/desktop/ConnectionCenter";
 import { OnboardingWizard } from "@/components/desktop/OnboardingWizard";
 import { YuanhengAccessScreen } from "@/components/desktop/YuanhengAccessScreen";
@@ -115,6 +116,7 @@ const TOP_LEVEL_VIEWS: DesktopView[] = [
   "tools",
   "capabilities",
   "usage",
+  "voiceClone",
   "network",
   "settings",
 ];
@@ -129,6 +131,7 @@ const VIEW_LABEL_KEYS: Record<DesktopView, string> = {
   prompts: "desktop.views.prompts",
   agents: "desktop.views.agents",
   usage: "desktop.views.usage",
+  voiceClone: "desktop.views.voiceClone",
   network: "desktop.views.network",
   settings: "desktop.views.settings",
   workspace: "desktop.views.workspace",
@@ -452,6 +455,8 @@ function App() {
             }
           />
         );
+      case "voiceClone":
+        return <VoiceClonePage />;
       case "network":
         return <ConnectionCenter />;
       case "settings":
