@@ -8,6 +8,7 @@ export type DesktopView =
   | "prompts"
   | "agents"
   | "usage"
+  | "voiceClone"
   | "network"
   | "settings"
   | "workspace"

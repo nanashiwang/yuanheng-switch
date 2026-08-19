@@ -12,6 +12,8 @@ export { proxyApi } from "./proxy";
 export { openclawApi } from "./openclaw";
 export { sessionsApi } from "./sessions";
 export { workspaceApi } from "./workspace";
+export { voiceCloneApi } from "./voice-clone";
+export type { VoiceCloneRequest, VoiceCloneResult } from "./voice-clone";
 export {
   isYuanhengCliTool,
   YUANHENG_CLI_TOOLS,

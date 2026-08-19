@@ -31,7 +31,11 @@ export function decodeBase64Utf8(str: string): string {
       return new TextDecoder("utf-8", { fatal: false }).decode(bytes);
     }
   } catch (e) {
-    console.error("Base64 decode error:", e, "Input:", str);
+    console.error("Base64 decode error", {
+      errorType: e instanceof Error ? e.name : typeof e,
+      inputLength: str.length,
+      hasWhitespace: /\s/.test(str),
+    });
     // Last resort fallback using deprecated but sometimes working method
     try {
       return decodeURIComponent(escape(atob(str.replace(/ /g, "+"))));
