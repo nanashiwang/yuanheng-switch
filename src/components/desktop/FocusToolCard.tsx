@@ -306,9 +306,7 @@ export function FocusToolCard({
         )}
         {currentGroup && availableGroups.length > 1 ? (
           <CompactSelectPicker
-            label={dt("{{v0}} 当前工具令牌分组", {
-              v0: toolLabel(app),
-            })}
+            label={dt("分组")}
             value={selectedGroup ?? ""}
             options={groupOptions}
             disabled={pending}
