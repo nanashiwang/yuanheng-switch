@@ -291,13 +291,36 @@ export function FocusToolCard({
 
       <div className="relative mt-4 flex flex-wrap items-baseline gap-x-3 gap-y-1">
         <span className="text-[11px] text-white/55">{dt("当前模型")}</span>
-        <span className="font-display text-2xl font-semibold tabular-nums tracking-tight">
-          {current ?? dt("未选择")}
-        </span>
-        {currentGroup && (
-          <span className="rounded-full bg-white/10 px-2 py-0.5 text-[10px] text-white/75">
-            {currentGroup} {dt("分组")}
-          </span>
+        {selectedVendor && (
+          <ModelPicker
+            models={selectedVendor.models}
+            value={visibleModel}
+            recommended={recommendedModel}
+            label={dt("当前模型")}
+            triggerLabel={current ?? dt("未选择")}
+            disabled={pending || selectedVendor.models.length === 0}
+            className="mt-0 h-auto min-h-8 w-auto min-w-[170px] max-w-[min(52vw,360px)] border-0 bg-transparent px-0 font-display text-2xl font-semibold tracking-tight text-white shadow-none hover:bg-white/[0.08] focus-visible:ring-[#e9b67c]/70"
+            onRefresh={refreshModels}
+            onChange={(model) => void applyModel(app, model)}
+          />
+        )}
+        {currentGroup && availableGroups.length > 1 ? (
+          <CompactSelectPicker
+            label={dt("{{v0}} 当前工具令牌分组", {
+              v0: toolLabel(app),
+            })}
+            value={selectedGroup ?? ""}
+            options={groupOptions}
+            disabled={pending}
+            triggerClassName="h-6 w-auto max-w-[180px] rounded-full border-white/10 bg-white/10 px-2 text-[10px] text-white/80 hover:bg-white/[0.16]"
+            onChange={(group) => void applyGroup(app, group)}
+          />
+        ) : (
+          currentGroup && (
+            <span className="rounded-full bg-white/10 px-2 py-0.5 text-[10px] text-white/75">
+              {currentGroup} {dt("分组")}
+            </span>
+          )
         )}
         {currentReasoning !== "auto" && (
           <span className="rounded-full bg-white/10 px-2 py-0.5 text-[10px] text-white/75">

@@ -121,4 +121,33 @@ describe("FocusToolCard", () => {
     fireEvent.click(directoryButton);
     expect(switcher.chooseLaunchDirectory).toHaveBeenCalledWith("claude");
   });
+
+  it("在当前模型展示位置提供直接切换入口", () => {
+    const switcher = createSwitcher("ready");
+    switcher.terminalModels = ["gpt-5.6-sol", "gpt-5.6-pro"];
+    switcher.rows = ["codex"];
+    switcher.runnableRows = ["codex"];
+    switcher.installedApps = new Set(["codex"]);
+    switcher.models = { codex: "gpt-5.6-sol" };
+    switcher.statusMap = new Map([
+      [
+        "codex",
+        {
+          app: "codex",
+          supported: true,
+          configured: true,
+          needsUpdate: false,
+          model: "gpt-5.6-sol",
+          recommendedModel: "gpt-5.6-sol",
+          message: null,
+        },
+      ],
+    ]);
+
+    render(<FocusToolCard switcher={switcher} onOpenTools={vi.fn()} />);
+
+    expect(
+      screen.getByRole("combobox", { name: "当前模型" }),
+    ).toHaveTextContent("gpt-5.6-sol");
+  });
 });
