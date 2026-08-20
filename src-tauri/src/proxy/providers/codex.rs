@@ -73,6 +73,7 @@ pub fn codex_provider_uses_chat_completions(provider: &Provider) -> bool {
         .unwrap_or(false)
 }
 
+#[cfg(test)]
 pub fn should_convert_codex_responses_to_chat(provider: &Provider, endpoint: &str) -> bool {
     let path = endpoint
         .split_once('?')
@@ -82,6 +83,61 @@ pub fn should_convert_codex_responses_to_chat(provider: &Provider, endpoint: &st
         path,
         "/responses" | "/v1/responses" | "/responses/compact" | "/v1/responses/compact"
     ) && codex_provider_uses_chat_completions(provider)
+}
+
+fn codex_catalog_api_format_for_model<'a>(provider: &'a Provider, model: &str) -> Option<&'a str> {
+    provider
+        .settings_config
+        .pointer("/modelCatalog/models")
+        .and_then(JsonValue::as_array)
+        .and_then(|models| {
+            models.iter().find(|entry| {
+                entry
+                    .get("model")
+                    .and_then(JsonValue::as_str)
+                    .is_some_and(|candidate| candidate.trim() == model.trim())
+            })
+        })
+        .and_then(|entry| {
+            entry
+                .get("apiFormat")
+                .or_else(|| entry.get("api_format"))
+                .and_then(JsonValue::as_str)
+        })
+        .map(str::trim)
+        .filter(|format| !format.is_empty())
+}
+
+fn codex_request_api_format<'a>(provider: &'a Provider, body: &JsonValue) -> Option<&'a str> {
+    let model = body
+        .get("model")
+        .and_then(JsonValue::as_str)
+        .map(str::trim)
+        .filter(|model| !model.is_empty())?;
+    codex_catalog_api_format_for_model(provider, model)
+}
+
+pub fn codex_provider_uses_chat_completions_for_body(
+    provider: &Provider,
+    body: &JsonValue,
+) -> bool {
+    codex_request_api_format(provider, body)
+        .map(is_chat_wire_api)
+        .unwrap_or_else(|| codex_provider_uses_chat_completions(provider))
+}
+
+pub fn should_convert_codex_responses_to_chat_for_body(
+    provider: &Provider,
+    endpoint: &str,
+    body: &JsonValue,
+) -> bool {
+    let path = endpoint
+        .split_once('?')
+        .map_or(endpoint, |(path, _query)| path);
+    matches!(
+        path,
+        "/responses" | "/v1/responses" | "/responses/compact" | "/v1/responses/compact"
+    ) && codex_provider_uses_chat_completions_for_body(provider, body)
 }
 
 /// Whether a converted Codex Responses request may send `prompt_cache_key` to
@@ -195,6 +251,7 @@ pub fn codex_provider_uses_anthropic(provider: &Provider) -> bool {
         .unwrap_or(false)
 }
 
+#[cfg(test)]
 pub fn should_convert_codex_responses_to_anthropic(provider: &Provider, endpoint: &str) -> bool {
     let path = endpoint
         .split_once('?')
@@ -204,6 +261,26 @@ pub fn should_convert_codex_responses_to_anthropic(provider: &Provider, endpoint
         path,
         "/responses" | "/v1/responses" | "/responses/compact" | "/v1/responses/compact"
     ) && codex_provider_uses_anthropic(provider)
+}
+
+pub fn codex_provider_uses_anthropic_for_body(provider: &Provider, body: &JsonValue) -> bool {
+    codex_request_api_format(provider, body)
+        .map(is_anthropic_wire_api)
+        .unwrap_or_else(|| codex_provider_uses_anthropic(provider))
+}
+
+pub fn should_convert_codex_responses_to_anthropic_for_body(
+    provider: &Provider,
+    endpoint: &str,
+    body: &JsonValue,
+) -> bool {
+    let path = endpoint
+        .split_once('?')
+        .map_or(endpoint, |(path, _query)| path);
+    matches!(
+        path,
+        "/responses" | "/v1/responses" | "/responses/compact" | "/v1/responses/compact"
+    ) && codex_provider_uses_anthropic_for_body(provider, body)
 }
 
 /// Whether a native-Responses Codex upstream needs Codex `namespace`/plugin
@@ -296,6 +373,7 @@ fn codex_provider_catalog_model_ids(provider: &Provider) -> HashSet<String> {
 
 /// For Codex Chat providers, ensure the request uses the configured upstream
 /// model before converting the request to Chat Completions.
+#[cfg(test)]
 pub fn apply_codex_chat_upstream_model(
     provider: &Provider,
     body: &mut JsonValue,
@@ -1365,6 +1443,52 @@ wire_api = "chat"
         assert!(should_convert_codex_responses_to_chat(
             &provider,
             "/v1/responses"
+        ));
+    }
+
+    #[test]
+    fn test_yuanheng_mixed_catalog_routes_by_requested_model() {
+        let mut provider = create_provider(json!({
+            "config": r#"
+model_provider = "yuanheng"
+model = "gpt-5.6-sol"
+
+[model_providers.yuanheng]
+base_url = "https://example.com/v1"
+wire_api = "responses"
+"#,
+            "modelCatalog": {
+                "models": [
+                    { "model": "gpt-5.6-sol", "apiFormat": "openai_responses" },
+                    { "model": "deepseek-v4-pro", "apiFormat": "openai_chat" },
+                    { "model": "claude-opus-4-7", "apiFormat": "anthropic" }
+                ]
+            }
+        }));
+        provider.meta = Some(crate::provider::ProviderMeta {
+            api_format: Some("openai_responses".to_string()),
+            ..Default::default()
+        });
+
+        assert!(!should_convert_codex_responses_to_chat_for_body(
+            &provider,
+            "/v1/responses",
+            &json!({ "model": "gpt-5.6-sol" })
+        ));
+        assert!(should_convert_codex_responses_to_chat_for_body(
+            &provider,
+            "/v1/responses",
+            &json!({ "model": "deepseek-v4-pro" })
+        ));
+        assert!(should_convert_codex_responses_to_anthropic_for_body(
+            &provider,
+            "/v1/responses",
+            &json!({ "model": "claude-opus-4-7" })
+        ));
+        assert!(!should_convert_codex_responses_to_anthropic_for_body(
+            &provider,
+            "/v1/responses",
+            &json!({ "model": "deepseek-v4-pro" })
         ));
     }
 

@@ -646,6 +646,10 @@ struct CodexCatalogModelSpec {
     /// Model-specific reasoning capabilities. Unknown models deliberately get
     /// a single non-adjustable `none` value instead of inheriting a GPT template.
     reasoning_profile: Option<ReasoningProfile>,
+    /// Optional per-model tool profile. YuanHeng groups can mix Responses,
+    /// Chat Completions, and Anthropic models in one native Codex picker, so a
+    /// provider-wide profile is not sufficient for those catalogs.
+    tool_profile: Option<CodexCatalogToolProfile>,
 }
 
 fn reasoning_level_description(level: &str) -> &'static str {
@@ -760,6 +764,11 @@ fn codex_catalog_model_specs(settings: &Value, config_text: &str) -> Vec<CodexCa
             .map(str::to_string);
         let reasoning_profile = model_config_reasoning_profile(model_config)
             .or_else(|| reasoning_profile_for_model(model, &local_reasoning_profiles));
+        let tool_profile = model_config
+            .get("apiFormat")
+            .or_else(|| model_config.get("api_format"))
+            .and_then(Value::as_str)
+            .map(|format| CodexCatalogToolProfile::from_api_format(Some(format)));
 
         specs.push(CodexCatalogModelSpec {
             model: model.to_string(),
@@ -769,6 +778,7 @@ fn codex_catalog_model_specs(settings: &Value, config_text: &str) -> Vec<CodexCa
             input_modalities,
             base_instructions,
             reasoning_profile,
+            tool_profile,
         });
     }
 
@@ -1112,6 +1122,7 @@ fn load_codex_model_catalog_template() -> Result<Value, AppError> {
     load_codex_model_catalog_template_uncached()
 }
 
+#[cfg(test)]
 fn codex_model_catalog_from_specs(
     specs: &[CodexCatalogModelSpec],
     template: &Value,
@@ -1126,6 +1137,44 @@ fn codex_model_catalog_from_specs(
     json!({ "models": entries })
 }
 
+fn codex_model_catalog_from_mixed_specs(
+    specs: &[CodexCatalogModelSpec],
+    default_profile: CodexCatalogToolProfile,
+) -> Result<Value, AppError> {
+    let resolved_profiles = specs
+        .iter()
+        .map(|spec| spec.tool_profile.unwrap_or(default_profile))
+        .collect::<Vec<_>>();
+    let needs_proxy_template = resolved_profiles.contains(&CodexCatalogToolProfile::ProxyChat);
+    let needs_native_template = resolved_profiles
+        .iter()
+        .any(|profile| *profile != CodexCatalogToolProfile::ProxyChat);
+    let proxy_template = needs_proxy_template
+        .then(load_codex_model_catalog_template)
+        .transpose()?;
+    let native_template = needs_native_template.then(load_codex_native_responses_template);
+
+    let entries = specs
+        .iter()
+        .zip(resolved_profiles)
+        .enumerate()
+        .map(|(index, (spec, profile))| {
+            let template = if profile == CodexCatalogToolProfile::ProxyChat {
+                proxy_template
+                    .as_ref()
+                    .expect("proxy template must exist for ProxyChat rows")
+            } else {
+                native_template
+                    .as_ref()
+                    .expect("native template must exist for native rows")
+            };
+            codex_catalog_model_entry(template, spec, index, profile)
+        })
+        .collect::<Vec<_>>();
+
+    Ok(json!({ "models": entries }))
+}
+
 fn codex_model_catalog_from_settings(
     settings: &Value,
     config_text: &str,
@@ -1136,18 +1185,7 @@ fn codex_model_catalog_from_settings(
         return Ok(None);
     }
 
-    // Native providers use the bundled clean template (no freeform apply_patch,
-    // no cache dependency); proxy-chat providers keep cloning Codex's gpt-5.5
-    // entry so the proxy can rewrite custom<->function tools as before.
-    let template = match profile {
-        CodexCatalogToolProfile::NativeResponses | CodexCatalogToolProfile::Anthropic => {
-            load_codex_native_responses_template()
-        }
-        CodexCatalogToolProfile::ProxyChat => load_codex_model_catalog_template()?,
-    };
-    Ok(Some(codex_model_catalog_from_specs(
-        &specs, &template, profile,
-    )))
+    Ok(Some(codex_model_catalog_from_mixed_specs(&specs, profile)?))
 }
 
 fn set_codex_model_catalog_json_field(
@@ -1248,14 +1286,34 @@ pub fn prepare_codex_config_text_with_named_model_catalog(
         // (MiMo/LongCat/MiniMax by host or model brand; Qwen3-Coder by model).
         // Everything else — relays, DouBao, web-search-capable Qwen models,
         // unknown providers — keeps Codex's default.
-        let disable_web_search = match profile {
-            // The Responses→Anthropic transform silently drops the Codex web_search
-            // hosted tool, so always disable it here rather than present a dead tool.
-            CodexCatalogToolProfile::Anthropic => true,
-            CodexCatalogToolProfile::NativeResponses => {
-                codex_native_gateway_rejects_web_search(&config_text)
+        let catalog_contains_anthropic = settings
+            .pointer("/modelCatalog/models")
+            .and_then(Value::as_array)
+            .is_some_and(|models| {
+                models.iter().any(|model| {
+                    model
+                        .get("apiFormat")
+                        .or_else(|| model.get("api_format"))
+                        .and_then(Value::as_str)
+                        == Some("anthropic")
+                })
+            });
+        let disable_web_search = if catalog_contains_anthropic {
+            // `web_search` is a top-level Codex setting, not a per-model
+            // catalog capability. A mixed catalog must therefore choose the
+            // safe common denominator or Claude rows would expose a tool the
+            // Responses→Anthropic bridge cannot carry.
+            true
+        } else {
+            match profile {
+                // The Responses→Anthropic transform silently drops the Codex web_search
+                // hosted tool, so always disable it here rather than present a dead tool.
+                CodexCatalogToolProfile::Anthropic => true,
+                CodexCatalogToolProfile::NativeResponses => {
+                    codex_native_gateway_rejects_web_search(&config_text)
+                }
+                CodexCatalogToolProfile::ProxyChat => false,
             }
-            CodexCatalogToolProfile::ProxyChat => false,
         };
         let config_text = set_codex_native_web_search_field(&config_text, disable_web_search)?;
         write_json_file(&catalog_path, &catalog)?;
@@ -3031,6 +3089,7 @@ base_url = "https://production.api/v1"
             input_modalities: None,
             base_instructions: None,
             reasoning_profile: None,
+            tool_profile: None,
         }];
         let catalog =
             codex_model_catalog_from_specs(&specs, &template, CodexCatalogToolProfile::ProxyChat);
@@ -3273,6 +3332,7 @@ base_url = "https://production.api/v1"
                 input_modalities: None,
                 base_instructions: None,
                 reasoning_profile: None,
+                tool_profile: None,
             },
             CodexCatalogModelSpec {
                 model: "deepseek/deepseek-v4-pro".to_string(),
@@ -3282,6 +3342,7 @@ base_url = "https://production.api/v1"
                 input_modalities: None,
                 base_instructions: None,
                 reasoning_profile: None,
+                tool_profile: None,
             },
             CodexCatalogModelSpec {
                 model: "glm-5.2v".to_string(),
@@ -3291,6 +3352,7 @@ base_url = "https://production.api/v1"
                 input_modalities: None,
                 base_instructions: None,
                 reasoning_profile: None,
+                tool_profile: None,
             },
             CodexCatalogModelSpec {
                 model: "deepseek-v4-flash".to_string(),
@@ -3300,6 +3362,7 @@ base_url = "https://production.api/v1"
                 input_modalities: Some(vec!["text".to_string(), "image".to_string()]),
                 base_instructions: None,
                 reasoning_profile: None,
+                tool_profile: None,
             },
             CodexCatalogModelSpec {
                 model: "custom-text-alias".to_string(),
@@ -3309,6 +3372,7 @@ base_url = "https://production.api/v1"
                 input_modalities: Some(vec!["text".to_string()]),
                 base_instructions: None,
                 reasoning_profile: None,
+                tool_profile: None,
             },
         ];
 
@@ -3381,6 +3445,7 @@ base_url = "https://production.api/v1"
             input_modalities: None,
             base_instructions: None,
             reasoning_profile: None,
+            tool_profile: None,
         }];
         // Using a gpt-5.5-shaped template under ProxyChat must NOT strip
         // apply_patch_tool_type. (The native template lacks it, so synthesize
@@ -3398,6 +3463,48 @@ base_url = "https://production.api/v1"
                 .and_then(|v| v.as_str()),
             Some("freeform"),
             "ProxyChat must preserve apply_patch_tool_type (no native stripping)"
+        );
+    }
+
+    #[test]
+    fn mixed_catalog_uses_each_models_declared_protocol_profile() {
+        let settings = json!({
+            "modelCatalog": {
+                "models": [
+                    { "model": "gpt-5.6-sol", "apiFormat": "openai_responses" },
+                    { "model": "deepseek-v4-pro", "apiFormat": "openai_chat" },
+                    { "model": "claude-opus-4-7", "apiFormat": "anthropic" }
+                ]
+            }
+        });
+
+        let catalog =
+            codex_model_catalog_from_settings(&settings, "", CodexCatalogToolProfile::ProxyChat)
+                .expect("mixed catalog generation should succeed")
+                .expect("mixed catalog should not be empty");
+        let models = catalog["models"].as_array().unwrap();
+        let entry = |slug: &str| {
+            models
+                .iter()
+                .find(|item| item["slug"].as_str() == Some(slug))
+                .unwrap()
+        };
+
+        assert!(entry("gpt-5.6-sol").get("apply_patch_tool_type").is_none());
+        assert_eq!(
+            entry("deepseek-v4-pro")
+                .get("apply_patch_tool_type")
+                .and_then(Value::as_str),
+            Some("freeform")
+        );
+        assert!(entry("claude-opus-4-7")
+            .get("apply_patch_tool_type")
+            .is_none());
+        assert_eq!(
+            entry("claude-opus-4-7")
+                .get("shell_type")
+                .and_then(Value::as_str),
+            Some("shell_command")
         );
     }
 
