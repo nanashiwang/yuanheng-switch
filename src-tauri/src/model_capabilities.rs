@@ -1,5 +1,28 @@
 use serde_json::Value;
 
+/// Infer the upstream protocol YuanHeng exposes for a text model.
+///
+/// This is deliberately model-driven: a single YuanHeng group may contain
+/// OpenAI Responses, OpenAI Chat Completions, and Anthropic Messages models at
+/// the same time. Callers must therefore not pin the protocol to whichever
+/// model happened to be selected when the provider was first configured.
+pub(crate) fn yuanheng_model_api_format(model: &str) -> &'static str {
+    let model = model.trim().to_ascii_lowercase();
+    if model.contains("claude") {
+        return "anthropic";
+    }
+    let openai_reasoning_model = model
+        .strip_prefix("gpt-")
+        .and_then(|rest| rest.chars().next())
+        .is_some_and(|version| version.is_ascii_digit() && version >= '5')
+        || (model.starts_with('o') && model.as_bytes().get(1).is_some_and(u8::is_ascii_digit));
+    if openai_reasoning_model {
+        "openai_responses"
+    } else {
+        "openai_chat"
+    }
+}
+
 /// Image-input capability shared by Codex catalog generation and proxy request
 /// rectification.
 ///

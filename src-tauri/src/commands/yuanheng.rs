@@ -12,7 +12,7 @@ use tauri_plugin_opener::OpenerExt;
 use toml_edit::DocumentMut;
 
 use crate::app_config::AppType;
-use crate::model_capabilities::is_image_generation_only_model;
+use crate::model_capabilities::{is_image_generation_only_model, yuanheng_model_api_format};
 use crate::model_reasoning::{
     fallback_reasoning_profile, load_local_reasoning_profiles, reasoning_profile_for_model,
     REASONING_LEVELS,
@@ -1175,25 +1175,34 @@ fn toml_string(value: &str) -> String {
     serde_json::to_string(value).unwrap_or_else(|_| "\"\"".to_string())
 }
 
-fn yuanheng_claude_api_format(model: &str) -> &'static str {
-    let model = model.to_ascii_lowercase();
-    if model.contains("claude") {
-        return "anthropic";
+fn terminal_catalog_models(selected: &str, available_models: &[String]) -> Vec<String> {
+    let mut seen = BTreeSet::new();
+    std::iter::once(selected)
+        .chain(available_models.iter().map(String::as_str))
+        .map(str::trim)
+        .filter(|model| !model.is_empty())
+        .filter(|model| !is_image_generation_only_model(model))
+        .filter(|model| seen.insert((*model).to_string()))
+        .map(str::to_string)
+        .collect()
+}
+
+fn grokbuild_models_config(token: &str, selected: &str, available_models: &[String]) -> String {
+    let mut config = format!("[models]\ndefault = {}\n", toml_string(selected));
+    for model in terminal_catalog_models(selected, available_models) {
+        config.push_str(&format!(
+            "\n[model.{}]\nmodel = {}\nbase_url = {}\nname = \"元衡\"\napi_key = {}\napi_backend = \"responses\"\ncontext_window = 400000\n",
+            toml_string(&model),
+            toml_string(&model),
+            toml_string(OPENAI_BASE_URL),
+            toml_string(token)
+        ));
     }
-    let openai_reasoning_model = model
-        .strip_prefix("gpt-")
-        .and_then(|rest| rest.chars().next())
-        .is_some_and(|version| version.is_ascii_digit() && version >= '5')
-        || (model.starts_with('o') && model.as_bytes().get(1).is_some_and(u8::is_ascii_digit));
-    if openai_reasoning_model {
-        "openai_responses"
-    } else {
-        "openai_chat"
-    }
+    config
 }
 
 fn provider_meta(app: &AppType, model: &str, reasoning: &str) -> ProviderMeta {
-    let claude_api_format = yuanheng_claude_api_format(model);
+    let claude_api_format = yuanheng_model_api_format(model);
     let mut meta = ProviderMeta {
         common_config_enabled: Some(true),
         api_format: Some(
@@ -1240,13 +1249,15 @@ fn provider_meta(app: &AppType, model: &str, reasoning: &str) -> ProviderMeta {
     meta
 }
 
-fn managed_provider(
+fn managed_provider_with_models(
     app: &AppType,
     token: &str,
     model: &str,
+    available_models: &[String],
     group: &str,
     reasoning: &str,
 ) -> Result<Provider, String> {
+    let catalog_models = terminal_catalog_models(model, available_models);
     let settings = match app {
         AppType::Claude | AppType::ClaudeDesktop => json!({
             "env": {
@@ -1272,11 +1283,12 @@ fn managed_provider(
                 toml_string(OPENAI_BASE_URL)
             ),
             "modelCatalog": {
-                "models": [{
-                    "model": model,
-                    "displayName": model,
-                    "contextWindow": 200_000
-                }]
+                "models": catalog_models.iter().map(|catalog_model| json!({
+                    "model": catalog_model,
+                    "displayName": catalog_model,
+                    "contextWindow": 200_000,
+                    "apiFormat": yuanheng_model_api_format(catalog_model)
+                })).collect::<Vec<_>>()
             }
         }),
         AppType::Gemini => json!({
@@ -1287,18 +1299,13 @@ fn managed_provider(
             }
         }),
         AppType::GrokBuild => json!({
-            "config": format!(
-                "[models]\ndefault = {}\n\n[model.{}]\nmodel = {}\nbase_url = {}\nname = \"元衡\"\napi_key = {}\napi_backend = \"responses\"\ncontext_window = 400000\n",
-                toml_string(model),
-                toml_string(model),
-                toml_string(model),
-                toml_string(OPENAI_BASE_URL),
-                toml_string(token)
-            )
+            "config": grokbuild_models_config(token, model, &catalog_models)
         }),
         AppType::OpenCode => {
             let mut models = Map::new();
-            models.insert(model.to_string(), json!({ "name": model }));
+            for catalog_model in &catalog_models {
+                models.insert(catalog_model.clone(), json!({ "name": catalog_model }));
+            }
             json!({
                 "npm": "@ai-sdk/openai-compatible",
                 "name": "元衡",
@@ -1314,18 +1321,21 @@ fn managed_provider(
             "baseUrl": OPENAI_BASE_URL,
             "apiKey": token,
             "api": "openai-completions",
-            "models": [{
-                "id": model,
-                "name": model,
+            "models": catalog_models.iter().map(|catalog_model| json!({
+                "id": catalog_model,
+                "name": catalog_model,
                 "contextWindow": 200000
-            }]
+            })).collect::<Vec<_>>()
         }),
         AppType::Hermes => json!({
             "name": "yuanheng",
             "base_url": OPENAI_BASE_URL,
             "api_key": token,
             "api_mode": "chat_completions",
-            "models": [{ "id": model, "name": model }]
+            "models": catalog_models.iter().map(|catalog_model| json!({
+                "id": catalog_model,
+                "name": catalog_model
+            })).collect::<Vec<_>>()
         }),
     };
 
@@ -1342,6 +1352,17 @@ fn managed_provider(
     provider.icon = Some("yuanheng".to_string());
     provider.meta = Some(provider_meta(app, model, reasoning));
     Ok(provider)
+}
+
+#[cfg(test)]
+fn managed_provider(
+    app: &AppType,
+    token: &str,
+    model: &str,
+    group: &str,
+    reasoning: &str,
+) -> Result<Provider, String> {
+    managed_provider_with_models(app, token, model, &[], group, reasoning)
 }
 
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -1435,29 +1456,14 @@ fn save_managed_codex_provider(
         .map_err(|error| error.to_string())
 }
 
-fn combined_codex_catalog_settings(state: &AppState) -> Result<Value, String> {
-    let mut models = Vec::new();
-    let mut seen = BTreeSet::new();
-    for namespace in [AppType::Codex.as_str(), CHATGPT_DESKTOP_NAMESPACE] {
-        let Some(provider) = managed_codex_provider_for_namespace(state, namespace)? else {
-            continue;
-        };
-        let entries = provider
+fn codex_provider_catalog_settings(provider: &Provider) -> Value {
+    json!({
+        "modelCatalog": provider
             .settings_config
-            .pointer("/modelCatalog/models")
-            .and_then(Value::as_array)
+            .get("modelCatalog")
             .cloned()
-            .unwrap_or_default();
-        for entry in entries {
-            let Some(model) = entry.get("model").and_then(Value::as_str) else {
-                continue;
-            };
-            if seen.insert(model.to_string()) {
-                models.push(entry);
-            }
-        }
-    }
-    Ok(json!({ "modelCatalog": { "models": models } }))
+            .unwrap_or_else(|| json!({ "models": [] }))
+    })
 }
 
 fn set_codex_reasoning_field(config_text: &str, reasoning: Option<&str>) -> Result<String, String> {
@@ -1492,9 +1498,20 @@ fn codex_surface_route_config(
         crate::codex_config::prepare_codex_provider_live_config(&placeholder_auth, &config_text)
             .map_err(|error| error.to_string())?;
     let configured_reasoning = provider_reasoning(provider).unwrap_or_else(|| "auto".to_string());
-    let reasoning_override = match configured_reasoning.as_str() {
-        "auto" => None,
-        level => Some(level),
+    let has_multiple_models = catalog_settings
+        .pointer("/modelCatalog/models")
+        .and_then(Value::as_array)
+        .is_some_and(|models| models.len() > 1);
+    let reasoning_override = if has_multiple_models {
+        // A provider-level effort selected for the initial model is not valid
+        // for every row in a mixed catalog. Let Codex use each row's declared
+        // default and picker options after the user changes models in-agent.
+        None
+    } else {
+        match configured_reasoning.as_str() {
+            "auto" => None,
+            level => Some(level),
+        }
     };
     let config_text = set_codex_reasoning_field(&config_text, reasoning_override)?;
     crate::codex_config::prepare_codex_config_text_with_named_model_catalog(
@@ -1518,7 +1535,7 @@ fn write_codex_surface_config_at_origin(
                 CodexSurface::Desktop => "ChatGPT Desktop 配置不存在".to_string(),
             }
         })?;
-    let catalog_settings = combined_codex_catalog_settings(state)?;
+    let catalog_settings = codex_provider_catalog_settings(&provider);
     let route = codex_surface_route_config(
         &provider,
         &format!("{proxy_origin}/{}/v1", surface.route_prefix()),
@@ -1566,18 +1583,14 @@ async fn write_codex_surface_config(state: &AppState, surface: CodexSurface) -> 
 }
 
 fn set_codex_available_models(provider: &mut Provider, selected: &str, models: &[String]) {
-    let mut seen = BTreeSet::new();
-    let entries = std::iter::once(selected)
-        .chain(models.iter().map(String::as_str))
-        .map(str::trim)
-        .filter(|model| !model.is_empty())
-        .filter(|model| !is_image_generation_only_model(model))
-        .filter(|model| seen.insert((*model).to_string()))
+    let entries = terminal_catalog_models(selected, models)
+        .iter()
         .map(|model| {
             json!({
                 "model": model,
                 "displayName": model,
-                "contextWindow": 200_000
+                "contextWindow": 200_000,
+                "apiFormat": yuanheng_model_api_format(model)
             })
         })
         .collect::<Vec<_>>();
@@ -1597,7 +1610,14 @@ async fn configure_codex_surface(
     // 原始 Codex 状态，便于统一关闭元衡接管时恢复。
     remember_tool_state(state, &AppType::Codex)?;
 
-    let mut selected = managed_provider(&AppType::Codex, token, model, group, reasoning)?;
+    let mut selected = managed_provider_with_models(
+        &AppType::Codex,
+        token,
+        model,
+        available_models,
+        group,
+        reasoning,
+    )?;
     set_codex_available_models(&mut selected, model, available_models);
     selected.settings_config["yuanhengSurface"] = json!(match surface {
         CodexSurface::Terminal => "terminal",
@@ -1675,7 +1695,7 @@ fn provider_schema_current(provider: &Provider, app: &AppType) -> bool {
             let Some(meta) = provider.meta.as_ref() else {
                 return false;
             };
-            meta.api_format.as_deref() == Some(yuanheng_claude_api_format(&model))
+            meta.api_format.as_deref() == Some(yuanheng_model_api_format(&model))
                 && meta
                     .claude_desktop_model_routes
                     .get("claude-sonnet-5")
@@ -1690,17 +1710,26 @@ fn provider_schema_current(provider: &Provider, app: &AppType) -> bool {
                 .meta
                 .as_ref()
                 .and_then(|meta| meta.api_format.as_deref())
-                == Some(yuanheng_claude_api_format(&model));
-            let catalog_has_model = provider
+                == Some(yuanheng_model_api_format(&model));
+            let catalog_is_current = provider
                 .settings_config
                 .pointer("/modelCatalog/models")
                 .and_then(Value::as_array)
                 .is_some_and(|models| {
-                    models.iter().any(|item| {
-                        item.get("model").and_then(Value::as_str) == Some(model.as_str())
-                    })
+                    !models.is_empty()
+                        && models.iter().any(|item| {
+                            item.get("model").and_then(Value::as_str) == Some(model.as_str())
+                        })
+                        && models.iter().all(|item| {
+                            let Some(catalog_model) = item.get("model").and_then(Value::as_str)
+                            else {
+                                return false;
+                            };
+                            item.get("apiFormat").and_then(Value::as_str)
+                                == Some(yuanheng_model_api_format(catalog_model))
+                        })
                 });
-            api_format_current && catalog_has_model
+            api_format_current && catalog_is_current
         }
         _ => true,
     }
@@ -1726,6 +1755,87 @@ fn codex_catalog_covers_available_models(provider: &Provider, models: &[String])
         && terminal_models
             .iter()
             .all(|model| configured.contains(model.as_str()))
+}
+
+fn provider_catalog_covers_available_models(
+    provider: &Provider,
+    app: &AppType,
+    models: &[String],
+) -> bool {
+    if matches!(app, AppType::Codex) {
+        return codex_catalog_covers_available_models(provider, models);
+    }
+    let configured = match app {
+        AppType::OpenCode => provider
+            .settings_config
+            .get("models")
+            .and_then(Value::as_object)
+            .map(|items| items.keys().cloned().collect::<BTreeSet<_>>()),
+        AppType::OpenClaw | AppType::Hermes => provider
+            .settings_config
+            .get("models")
+            .and_then(Value::as_array)
+            .map(|items| {
+                items
+                    .iter()
+                    .filter_map(|item| item.get("id").and_then(Value::as_str))
+                    .map(str::to_string)
+                    .collect::<BTreeSet<_>>()
+            }),
+        AppType::GrokBuild => provider
+            .settings_config
+            .get("config")
+            .and_then(Value::as_str)
+            .and_then(|config| config.parse::<toml::Value>().ok())
+            .and_then(|config| {
+                config
+                    .get("model")
+                    .and_then(toml::Value::as_table)
+                    .map(|items| items.keys().cloned().collect::<BTreeSet<_>>())
+            }),
+        AppType::Claude | AppType::ClaudeDesktop | AppType::Gemini => return true,
+        AppType::Codex => unreachable!(),
+    }
+    .unwrap_or_default();
+    !models.is_empty()
+        && models
+            .iter()
+            .all(|model| configured.contains(model.as_str()))
+}
+
+fn cached_models_for_group(
+    connection: &YuanhengConnectionStatus,
+    group: Option<&str>,
+    selected: Option<String>,
+) -> Vec<String> {
+    let Some(group) = group else {
+        return selected.into_iter().collect();
+    };
+    let models = connection
+        .terminal_models
+        .iter()
+        .filter(|model| {
+            connection
+                .model_groups
+                .get(*model)
+                .is_some_and(|groups| groups.iter().any(|candidate| candidate == group))
+        })
+        .cloned()
+        .collect::<Vec<_>>();
+    if models.is_empty() {
+        selected.into_iter().collect()
+    } else {
+        models
+    }
+}
+
+fn cached_models_for_provider_group(
+    connection: &YuanhengConnectionStatus,
+    provider: &Provider,
+    app: &AppType,
+) -> Vec<String> {
+    let group = provider_group(provider);
+    cached_models_for_group(connection, group.as_deref(), provider_model(provider, app))
 }
 
 fn codex_surface_matches(provider: &Provider, surface: CodexSurface) -> bool {
@@ -1898,7 +2008,12 @@ fn claude_desktop_runtime_status() -> Option<YuanhengRuntimeStatus> {
     None
 }
 
-fn tool_status(state: &AppState, app: AppType, models: &[String]) -> YuanhengToolStatus {
+fn tool_status(
+    state: &AppState,
+    app: AppType,
+    connection: &YuanhengConnectionStatus,
+) -> YuanhengToolStatus {
+    let models = &connection.models;
     let recommended = recommended_model(&app, models);
     let provider = ProviderService::list(state, app.clone())
         .ok()
@@ -1911,10 +2026,11 @@ fn tool_status(state: &AppState, app: AppType, models: &[String]) -> YuanhengToo
         .as_ref()
         .is_some_and(|item| provider_has_credentials(item, &app));
     let provider_schema_current = provider.as_ref().is_some_and(|item| {
+        let expected_models = cached_models_for_provider_group(connection, item, &app);
         provider_schema_current(item, &app)
+            && provider_catalog_covers_available_models(item, &app, &expected_models)
             && (!matches!(app, AppType::Codex)
-                || (codex_catalog_covers_available_models(item, models)
-                    && codex_surface_matches(item, CodexSurface::Terminal)))
+                || codex_surface_matches(item, CodexSurface::Terminal))
     });
     let surface_config_current = !matches!(app, AppType::Codex)
         || std::fs::read_to_string(codex_terminal_profile_path())
@@ -1978,7 +2094,11 @@ fn workbuddy_config_matches(value: &Value, model: &str) -> bool {
     let Some(item) = value
         .get("models")
         .and_then(Value::as_array)
-        .and_then(|models| models.first())
+        .and_then(|models| {
+            models
+                .iter()
+                .find(|item| item.get("id").and_then(Value::as_str) == Some(model))
+        })
     else {
         return false;
     };
@@ -1995,7 +2115,25 @@ fn workbuddy_config_matches(value: &Value, model: &str) -> bool {
             .is_some_and(|models| models.iter().any(|item| item.as_str() == Some(model)))
 }
 
-fn workbuddy_status(state: &AppState, models: &[String]) -> YuanhengToolStatus {
+fn workbuddy_config_covers_models(value: &Value, models: &[String]) -> bool {
+    let configured = value
+        .get("models")
+        .and_then(Value::as_array)
+        .map(|items| {
+            items
+                .iter()
+                .filter_map(|item| item.get("id").and_then(Value::as_str))
+                .collect::<BTreeSet<_>>()
+        })
+        .unwrap_or_default();
+    !models.is_empty()
+        && models
+            .iter()
+            .all(|model| configured.contains(model.as_str()))
+}
+
+fn workbuddy_status(state: &AppState, connection: &YuanhengConnectionStatus) -> YuanhengToolStatus {
+    let models = &connection.models;
     let recommended = recommended_model(&AppType::OpenCode, models);
     let stored_model = state
         .db
@@ -2017,11 +2155,17 @@ fn workbuddy_status(state: &AppState, models: &[String]) -> YuanhengToolStatus {
         .is_some_and(|value| !value.is_empty());
     let configured = was_managed
         && stored_model.as_deref().is_some_and(|model| {
+            let expected_models = cached_models_for_group(
+                connection,
+                stored_group.as_deref(),
+                Some(model.to_string()),
+            );
             !is_image_generation_only_model(model)
                 && models.iter().any(|item| item == model)
-                && read_workbuddy_config()
-                    .as_ref()
-                    .is_some_and(|value| workbuddy_config_matches(value, model))
+                && read_workbuddy_config().as_ref().is_some_and(|value| {
+                    workbuddy_config_matches(value, model)
+                        && workbuddy_config_covers_models(value, &expected_models)
+                })
         });
     let supported = recommended.is_some();
     YuanhengToolStatus {
@@ -2047,7 +2191,11 @@ fn workbuddy_status(state: &AppState, models: &[String]) -> YuanhengToolStatus {
     }
 }
 
-fn chatgpt_desktop_status(state: &AppState, models: &[String]) -> YuanhengToolStatus {
+fn chatgpt_desktop_status(
+    state: &AppState,
+    connection: &YuanhengConnectionStatus,
+) -> YuanhengToolStatus {
+    let models = &connection.models;
     let stored = managed_codex_provider_for_namespace(state, CHATGPT_DESKTOP_NAMESPACE)
         .ok()
         .flatten();
@@ -2060,8 +2208,10 @@ fn chatgpt_desktop_status(state: &AppState, models: &[String]) -> YuanhengToolSt
         .and_then(|config| crate::codex_config::extract_codex_base_url(&config))
         .is_some_and(|url| url.contains("/chatgpt-desktop/v1"));
     let schema_current = stored.as_ref().is_some_and(|provider| {
+        let expected_models =
+            cached_models_for_provider_group(connection, provider, &AppType::Codex);
         provider_schema_current(provider, &AppType::Codex)
-            && codex_catalog_covers_available_models(provider, models)
+            && codex_catalog_covers_available_models(provider, &expected_models)
             && codex_surface_matches(provider, CodexSurface::Desktop)
     });
     let configured = stored.is_some() && schema_current && route_current;
@@ -2093,10 +2243,10 @@ fn all_tool_statuses(
     connection: &YuanhengConnectionStatus,
 ) -> Vec<YuanhengToolStatus> {
     let mut statuses = AppType::all()
-        .map(|app| tool_status(state, app, &connection.models))
+        .map(|app| tool_status(state, app, connection))
         .collect::<Vec<_>>();
-    statuses.push(chatgpt_desktop_status(state, &connection.models));
-    statuses.push(workbuddy_status(state, &connection.models));
+    statuses.push(chatgpt_desktop_status(state, connection));
+    statuses.push(workbuddy_status(state, connection));
     statuses
 }
 
@@ -2182,13 +2332,15 @@ fn configure_workbuddy(
     state: &AppState,
     token: &str,
     model: &str,
+    available_models: &[String],
     group: &str,
 ) -> Result<YuanhengToolConfigureResult, String> {
     remember_workbuddy_state(state)?;
+    let catalog_models = terminal_catalog_models(model, available_models);
     let config = json!({
-        "models": [{
-            "id": model,
-            "name": model,
+        "models": catalog_models.iter().map(|catalog_model| json!({
+            "id": catalog_model,
+            "name": catalog_model,
             "vendor": "元衡",
             "url": format!("{OPENAI_BASE_URL}/chat/completions"),
             "apiKey": token,
@@ -2196,8 +2348,8 @@ fn configure_workbuddy(
             "maxOutputTokens": 8192,
             "supportsToolCall": true,
             "supportsImages": true
-        }],
-        "availableModels": [model]
+        })).collect::<Vec<_>>(),
+        "availableModels": catalog_models
     });
     crate::config::write_json_file(&workbuddy_config_path(), &config)
         .map_err(|error| format!("写入 WorkBuddy 配置失败: {error}"))?;
@@ -2554,18 +2706,18 @@ fn resolve_reasoning_level(
     }
 }
 
-fn configure_tool(
+fn configure_tool_with_models(
     state: &AppState,
     app: AppType,
     token: &str,
-    models: &[String],
-    requested_model: Option<&str>,
+    model: &str,
+    available_models: &[String],
     group: &str,
     reasoning: &str,
 ) -> Result<YuanhengToolConfigureResult, String> {
-    let model = resolve_tool_model(app.clone(), models, requested_model)?;
     remember_tool_state(state, &app)?;
-    let provider = managed_provider(&app, token, &model, group, reasoning)?;
+    let provider =
+        managed_provider_with_models(&app, token, model, available_models, group, reasoning)?;
     let exists = ProviderService::list(state, app.clone())
         .map_err(|e| e.to_string())?
         .contains_key(MANAGED_PROVIDER_ID);
@@ -2579,10 +2731,24 @@ fn configure_tool(
     Ok(YuanhengToolConfigureResult {
         app: app.as_str().to_string(),
         configured: true,
-        model: Some(model),
+        model: Some(model.to_string()),
         warnings: switch_result.warnings,
         error: None,
     })
+}
+
+#[cfg(test)]
+fn configure_tool(
+    state: &AppState,
+    app: AppType,
+    token: &str,
+    models: &[String],
+    requested_model: Option<&str>,
+    group: &str,
+    reasoning: &str,
+) -> Result<YuanhengToolConfigureResult, String> {
+    let model = resolve_tool_model(app.clone(), models, requested_model)?;
+    configure_tool_with_models(state, app, token, &model, models, group, reasoning)
 }
 
 #[tauri::command]
@@ -2825,6 +2991,7 @@ pub async fn configure_yuanheng_tools(
     // 令牌误用于新选择的分组。缺少记录时按目标分组重新读取令牌。
     let mut token_cache =
         token_cache_for_stored_group(control_token_group.as_deref(), control_token);
+    let mut group_models_cache: HashMap<String, Result<Vec<String>, String>> = HashMap::new();
     let mut results = Vec::new();
     let mut seen = BTreeSet::new();
     for app_name in apps {
@@ -2901,6 +3068,36 @@ pub async fn configure_yuanheng_tools(
                 continue;
             }
         };
+        let group_models_result = if let Some(cached) = group_models_cache.get(&group) {
+            cached.clone()
+        } else {
+            let fetched = fetch_user_models(&client, &session_cookie, &user_id, Some(&group)).await;
+            group_models_cache.insert(group.clone(), fetched.clone());
+            fetched
+        };
+        let (group_models, group_models_warning) = match group_models_result {
+            Ok(models) if models.iter().any(|item| item == &model) => {
+                (terminal_catalog_models(&model, &models), None)
+            }
+            Ok(_) => {
+                results.push(YuanhengToolConfigureResult {
+                    app: app_name.clone(),
+                    configured: false,
+                    model: Some(model.clone()),
+                    warnings: Vec::new(),
+                    error: Some(format!(
+                        "模型 {model} 已不在 {group} 分组的实时目录中，请刷新后重新选择"
+                    )),
+                });
+                continue;
+            }
+            Err(error) => (
+                vec![model.clone()],
+                Some(format!(
+                    "读取 {group} 分组模型失败，仅配置当前模型：{error}"
+                )),
+            ),
+        };
         let token = if let Some(token) = token_cache.get(&group) {
             token.clone()
         } else {
@@ -2937,7 +3134,7 @@ pub async fn configure_yuanheng_tools(
             }
         }
         let configured = if is_workbuddy {
-            configure_workbuddy(&state, &token, &model, &group)
+            configure_workbuddy(&state, &token, &model, &group_models, &group)
         } else if matches!(&app, AppType::Codex) {
             configure_codex_surface(
                 &state,
@@ -2948,18 +3145,18 @@ pub async fn configure_yuanheng_tools(
                 },
                 &token,
                 &model,
-                &connection.models,
+                &group_models,
                 &group,
                 &reasoning,
             )
             .await
         } else {
-            configure_tool(
+            configure_tool_with_models(
                 &state,
                 app.clone(),
                 &token,
-                &connection.models,
-                Some(&model),
+                &model,
+                &group_models,
                 &group,
                 &reasoning,
             )
@@ -2967,6 +3164,9 @@ pub async fn configure_yuanheng_tools(
         match configured {
             Ok(mut result) => {
                 result.app = app_name.clone();
+                if let Some(warning) = group_models_warning {
+                    result.warnings.push(warning);
+                }
                 result.warnings.push(format!("使用令牌分组：{group}"));
                 if app_name == AppType::Codex.as_str() {
                     crate::services::codex_session_bridge::update_codex_session_model(
@@ -3880,6 +4080,8 @@ mod tests {
             .all(|item| item["model"].as_str() != Some("gpt-image-2")));
         assert_eq!(models[0]["model"], "k3");
         assert_eq!(models[1]["model"], "gpt-5.6-sol");
+        assert_eq!(models[0]["apiFormat"], "openai_chat");
+        assert_eq!(models[1]["apiFormat"], "openai_responses");
         let mut legacy_codex_chat = codex_chat.clone();
         legacy_codex_chat.meta.as_mut().unwrap().api_format = Some("openai_responses".to_string());
         assert!(!provider_schema_current(
@@ -3929,6 +4131,91 @@ mod tests {
     }
 
     #[test]
+    fn managed_agents_receive_the_selected_groups_full_text_catalog() {
+        let models = vec![
+            "gpt-5.6-sol".to_string(),
+            "deepseek-v4-pro".to_string(),
+            "claude-opus-4-7".to_string(),
+            "gpt-image-2".to_string(),
+        ];
+
+        let codex = managed_provider_with_models(
+            &AppType::Codex,
+            "sk-test",
+            "gpt-5.6-sol",
+            &models,
+            "vip",
+            "auto",
+        )
+        .unwrap();
+        let codex_models = codex.settings_config["modelCatalog"]["models"]
+            .as_array()
+            .unwrap();
+        assert_eq!(codex_models.len(), 3);
+        assert_eq!(codex_models[2]["apiFormat"], "anthropic");
+
+        let opencode = managed_provider_with_models(
+            &AppType::OpenCode,
+            "sk-test",
+            "gpt-5.6-sol",
+            &models,
+            "vip",
+            "auto",
+        )
+        .unwrap();
+        assert_eq!(
+            opencode.settings_config["models"]
+                .as_object()
+                .unwrap()
+                .len(),
+            3
+        );
+
+        let openclaw = managed_provider_with_models(
+            &AppType::OpenClaw,
+            "sk-test",
+            "gpt-5.6-sol",
+            &models,
+            "vip",
+            "auto",
+        )
+        .unwrap();
+        assert_eq!(
+            openclaw.settings_config["models"].as_array().unwrap().len(),
+            3
+        );
+
+        let hermes = managed_provider_with_models(
+            &AppType::Hermes,
+            "sk-test",
+            "gpt-5.6-sol",
+            &models,
+            "vip",
+            "auto",
+        )
+        .unwrap();
+        assert_eq!(
+            hermes.settings_config["models"].as_array().unwrap().len(),
+            3
+        );
+
+        let grok = managed_provider_with_models(
+            &AppType::GrokBuild,
+            "sk-test",
+            "gpt-5.6-sol",
+            &models,
+            "vip",
+            "auto",
+        )
+        .unwrap();
+        let grok_config = grok.settings_config["config"].as_str().unwrap();
+        assert!(grok_config.contains("[model.\"gpt-5.6-sol\"]"));
+        assert!(grok_config.contains("[model.\"deepseek-v4-pro\"]"));
+        assert!(grok_config.contains("[model.\"claude-opus-4-7\"]"));
+        assert!(!grok_config.contains("gpt-image-2"));
+    }
+
+    #[test]
     fn validates_reasoning_levels() {
         let supported = HashMap::from([(
             "k3".to_string(),
@@ -3967,14 +4254,11 @@ mod tests {
 
     #[test]
     fn selects_claude_protocol_by_model_family() {
-        assert_eq!(yuanheng_claude_api_format("claude-opus-4-7"), "anthropic");
-        assert_eq!(
-            yuanheng_claude_api_format("gpt-5.6-sol"),
-            "openai_responses"
-        );
-        assert_eq!(yuanheng_claude_api_format("o3-mini"), "openai_responses");
-        assert_eq!(yuanheng_claude_api_format("k3"), "openai_chat");
-        assert_eq!(yuanheng_claude_api_format("deepseek-v4-pro"), "openai_chat");
+        assert_eq!(yuanheng_model_api_format("claude-opus-4-7"), "anthropic");
+        assert_eq!(yuanheng_model_api_format("gpt-5.6-sol"), "openai_responses");
+        assert_eq!(yuanheng_model_api_format("o3-mini"), "openai_responses");
+        assert_eq!(yuanheng_model_api_format("k3"), "openai_chat");
+        assert_eq!(yuanheng_model_api_format("deepseek-v4-pro"), "openai_chat");
     }
 
     #[test]
@@ -4010,22 +4294,19 @@ mod tests {
             Some("k3")
         );
 
-        let catalog = combined_codex_catalog_settings(&state).unwrap();
-        assert_eq!(
-            catalog["modelCatalog"]["models"].as_array().unwrap().len(),
-            2
-        );
+        let terminal_catalog = codex_provider_catalog_settings(&stored_terminal);
+        let desktop_catalog = codex_provider_catalog_settings(&stored_desktop);
         let terminal_config = codex_surface_route_config(
             &stored_terminal,
             "http://127.0.0.1:15721/codex/v1",
-            &catalog,
+            &terminal_catalog,
             CodexSurface::Terminal,
         )
         .unwrap();
         let desktop_config = codex_surface_route_config(
             &stored_desktop,
             "http://127.0.0.1:15721/chatgpt-desktop/v1",
-            &catalog,
+            &desktop_catalog,
             CodexSurface::Desktop,
         )
         .unwrap();
@@ -4045,6 +4326,24 @@ mod tests {
             crate::codex_config::YUANHENG_DESKTOP_MODEL_CATALOG_FILENAME
         )
         .exists());
+        let terminal_catalog: Value = serde_json::from_str(
+            &std::fs::read_to_string(crate::codex_config::get_codex_named_model_catalog_path(
+                crate::codex_config::YUANHENG_TERMINAL_MODEL_CATALOG_FILENAME,
+            ))
+            .unwrap(),
+        )
+        .unwrap();
+        let desktop_catalog: Value = serde_json::from_str(
+            &std::fs::read_to_string(crate::codex_config::get_codex_named_model_catalog_path(
+                crate::codex_config::YUANHENG_DESKTOP_MODEL_CATALOG_FILENAME,
+            ))
+            .unwrap(),
+        )
+        .unwrap();
+        assert_eq!(terminal_catalog["models"].as_array().unwrap().len(), 1);
+        assert_eq!(terminal_catalog["models"][0]["slug"], "gpt-5.6-sol");
+        assert_eq!(desktop_catalog["models"].as_array().unwrap().len(), 1);
+        assert_eq!(desktop_catalog["models"][0]["slug"], "k3");
     }
 
     #[test]
@@ -4204,6 +4503,31 @@ base_url = "http://127.0.0.1:15721/chatgpt-desktop/v1"
 
     #[test]
     #[serial]
+    fn codex_mixed_catalog_does_not_pin_initial_models_reasoning_level() {
+        let (_home, _state) = isolated_state();
+        let provider = managed_provider_with_models(
+            &AppType::Codex,
+            "token",
+            "gpt-5.6-sol",
+            &["gpt-5.6-sol".to_string(), "deepseek-v4-pro".to_string()],
+            "default",
+            "xhigh",
+        )
+        .unwrap();
+        let catalog = codex_provider_catalog_settings(&provider);
+        let config = codex_surface_route_config(
+            &provider,
+            "http://127.0.0.1:15721/codex/v1",
+            &catalog,
+            CodexSurface::Terminal,
+        )
+        .unwrap();
+
+        assert!(!config.contains("model_reasoning_effort"));
+    }
+
+    #[test]
+    #[serial]
     fn removes_owned_codex_surface_artifacts() {
         let (_home, state) = isolated_state();
         let desktop = managed_provider(&AppType::Codex, "token", "k3", "default", "high").unwrap();
@@ -4346,7 +4670,14 @@ base_url = "http://127.0.0.1:15721/chatgpt-desktop/v1"
         let path = workbuddy_config_path();
         crate::config::write_text_file(&path, r#"{"models":[],"availableModels":[]}"#).unwrap();
 
-        let configured = configure_workbuddy(&state, "yuanheng-token", "k3", "vip").unwrap();
+        let configured = configure_workbuddy(
+            &state,
+            "yuanheng-token",
+            "k3",
+            &["k3".to_string(), "gpt-5.6-sol".to_string()],
+            "vip",
+        )
+        .unwrap();
         assert!(configured.configured);
         let live = read_workbuddy_config().unwrap();
         assert_eq!(
@@ -4354,7 +4685,18 @@ base_url = "http://127.0.0.1:15721/chatgpt-desktop/v1"
             Some("https://cn.meta-api.vip/v1/chat/completions")
         );
         assert!(workbuddy_config_matches(&live, "k3"));
-        let status = workbuddy_status(&state, &["k3".to_string()]);
+        assert!(workbuddy_config_matches(&live, "gpt-5.6-sol"));
+        assert_eq!(live["models"].as_array().unwrap().len(), 2);
+        let connection = YuanhengConnectionStatus {
+            models: vec!["k3".to_string(), "gpt-5.6-sol".to_string()],
+            terminal_models: vec!["k3".to_string(), "gpt-5.6-sol".to_string()],
+            model_groups: HashMap::from([
+                ("k3".to_string(), vec!["vip".to_string()]),
+                ("gpt-5.6-sol".to_string(), vec!["vip".to_string()]),
+            ]),
+            ..YuanhengConnectionStatus::default()
+        };
+        let status = workbuddy_status(&state, &connection);
         assert!(status.configured);
         assert_eq!(status.group.as_deref(), Some("vip"));
 

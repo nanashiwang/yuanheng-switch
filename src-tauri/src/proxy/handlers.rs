@@ -956,10 +956,12 @@ async fn handle_responses_for_app(
 
     let connection_guard = result.connection_guard.take();
     ctx.outbound_model = result.outbound_model.take();
+    let codex_responses_to_chat = result.codex_responses_to_chat;
+    let codex_responses_to_anthropic = result.codex_responses_to_anthropic;
     ctx.provider = result.provider;
     let response = result.response;
 
-    if super::providers::should_convert_codex_responses_to_anthropic(&ctx.provider, &endpoint) {
+    if codex_responses_to_anthropic {
         return handle_codex_anthropic_to_responses_transform(
             response,
             &ctx,
@@ -971,7 +973,7 @@ async fn handle_responses_for_app(
         .await;
     }
 
-    if super::providers::should_convert_codex_responses_to_chat(&ctx.provider, &endpoint) {
+    if codex_responses_to_chat {
         return handle_codex_chat_to_responses_transform(
             response,
             &ctx,
@@ -1104,10 +1106,12 @@ async fn handle_responses_compact_for_app(
 
     let connection_guard = result.connection_guard.take();
     ctx.outbound_model = result.outbound_model.take();
+    let codex_responses_to_chat = result.codex_responses_to_chat;
+    let codex_responses_to_anthropic = result.codex_responses_to_anthropic;
     ctx.provider = result.provider;
     let response = result.response;
 
-    if super::providers::should_convert_codex_responses_to_anthropic(&ctx.provider, &endpoint) {
+    if codex_responses_to_anthropic {
         return handle_codex_anthropic_to_responses_transform(
             response,
             &ctx,
@@ -1119,7 +1123,7 @@ async fn handle_responses_compact_for_app(
         .await;
     }
 
-    if super::providers::should_convert_codex_responses_to_chat(&ctx.provider, &endpoint) {
+    if codex_responses_to_chat {
         return handle_codex_chat_to_responses_transform(
             response,
             &ctx,
