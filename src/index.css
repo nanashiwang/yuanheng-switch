@@ -211,6 +211,37 @@ html.dark {
     overflow-x: hidden;
   }
 
+  /* Skills uses a bounded native scroll container. Keep its thumb visible so
+     mouse-wheel/trackpad users can discover the scrollable region even though
+     the rest of the desktop shell intentionally hides scrollbars. */
+  .skills-scroll-area {
+    overscroll-behavior-y: contain;
+    scrollbar-color: hsl(var(--muted-foreground) / 0.42) transparent;
+    scrollbar-gutter: stable;
+    scrollbar-width: thin;
+  }
+
+  .skills-scroll-area::-webkit-scrollbar {
+    display: block;
+    width: 8px;
+  }
+
+  .skills-scroll-area::-webkit-scrollbar-track {
+    background: transparent;
+  }
+
+  .skills-scroll-area::-webkit-scrollbar-thumb {
+    border: 2px solid transparent;
+    border-radius: 999px;
+    background: hsl(var(--muted-foreground) / 0.34);
+    background-clip: padding-box;
+  }
+
+  .skills-scroll-area:hover::-webkit-scrollbar-thumb {
+    background: hsl(var(--muted-foreground) / 0.55);
+    background-clip: padding-box;
+  }
+
   .border-default {
     border-width: 1px;
     border-color: hsl(var(--border));

@@ -144,6 +144,18 @@ describe("UnifiedSkillsPanel", () => {
     dndState.onDragEnd = undefined;
   });
 
+  it("provides a bounded native mouse-wheel scroll area", () => {
+    render(
+      <UnifiedSkillsPanel onOpenDiscovery={() => {}} currentApp="claude" />,
+    );
+
+    expect(screen.getByTestId("installed-skills-scroll-area")).toHaveClass(
+      "min-h-0",
+      "overflow-y-auto",
+      "skills-scroll-area",
+    );
+  });
+
   it("reorders installed skills using the drag handle", async () => {
     installedSkillsData = [
       {

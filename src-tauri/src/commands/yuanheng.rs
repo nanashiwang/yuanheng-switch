@@ -29,6 +29,8 @@ const TOPUP_URL: &str = "https://cn.meta-api.vip/console/topup";
 const TOPUP_WINDOW_LABEL: &str = "yuanheng-topup";
 const TOPUP_CLOSED_EVENT: &str = "yuanheng-topup-closed";
 pub(crate) const MANAGED_PROVIDER_ID: &str = "yuanheng-managed";
+const MANAGED_PROVIDER_DISPLAY_NAME: &str = "YuanHeng";
+const MANAGED_PROVIDER_AI_LABEL: &str = "YuanHeng AI";
 const TOKEN_KEY: &str = "yuanheng_access_token";
 const USER_ID_KEY: &str = "yuanheng_user_id";
 const SESSION_COOKIE_KEY: &str = "yuanheng_session_cookie";
@@ -1191,10 +1193,11 @@ fn grokbuild_models_config(token: &str, selected: &str, available_models: &[Stri
     let mut config = format!("[models]\ndefault = {}\n", toml_string(selected));
     for model in terminal_catalog_models(selected, available_models) {
         config.push_str(&format!(
-            "\n[model.{}]\nmodel = {}\nbase_url = {}\nname = \"元衡\"\napi_key = {}\napi_backend = \"responses\"\ncontext_window = 400000\n",
+            "\n[model.{}]\nmodel = {}\nbase_url = {}\nname = {}\napi_key = {}\napi_backend = \"responses\"\ncontext_window = 400000\n",
             toml_string(&model),
             toml_string(&model),
             toml_string(OPENAI_BASE_URL),
+            toml_string(MANAGED_PROVIDER_DISPLAY_NAME),
             toml_string(token)
         ));
     }
@@ -1226,7 +1229,7 @@ fn provider_meta(app: &AppType, model: &str, reasoning: &str) -> ProviderMeta {
             "claude-sonnet-5".to_string(),
             ClaudeDesktopModelRoute {
                 model: model.to_string(),
-                label_override: Some("元衡 AI".to_string()),
+                label_override: Some(MANAGED_PROVIDER_AI_LABEL.to_string()),
                 supports_1m: Some(true),
             },
         );
@@ -1273,13 +1276,14 @@ fn managed_provider_with_models(
         AppType::Codex => json!({
             "auth": { "OPENAI_API_KEY": token },
             "config": format!(
-                "model_provider = \"custom\"\nmodel = {}\n{}disable_response_storage = true\n\n[model_providers.custom]\nname = \"元衡\"\nbase_url = {}\nwire_api = \"responses\"\nrequires_openai_auth = true\n",
+                "model_provider = \"custom\"\nmodel = {}\n{}disable_response_storage = true\n\n[model_providers.custom]\nname = {}\nbase_url = {}\nwire_api = \"responses\"\nrequires_openai_auth = true\n",
                 toml_string(model),
                 if reasoning == "auto" {
                     String::new()
                 } else {
                     format!("model_reasoning_effort = {}\n", toml_string(reasoning))
                 },
+                toml_string(MANAGED_PROVIDER_DISPLAY_NAME),
                 toml_string(OPENAI_BASE_URL)
             ),
             "modelCatalog": {
@@ -1308,7 +1312,7 @@ fn managed_provider_with_models(
             }
             json!({
                 "npm": "@ai-sdk/openai-compatible",
-                "name": "元衡",
+                "name": MANAGED_PROVIDER_DISPLAY_NAME,
                 "options": {
                     "baseURL": OPENAI_BASE_URL,
                     "apiKey": token,
@@ -1328,7 +1332,7 @@ fn managed_provider_with_models(
             })).collect::<Vec<_>>()
         }),
         AppType::Hermes => json!({
-            "name": "yuanheng",
+            "name": MANAGED_PROVIDER_DISPLAY_NAME,
             "base_url": OPENAI_BASE_URL,
             "api_key": token,
             "api_mode": "chat_completions",
@@ -1341,7 +1345,7 @@ fn managed_provider_with_models(
 
     let mut provider = Provider::with_id(
         MANAGED_PROVIDER_ID.to_string(),
-        "元衡".to_string(),
+        MANAGED_PROVIDER_DISPLAY_NAME.to_string(),
         settings,
         Some(BASE_URL.to_string()),
     );
@@ -1681,6 +1685,9 @@ fn provider_reasoning(provider: &Provider) -> Option<String> {
 }
 
 fn provider_schema_current(provider: &Provider, app: &AppType) -> bool {
+    if provider.name != MANAGED_PROVIDER_DISPLAY_NAME {
+        return false;
+    }
     if provider_model(provider, app)
         .as_deref()
         .is_some_and(is_image_generation_only_model)
@@ -1700,7 +1707,7 @@ fn provider_schema_current(provider: &Provider, app: &AppType) -> bool {
                     .claude_desktop_model_routes
                     .get("claude-sonnet-5")
                     .and_then(|route| route.label_override.as_deref())
-                    == Some("元衡 AI")
+                    == Some(MANAGED_PROVIDER_AI_LABEL)
         }
         AppType::Codex => {
             let Some(model) = provider_model(provider, app) else {
@@ -1711,6 +1718,21 @@ fn provider_schema_current(provider: &Provider, app: &AppType) -> bool {
                 .as_ref()
                 .and_then(|meta| meta.api_format.as_deref())
                 == Some(yuanheng_model_api_format(&model));
+            let display_name_current = provider
+                .settings_config
+                .get("config")
+                .and_then(Value::as_str)
+                .and_then(|config| config.parse::<toml::Value>().ok())
+                .and_then(|config| {
+                    config
+                        .get("model_providers")
+                        .and_then(|providers| providers.get("custom"))
+                        .and_then(|custom| custom.get("name"))
+                        .and_then(toml::Value::as_str)
+                        .map(str::to_string)
+                })
+                .as_deref()
+                == Some(MANAGED_PROVIDER_DISPLAY_NAME);
             let catalog_is_current = provider
                 .settings_config
                 .pointer("/modelCatalog/models")
@@ -1729,9 +1751,26 @@ fn provider_schema_current(provider: &Provider, app: &AppType) -> bool {
                                 == Some(yuanheng_model_api_format(catalog_model))
                         })
                 });
-            api_format_current && catalog_is_current
+            api_format_current && display_name_current && catalog_is_current
         }
-        _ => true,
+        AppType::GrokBuild => provider
+            .settings_config
+            .get("config")
+            .and_then(Value::as_str)
+            .and_then(|config| config.parse::<toml::Value>().ok())
+            .and_then(|config| config.get("model").and_then(toml::Value::as_table).cloned())
+            .is_some_and(|models| {
+                !models.is_empty()
+                    && models.values().all(|model| {
+                        model.get("name").and_then(toml::Value::as_str)
+                            == Some(MANAGED_PROVIDER_DISPLAY_NAME)
+                    })
+            }),
+        AppType::OpenCode | AppType::Hermes => {
+            provider.settings_config.get("name").and_then(Value::as_str)
+                == Some(MANAGED_PROVIDER_DISPLAY_NAME)
+        }
+        AppType::Claude | AppType::Gemini | AppType::OpenClaw => true,
     }
 }
 
@@ -2104,6 +2143,7 @@ fn workbuddy_config_matches(value: &Value, model: &str) -> bool {
     };
     let expected_url = format!("{OPENAI_BASE_URL}/chat/completions");
     item.get("id").and_then(Value::as_str) == Some(model)
+        && item.get("vendor").and_then(Value::as_str) == Some(MANAGED_PROVIDER_DISPLAY_NAME)
         && item.get("url").and_then(Value::as_str) == Some(expected_url.as_str())
         && item
             .get("apiKey")
@@ -2341,7 +2381,7 @@ fn configure_workbuddy(
         "models": catalog_models.iter().map(|catalog_model| json!({
             "id": catalog_model,
             "name": catalog_model,
-            "vendor": "元衡",
+            "vendor": MANAGED_PROVIDER_DISPLAY_NAME,
             "url": format!("{OPENAI_BASE_URL}/chat/completions"),
             "apiKey": token,
             "maxInputTokens": 200000,
@@ -3958,9 +3998,65 @@ mod tests {
         for (app, model) in cases {
             let provider = managed_provider(&app, "sk-test", model, "default", "auto").unwrap();
             assert_eq!(provider.id, MANAGED_PROVIDER_ID);
-            assert_eq!(provider.name, "元衡");
+            assert_eq!(provider.name, MANAGED_PROVIDER_DISPLAY_NAME);
             assert_eq!(provider_model(&provider, &app).as_deref(), Some(model));
             assert!(provider.settings_config.to_string().contains("sk-test"));
+            assert!(provider_schema_current(&provider, &app));
+
+            let mut legacy_name = provider.clone();
+            legacy_name.name = "元衡".to_string();
+            assert!(!provider_schema_current(&legacy_name, &app));
+        }
+    }
+
+    #[test]
+    fn managed_external_provider_labels_are_ascii_yuanheng() {
+        let codex =
+            managed_provider(&AppType::Codex, "sk-test", "gpt-5.6-sol", "default", "auto").unwrap();
+        let codex_config = codex.settings_config["config"].as_str().unwrap();
+        let codex_toml: toml::Value = codex_config.parse().unwrap();
+        assert_eq!(
+            codex_toml["model_providers"]["custom"]["name"].as_str(),
+            Some(MANAGED_PROVIDER_DISPLAY_NAME)
+        );
+
+        let grok =
+            managed_provider(&AppType::GrokBuild, "sk-test", "grok-4", "default", "auto").unwrap();
+        let grok_model = crate::grok_config::extract_model_config(
+            grok.settings_config["config"].as_str().unwrap(),
+        )
+        .unwrap();
+        assert_eq!(grok_model.name, MANAGED_PROVIDER_DISPLAY_NAME);
+
+        let opencode = managed_provider(
+            &AppType::OpenCode,
+            "sk-test",
+            "gpt-5.6-sol",
+            "default",
+            "auto",
+        )
+        .unwrap();
+        assert_eq!(
+            opencode.settings_config["name"].as_str(),
+            Some(MANAGED_PROVIDER_DISPLAY_NAME)
+        );
+
+        let hermes = managed_provider(
+            &AppType::Hermes,
+            "sk-test",
+            "gpt-5.6-sol",
+            "default",
+            "auto",
+        )
+        .unwrap();
+        assert_eq!(
+            hermes.settings_config["name"].as_str(),
+            Some(MANAGED_PROVIDER_DISPLAY_NAME)
+        );
+
+        for provider in [codex, grok, opencode, hermes] {
+            assert!(provider.name.is_ascii());
+            assert!(!provider.settings_config.to_string().contains("元衡"));
         }
     }
 
@@ -3986,7 +4082,7 @@ mod tests {
             desktop_meta.claude_desktop_model_routes["claude-sonnet-5"]
                 .label_override
                 .as_deref(),
-            Some("元衡 AI")
+            Some(MANAGED_PROVIDER_AI_LABEL)
         );
         assert_eq!(
             desktop_meta
@@ -4086,6 +4182,16 @@ mod tests {
         legacy_codex_chat.meta.as_mut().unwrap().api_format = Some("openai_responses".to_string());
         assert!(!provider_schema_current(
             &legacy_codex_chat,
+            &AppType::Codex
+        ));
+        let mut legacy_codex_name = codex_chat.clone();
+        legacy_codex_name.settings_config["config"] = json!(legacy_codex_name.settings_config
+            ["config"]
+            .as_str()
+            .unwrap()
+            .replace("name = \"YuanHeng\"", "name = \"元衡\""));
+        assert!(!provider_schema_current(
+            &legacy_codex_name,
             &AppType::Codex
         ));
         let mut missing_catalog = codex_chat.clone();
@@ -4687,6 +4793,13 @@ base_url = "http://127.0.0.1:15721/chatgpt-desktop/v1"
         assert!(workbuddy_config_matches(&live, "k3"));
         assert!(workbuddy_config_matches(&live, "gpt-5.6-sol"));
         assert_eq!(live["models"].as_array().unwrap().len(), 2);
+        assert!(live["models"].as_array().unwrap().iter().all(|model| {
+            model.get("vendor").and_then(Value::as_str) == Some(MANAGED_PROVIDER_DISPLAY_NAME)
+        }));
+        assert!(!live.to_string().contains("元衡"));
+        let mut legacy_vendor = live.clone();
+        legacy_vendor["models"][0]["vendor"] = json!("元衡");
+        assert!(!workbuddy_config_matches(&legacy_vendor, "k3"));
         let connection = YuanhengConnectionStatus {
             models: vec!["k3".to_string(), "gpt-5.6-sol".to_string()],
             terminal_models: vec!["k3".to_string(), "gpt-5.6-sol".to_string()],

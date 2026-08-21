@@ -205,7 +205,7 @@ function DetailFrame({
         </div>
         {actions && <div className="flex items-center gap-2">{actions}</div>}
       </div>
-      <div className="min-h-0 flex-1 overflow-hidden rounded-2xl border bg-card/45">
+      <div className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-2xl border bg-card/45">
         {children}
       </div>
     </div>

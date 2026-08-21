@@ -136,6 +136,16 @@ describe("SkillsPage - skills.sh install (regression)", () => {
     searchCache.clear();
   });
 
+  it("provides a bounded native mouse-wheel scroll area", () => {
+    render(<SkillsPage initialApp="claude" />);
+
+    expect(screen.getByTestId("skills-discovery-scroll-area")).toHaveClass(
+      "min-h-0",
+      "overflow-y-auto",
+      "skills-scroll-area",
+    );
+  });
+
   it("installs the second skill when two results share the same directory", async () => {
     const first = makeSkillsShSkill({
       key: "agent-browser:owner-a:repo-a",

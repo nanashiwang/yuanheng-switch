@@ -367,9 +367,12 @@ export const SkillsPage = forwardRef<SkillsPageHandle, SkillsPageProps>(
     }, [effectiveSource, onSourceChange]);
 
     return (
-      <div className="px-6 flex flex-col flex-1 min-h-0 overflow-hidden bg-background/50">
+      <div className="flex h-full min-h-0 w-full flex-1 flex-col overflow-hidden bg-background/50 px-6">
         {/* 技能网格（可滚动详情区域） */}
-        <div className="flex-1 overflow-y-auto overflow-x-hidden animate-fade-in">
+        <div
+          className="skills-scroll-area scroll-overlay min-h-0 flex-1 overflow-y-auto overflow-x-hidden animate-fade-in"
+          data-testid="skills-discovery-scroll-area"
+        >
           <div className="py-4">
             {/* 搜索来源切换 + 搜索框 */}
             <div className="mb-6 flex flex-col gap-3 md:flex-row md:items-center">
