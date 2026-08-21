@@ -401,7 +401,7 @@ const UnifiedSkillsPanel = React.forwardRef<
   }));
 
   return (
-    <div className="px-6 flex flex-col flex-1 min-h-0 overflow-hidden">
+    <div className="flex h-full min-h-0 w-full flex-1 flex-col overflow-hidden px-6">
       <div className="flex items-center justify-between">
         <AppCountBar
           totalLabel={t("skills.installed", { count: skills?.length || 0 })}
@@ -455,7 +455,10 @@ const UnifiedSkillsPanel = React.forwardRef<
         </div>
       </div>
 
-      <div className="flex-1 overflow-y-auto overflow-x-hidden pb-24">
+      <div
+        className="skills-scroll-area scroll-overlay min-h-0 flex-1 overflow-y-auto overflow-x-hidden pb-24"
+        data-testid="installed-skills-scroll-area"
+      >
         {isLoading ? (
           <div className="text-center py-12 text-muted-foreground">
             {t("skills.loading")}
