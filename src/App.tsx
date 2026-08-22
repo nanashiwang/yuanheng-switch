@@ -17,7 +17,9 @@ import {
   Plus,
   Search,
   PanelRight,
+  PackageCheck,
   Settings,
+  Store,
   X,
 } from "lucide-react";
 import { toast } from "sonner";
@@ -93,6 +95,8 @@ const VIEW_KEY = "yuanheng-desktop-last-view";
 const APP_KEY = "yuanheng-switch-last-app";
 const IS_TAURI_RUNTIME =
   typeof window !== "undefined" && "__TAURI_INTERNALS__" in window;
+
+type SkillsSection = "installed" | "market";
 
 interface SyncStatusUpdatedPayload {
   source?: string;
@@ -218,8 +222,10 @@ function App() {
   const [view, setView] = useState<DesktopView>(getInitialView);
   const [activeApp, setActiveAppState] = useState<AppId>(getInitialApp);
   const [settingsDefaultTab, setSettingsDefaultTab] = useState("general");
+  const [skillsSection, setSkillsSection] =
+    useState<SkillsSection>("installed");
   const [skillsDiscoverySource, setSkillsDiscoverySource] =
-    useState<SkillsPageSource>("repos");
+    useState<SkillsPageSource>("skillssh");
   const [envConflicts, setEnvConflicts] = useState<EnvConflict[]>([]);
   const [showEnvBanner, setShowEnvBanner] = useState(false);
   const [isWindowMaximized, setIsWindowMaximized] = useState(false);
@@ -261,6 +267,12 @@ function App() {
   };
 
   const navigate = (next: DesktopView) => {
+    if (next === "skillsDiscovery") {
+      setSkillsSection("market");
+      setView("skills");
+      return;
+    }
+    if (next === "skills") setSkillsSection("installed");
     setView(next);
     if (TOP_LEVEL_VIEWS.includes(next)) localStorage.setItem(VIEW_KEY, next);
   };
@@ -471,85 +483,131 @@ function App() {
           </div>
         );
       case "skills":
+      case "skillsDiscovery": {
+        const activeSkillsSection =
+          view === "skillsDiscovery" ? "market" : skillsSection;
+        const skillTargetApp =
+          activeApp === "openclaw" || activeApp === "claude-desktop"
+            ? "claude"
+            : activeApp;
         return (
           <DetailFrame
             title={t("desktop.views.skills")}
-            description={t("desktop.skills.description")}
+            description={t(
+              activeSkillsSection === "market"
+                ? "desktop.skills.discoveryDescription"
+                : "desktop.skills.description",
+            )}
             onBack={() => navigate("capabilities")}
             actions={
-              <>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={() =>
-                    unifiedSkillsPanelRef.current?.openRestoreFromBackup()
-                  }
-                >
-                  <History className="h-3.5 w-3.5" />{" "}
-                  {t("desktop.skills.restore")}
-                </Button>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={() =>
-                    unifiedSkillsPanelRef.current?.openInstallFromZip()
-                  }
-                >
-                  <FolderArchive className="h-3.5 w-3.5" /> ZIP
-                </Button>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  className="relative"
-                  onClick={() => unifiedSkillsPanelRef.current?.openImport()}
-                >
-                  <Download className="h-3.5 w-3.5" />{" "}
-                  {t("desktop.skills.import")}
-                  {hasUnmanagedSkills && (
-                    <span className="absolute right-1 top-1 h-1.5 w-1.5 rounded-full bg-emerald-500" />
-                  )}
-                </Button>
-                <Button size="sm" onClick={() => navigate("skillsDiscovery")}>
-                  <Search className="h-3.5 w-3.5" />{" "}
-                  {t("desktop.skills.discover")}
-                </Button>
-              </>
+              activeSkillsSection === "installed" ? (
+                <>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() =>
+                      unifiedSkillsPanelRef.current?.openRestoreFromBackup()
+                    }
+                  >
+                    <History className="h-3.5 w-3.5" />{" "}
+                    {t("desktop.skills.restore")}
+                  </Button>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() =>
+                      unifiedSkillsPanelRef.current?.openInstallFromZip()
+                    }
+                  >
+                    <FolderArchive className="h-3.5 w-3.5" /> ZIP
+                  </Button>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="relative"
+                    onClick={() => unifiedSkillsPanelRef.current?.openImport()}
+                  >
+                    <Download className="h-3.5 w-3.5" />{" "}
+                    {t("desktop.skills.import")}
+                    {hasUnmanagedSkills && (
+                      <span className="absolute right-1 top-1 h-1.5 w-1.5 rounded-full bg-emerald-500" />
+                    )}
+                  </Button>
+                </>
+              ) : (
+                getSkillsPageHeaderActions(skillsDiscoverySource).map(
+                  ({ key, labelKey, Icon, execute }) => (
+                    <Button
+                      key={key}
+                      variant="outline"
+                      size="sm"
+                      onClick={() => execute(skillsPageRef.current)}
+                    >
+                      <Icon className="h-3.5 w-3.5" /> {t(labelKey)}
+                    </Button>
+                  ),
+                )
+              )
             }
           >
-            <UnifiedSkillsPanel
-              ref={unifiedSkillsPanelRef}
-              onOpenDiscovery={() => navigate("skillsDiscovery")}
-              currentApp={activeApp === "openclaw" ? "claude" : activeApp}
-            />
-          </DetailFrame>
-        );
-      case "skillsDiscovery":
-        return (
-          <DetailFrame
-            title={t("desktop.views.skillsDiscovery")}
-            description={t("desktop.skills.discoveryDescription")}
-            onBack={() => navigate("skills")}
-            backLabel={t("desktop.views.skills")}
-            actions={getSkillsPageHeaderActions(skillsDiscoverySource).map(
-              ({ key, labelKey, Icon, execute }) => (
+            <div
+              className="flex h-full min-h-0 w-full flex-col"
+              data-testid="skills-hub"
+            >
+              <div
+                className="flex shrink-0 items-center gap-1 border-b bg-background/45 px-4 py-2"
+                role="tablist"
+                aria-label={t("skills.market.sectionLabel")}
+              >
                 <Button
-                  key={key}
-                  variant="outline"
+                  type="button"
+                  role="tab"
+                  aria-selected={activeSkillsSection === "installed"}
+                  variant={
+                    activeSkillsSection === "installed" ? "default" : "ghost"
+                  }
                   size="sm"
-                  onClick={() => execute(skillsPageRef.current)}
+                  onClick={() => setSkillsSection("installed")}
+                  data-testid="skills-tab-installed"
                 >
-                  <Icon className="h-3.5 w-3.5" /> {t(labelKey)}
+                  <PackageCheck className="h-3.5 w-3.5" />
+                  {t("skills.market.installedTab")}
                 </Button>
-              ),
-            )}
-          >
-            <SkillsPage
-              ref={skillsPageRef}
-              initialApp={activeApp === "openclaw" ? "claude" : activeApp}
-              onSourceChange={setSkillsDiscoverySource}
-            />
+                <Button
+                  type="button"
+                  role="tab"
+                  aria-selected={activeSkillsSection === "market"}
+                  variant={
+                    activeSkillsSection === "market" ? "default" : "ghost"
+                  }
+                  size="sm"
+                  onClick={() => setSkillsSection("market")}
+                  data-testid="skills-tab-market"
+                >
+                  <Store className="h-3.5 w-3.5" />
+                  {t("skills.market.marketTab")}
+                </Button>
+              </div>
+              <div className="min-h-0 flex-1">
+                {activeSkillsSection === "installed" ? (
+                  <UnifiedSkillsPanel
+                    ref={unifiedSkillsPanelRef}
+                    onOpenDiscovery={() => setSkillsSection("market")}
+                    currentApp={skillTargetApp}
+                  />
+                ) : (
+                  <SkillsPage
+                    ref={skillsPageRef}
+                    initialApp={skillTargetApp}
+                    initialSource="skillssh"
+                    onSourceChange={setSkillsDiscoverySource}
+                  />
+                )}
+              </div>
+            </div>
           </DetailFrame>
         );
+      }
       case "mcp":
         return (
           <DetailFrame

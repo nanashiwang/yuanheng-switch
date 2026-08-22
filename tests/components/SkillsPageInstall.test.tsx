@@ -6,6 +6,7 @@ import { describe, expect, it, vi, beforeEach } from "vitest";
 import {
   SkillsPage,
   getSkillsPageHeaderActions,
+  inferSkillMarketCategory,
   type SkillsPageHandle,
 } from "@/components/skills/SkillsPage";
 import type {
@@ -19,6 +20,7 @@ const installMutateAsyncMock = vi.fn();
 let discoverableSkillsMock: DiscoverableSkill[] = [];
 let skillReposMock: SkillRepo[] = [];
 const refetchDiscoverableMock = vi.fn();
+const refetchSkillsShMock = vi.fn();
 
 // Stable cache so repeated renders see referentially-equal data.
 // SkillsPage has `useEffect([skillsShResult, ...])` that calls setState — a
@@ -30,6 +32,7 @@ const searchCache = new Map<
     isLoading: boolean;
     isFetching: boolean;
     isPlaceholderData?: boolean;
+    isError?: boolean;
   }
 >();
 
@@ -41,6 +44,7 @@ const setSearchResult = (
     isLoading: boolean;
     isFetching: boolean;
     isPlaceholderData: boolean;
+    isError: boolean;
   }> = {},
 ) => {
   searchCache.set(`${query}:${offset}`, {
@@ -85,8 +89,14 @@ vi.mock("@/hooks/useSkills", () => ({
   }),
   useSearchSkillsSh: (query: string, _limit: number, offset: number) => {
     const cached = searchCache.get(`${query}:${offset}`);
-    if (cached) return cached;
-    return { data: undefined, isLoading: false, isFetching: false };
+    if (cached) return { ...cached, refetch: refetchSkillsShMock };
+    return {
+      data: undefined,
+      isLoading: false,
+      isFetching: false,
+      isError: false,
+      refetch: refetchSkillsShMock,
+    };
   },
 }));
 
@@ -133,7 +143,39 @@ describe("SkillsPage - skills.sh install (regression)", () => {
     discoverableSkillsMock = [];
     skillReposMock = [];
     refetchDiscoverableMock.mockReset();
+    refetchSkillsShMock.mockReset();
     searchCache.clear();
+  });
+
+  it("classifies common marketplace skills without trusting source metadata", () => {
+    expect(
+      inferSkillMarketCategory(
+        makeDiscoverableSkill({
+          name: "Browser Automation",
+          description: "Automate browser workflows",
+        }),
+      ),
+    ).toBe("automation");
+    expect(
+      inferSkillMarketCategory(
+        makeDiscoverableSkill({
+          name: "Unknown Utility",
+          description: "A focused helper",
+          directory: "unknown-utility",
+          repoName: "misc-tools",
+        }),
+      ),
+    ).toBe("other");
+    expect(
+      inferSkillMarketCategory(
+        makeDiscoverableSkill({
+          name: "Rapid Notes",
+          description: "Capture thoughts quickly",
+          directory: "rapid-notes",
+          repoName: "rapid-notes",
+        }),
+      ),
+    ).toBe("other");
   });
 
   it("provides a bounded native mouse-wheel scroll area", () => {
@@ -144,6 +186,14 @@ describe("SkillsPage - skills.sh install (regression)", () => {
       "overflow-y-auto",
       "skills-scroll-area",
     );
+  });
+
+  it("falls back to a supported install target for unsupported active apps", () => {
+    render(<SkillsPage initialApp="openclaw" initialSource="skillssh" />);
+
+    expect(
+      screen.getByLabelText("skills.market.installTarget"),
+    ).toHaveTextContent("Claude");
   });
 
   it("installs the second skill when two results share the same directory", async () => {
@@ -206,6 +256,53 @@ describe("SkillsPage - skills.sh install (regression)", () => {
     expect(callArgs.skill.repoOwner).toBe("owner-b");
     expect(callArgs.skill.repoName).toBe("repo-b");
     expect(callArgs.skill.name).toBe("Agent Browser B");
+  });
+
+  it("shows community trust metadata and a safety preview before installing", async () => {
+    const browserSkill = makeSkillsShSkill({
+      name: "Browser Automation",
+      installs: 321,
+    });
+    setSearchResult("browser", 0, {
+      skills: [browserSkill],
+      totalCount: 1,
+      query: "browser",
+    });
+
+    render(<SkillsPage initialApp="codex" initialSource="skillssh" />);
+    const user = userEvent.setup();
+    const input = screen.getByPlaceholderText(
+      "skills.skillssh.searchPlaceholder",
+    );
+    await user.type(input, "browser");
+    await user.click(screen.getByRole("button", { name: "skills.search" }));
+
+    expect(
+      await screen.findByText("skills.market.communitySource"),
+    ).toBeInTheDocument();
+    expect(
+      screen.getAllByText("skills.market.unverifiedBadge").length,
+    ).toBeGreaterThanOrEqual(2);
+    expect(
+      screen.getByText("skills.market.categories.automation"),
+    ).toBeInTheDocument();
+    expect(screen.getByText("skills.market.cardTarget")).toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: "skills.view" }));
+    expect(screen.getByText("skills.market.securityTitle")).toBeInTheDocument();
+    expect(screen.getByText("owner-a")).toBeInTheDocument();
+    expect(screen.getAllByText("owner-a/repo-a").length).toBeGreaterThanOrEqual(
+      2,
+    );
+
+    await user.click(
+      screen.getByRole("button", { name: "skills.market.installTo" }),
+    );
+    await waitFor(() => {
+      expect(installMutateAsyncMock).toHaveBeenCalledWith(
+        expect.objectContaining({ currentApp: "codex" }),
+      );
+    });
   });
 
   it("keeps skills.sh results when submitting the same query again", async () => {
@@ -285,6 +382,21 @@ describe("SkillsPage - skills.sh install (regression)", () => {
     await user.click(searchButton);
 
     expect(screen.getByText("skills.skillssh.loading")).toBeInTheDocument();
+  });
+
+  it("shows a retry state instead of treating a search failure as zero results", async () => {
+    setSearchResult("broken", 0, undefined, { isError: true });
+    render(<SkillsPage initialApp="codex" initialSource="skillssh" />);
+    const user = userEvent.setup();
+    const input = screen.getByPlaceholderText(
+      "skills.skillssh.searchPlaceholder",
+    );
+    await user.type(input, "broken");
+    await user.click(screen.getByRole("button", { name: "skills.search" }));
+
+    expect(screen.getByText("skills.skillssh.error")).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "common.refresh" }));
+    expect(refetchSkillsShMock).toHaveBeenCalledTimes(1);
   });
 
   it("reports the effective skills.sh source to parent chrome", async () => {

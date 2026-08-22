@@ -7,7 +7,16 @@ import {
 } from "react";
 import { useTranslation } from "react-i18next";
 import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import {
   Select,
   SelectContent,
@@ -20,6 +29,8 @@ import {
   Search,
   Loader2,
   Settings,
+  ShieldAlert,
+  Store,
   type LucideIcon,
 } from "lucide-react";
 import { toast } from "sonner";
@@ -41,11 +52,14 @@ import type {
   SkillsShDiscoverableSkill,
 } from "@/lib/api/skills";
 import { formatSkillError } from "@/lib/errors/skillErrorParser";
+import { settingsApi } from "@/lib/api";
+import { APP_ICON_MAP, SKILLS_APP_IDS } from "@/config/appConfig";
 
 export type SkillsPageSource = "repos" | "skillssh";
 
 interface SkillsPageProps {
   initialApp?: AppId;
+  initialSource?: SkillsPageSource;
   onSourceChange?: (source: SkillsPageSource) => void;
 }
 
@@ -86,12 +100,145 @@ export const getSkillsPageHeaderActions = (source: SkillsPageSource) =>
 
 const SKILLSSH_PAGE_SIZE = 20;
 
+export type SkillMarketCategory =
+  | "all"
+  | "coding"
+  | "design"
+  | "automation"
+  | "data"
+  | "content"
+  | "other";
+
+type SkillMarketSort = "relevance" | "popular" | "name";
+type SkillMarketSource = "repos" | "skillssh";
+
+type SkillMarketDetail = {
+  skill: DiscoverableSkill & { installed: boolean };
+  source: SkillMarketSource;
+  category: Exclude<SkillMarketCategory, "all">;
+  installs?: number;
+};
+
+const CATEGORY_KEYWORDS: Record<
+  Exclude<SkillMarketCategory, "all" | "other">,
+  readonly string[]
+> = {
+  coding: [
+    "code",
+    "coding",
+    "developer",
+    "git",
+    "github",
+    "test",
+    "debug",
+    "api",
+    "编程",
+    "开发",
+    "测试",
+  ],
+  design: [
+    "design",
+    "figma",
+    "image",
+    "photo",
+    "ui",
+    "ux",
+    "设计",
+    "图片",
+    "视觉",
+  ],
+  automation: [
+    "automation",
+    "browser",
+    "workflow",
+    "agent",
+    "scrape",
+    "自动化",
+    "浏览器",
+    "工作流",
+  ],
+  data: [
+    "data",
+    "database",
+    "sql",
+    "excel",
+    "spreadsheet",
+    "analytics",
+    "数据",
+    "表格",
+    "分析",
+  ],
+  content: [
+    "content",
+    "write",
+    "writing",
+    "document",
+    "pdf",
+    "video",
+    "audio",
+    "内容",
+    "写作",
+    "文档",
+    "视频",
+    "音频",
+  ],
+};
+
+export function inferSkillMarketCategory(
+  skill: Pick<
+    DiscoverableSkill,
+    "name" | "description" | "directory" | "repoName"
+  >,
+): Exclude<SkillMarketCategory, "all"> {
+  const haystack = [
+    skill.name,
+    skill.description,
+    skill.directory,
+    skill.repoName,
+  ]
+    .join(" ")
+    .toLowerCase();
+  const tokens = haystack.split(/[^a-z0-9\u3400-\u9fff]+/).filter(Boolean);
+  for (const [category, keywords] of Object.entries(CATEGORY_KEYWORDS)) {
+    if (
+      keywords.some((keyword) => {
+        const normalized = keyword.toLowerCase();
+        return /^[a-z0-9]+$/.test(normalized) && normalized.length <= 3
+          ? tokens.includes(normalized)
+          : haystack.includes(normalized);
+      })
+    ) {
+      return category as Exclude<SkillMarketCategory, "all" | "other">;
+    }
+  }
+  return "other";
+}
+
+function normalizeSkillTargetApp(app: AppId): AppId {
+  return SKILLS_APP_IDS.includes(app) ? app : "claude";
+}
+
+function skillsShToDiscoverableSkill(
+  skill: SkillsShDiscoverableSkill,
+): DiscoverableSkill {
+  return {
+    key: skill.key,
+    name: skill.name,
+    description: "",
+    directory: skill.directory,
+    repoOwner: skill.repoOwner,
+    repoName: skill.repoName,
+    repoBranch: skill.repoBranch,
+    readmeUrl: skill.readmeUrl,
+  };
+}
+
 /**
  * Skills 发现面板
  * 用于浏览和安装来自仓库或 skills.sh 的 Skills
  */
 export const SkillsPage = forwardRef<SkillsPageHandle, SkillsPageProps>(
-  ({ initialApp = "claude", onSourceChange }, ref) => {
+  ({ initialApp = "claude", initialSource = "repos", onSourceChange }, ref) => {
     const { t } = useTranslation();
     const [repoManagerOpen, setRepoManagerOpen] = useState(false);
     const [searchQuery, setSearchQuery] = useState("");
@@ -99,9 +246,17 @@ export const SkillsPage = forwardRef<SkillsPageHandle, SkillsPageProps>(
     const [filterStatus, setFilterStatus] = useState<
       "all" | "installed" | "uninstalled"
     >("all");
+    const [categoryFilter, setCategoryFilter] =
+      useState<SkillMarketCategory>("all");
+    const [sortOrder, setSortOrder] = useState<SkillMarketSort>("relevance");
+    const [targetApp, setTargetApp] = useState<AppId>(() =>
+      normalizeSkillTargetApp(initialApp),
+    );
+    const [detail, setDetail] = useState<SkillMarketDetail | null>(null);
 
     // skills.sh 搜索状态
-    const [searchSource, setSearchSource] = useState<SkillsPageSource>("repos");
+    const [searchSource, setSearchSource] =
+      useState<SkillsPageSource>(initialSource);
     const [skillsShInput, setSkillsShInput] = useState("");
     const [skillsShQuery, setSkillsShQuery] = useState("");
     const [skillsShOffset, setSkillsShOffset] = useState(0);
@@ -109,8 +264,10 @@ export const SkillsPage = forwardRef<SkillsPageHandle, SkillsPageProps>(
       SkillsShDiscoverableSkill[]
     >([]);
 
-    // currentApp 用于安装时的默认应用
-    const currentApp = initialApp;
+    useEffect(
+      () => setTargetApp(normalizeSkillTargetApp(initialApp)),
+      [initialApp],
+    );
 
     // Queries
     const {
@@ -128,6 +285,8 @@ export const SkillsPage = forwardRef<SkillsPageHandle, SkillsPageProps>(
       isLoading: loadingSkillsSh,
       isFetching: fetchingSkillsSh,
       isPlaceholderData: placeholderSkillsSh,
+      isError: skillsShFailed,
+      refetch: refetchSkillsSh,
     } = useSearchSkillsSh(skillsShQuery, SKILLSSH_PAGE_SIZE, skillsShOffset);
 
     // 当搜索结果返回时累积
@@ -219,27 +378,13 @@ export const SkillsPage = forwardRef<SkillsPageHandle, SkillsPageProps>(
       openRepoManager: () => setRepoManagerOpen(true),
     }));
 
-    // skills.sh 结果转为 DiscoverableSkill（复用现有安装流程）
-    const toDiscoverableSkill = (
-      s: SkillsShDiscoverableSkill,
-    ): DiscoverableSkill => ({
-      key: s.key,
-      name: s.name,
-      description: "",
-      directory: s.directory,
-      repoOwner: s.repoOwner,
-      repoName: s.repoName,
-      repoBranch: s.repoBranch,
-      readmeUrl: s.readmeUrl,
-    });
-
     const handleInstall = async (key: string) => {
       let skill: DiscoverableSkill | undefined;
 
       if (searchSource === "skillssh") {
         const found = accumulatedResults.find((s) => s.key === key);
         if (found) {
-          skill = toDiscoverableSkill(found);
+          skill = skillsShToDiscoverableSkill(found);
         }
       } else {
         skill = discoverableSkills?.find((s) => s.key === key);
@@ -253,11 +398,12 @@ export const SkillsPage = forwardRef<SkillsPageHandle, SkillsPageProps>(
       try {
         await installMutation.mutateAsync({
           skill,
-          currentApp,
+          currentApp: targetApp,
         });
         toast.success(t("skills.installSuccess", { name: skill.name }), {
           closeButton: true,
         });
+        setDetail(null);
       } catch (error) {
         const errorMessage =
           error instanceof Error ? error.message : String(error);
@@ -335,20 +481,60 @@ export const SkillsPage = forwardRef<SkillsPageHandle, SkillsPageProps>(
         return true;
       });
 
-      // 按搜索关键词筛选
-      if (!searchQuery.trim()) return byStatus;
+      const byCategory = byStatus.filter(
+        (skill) =>
+          categoryFilter === "all" ||
+          inferSkillMarketCategory(skill) === categoryFilter,
+      );
+      const query = searchQuery.trim().toLowerCase();
+      const searched = query
+        ? byCategory.filter((skill) => {
+            const name = skill.name?.toLowerCase() || "";
+            const description = skill.description?.toLowerCase() || "";
+            const repo = `${skill.repoOwner}/${skill.repoName}`.toLowerCase();
+            return (
+              name.includes(query) ||
+              description.includes(query) ||
+              repo.includes(query)
+            );
+          })
+        : byCategory;
 
-      const query = searchQuery.toLowerCase();
-      return byStatus.filter((skill) => {
-        const name = skill.name?.toLowerCase() || "";
-        const repo =
-          skill.repoOwner && skill.repoName
-            ? `${skill.repoOwner}/${skill.repoName}`.toLowerCase()
-            : "";
+      if (sortOrder === "name") {
+        return [...searched].sort((left, right) =>
+          left.name.localeCompare(right.name),
+        );
+      }
+      return searched;
+    }, [
+      skills,
+      searchQuery,
+      filterRepo,
+      filterStatus,
+      categoryFilter,
+      sortOrder,
+    ]);
 
-        return name.includes(query) || repo.includes(query);
+    const filteredSkillsShResults = useMemo(() => {
+      const filtered = accumulatedResults.filter((skill) => {
+        if (categoryFilter === "all") return true;
+        return (
+          inferSkillMarketCategory(skillsShToDiscoverableSkill(skill)) ===
+          categoryFilter
+        );
       });
-    }, [skills, searchQuery, filterRepo, filterStatus]);
+      if (sortOrder === "popular") {
+        return [...filtered].sort(
+          (left, right) => right.installs - left.installs,
+        );
+      }
+      if (sortOrder === "name") {
+        return [...filtered].sort((left, right) =>
+          left.name.localeCompare(right.name),
+        );
+      }
+      return filtered;
+    }, [accumulatedResults, categoryFilter, sortOrder]);
 
     // 是否有更多 skills.sh 结果
     const hasMoreSkillsSh =
@@ -366,6 +552,31 @@ export const SkillsPage = forwardRef<SkillsPageHandle, SkillsPageProps>(
       onSourceChange?.(effectiveSource);
     }, [effectiveSource, onSourceChange]);
 
+    useEffect(() => {
+      if (effectiveSource === "repos" && sortOrder === "popular") {
+        setSortOrder("relevance");
+      }
+    }, [effectiveSource, sortOrder]);
+
+    const categoryLabel = (category: SkillMarketCategory) =>
+      t(`skills.market.categories.${category}`);
+    const targetAppLabel = APP_ICON_MAP[targetApp].label;
+    const detailSourceLabel = detail
+      ? t(
+          detail.source === "skillssh"
+            ? "skills.market.communitySource"
+            : "skills.market.configuredSource",
+        )
+      : "";
+    const openDetailSource = async () => {
+      if (!detail?.skill.readmeUrl) return;
+      try {
+        await settingsApi.openExternal(detail.skill.readmeUrl);
+      } catch (error) {
+        toast.error(t("common.error"), { description: String(error) });
+      }
+    };
+
     return (
       <div className="flex h-full min-h-0 w-full flex-1 flex-col overflow-hidden bg-background/50 px-6">
         {/* 技能网格（可滚动详情区域） */}
@@ -374,8 +585,50 @@ export const SkillsPage = forwardRef<SkillsPageHandle, SkillsPageProps>(
           data-testid="skills-discovery-scroll-area"
         >
           <div className="py-4">
+            <section className="mb-4 flex flex-wrap items-center gap-4 rounded-xl border border-primary/15 bg-primary/[0.035] px-4 py-3">
+              <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-primary/10 text-primary">
+                <Store className="h-5 w-5" />
+              </span>
+              <div className="min-w-[220px] flex-1">
+                <div className="flex flex-wrap items-center gap-2">
+                  <h2 className="font-display text-sm font-semibold">
+                    {t("skills.market.title")}
+                  </h2>
+                  <Badge
+                    variant="outline"
+                    className="border-amber-500/35 bg-amber-500/5 text-[10px] text-amber-700 dark:text-amber-300"
+                  >
+                    {t("skills.market.unverifiedBadge")}
+                  </Badge>
+                </div>
+                <p className="mt-1 text-[11px] leading-5 text-muted-foreground">
+                  {t("skills.market.description")}
+                </p>
+              </div>
+              <div className="w-full sm:w-48">
+                <Select
+                  value={targetApp}
+                  onValueChange={(value) => setTargetApp(value as AppId)}
+                >
+                  <SelectTrigger
+                    className="bg-card text-foreground"
+                    aria-label={t("skills.market.installTarget")}
+                  >
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {SKILLS_APP_IDS.map((app) => (
+                      <SelectItem key={app} value={app}>
+                        {APP_ICON_MAP[app].label}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            </section>
+
             {/* 搜索来源切换 + 搜索框 */}
-            <div className="mb-6 flex flex-col gap-3 md:flex-row md:items-center">
+            <div className="mb-3 flex flex-col gap-3 md:flex-row md:items-center">
               {/* 来源切换 */}
               <div className="inline-flex gap-1 rounded-md border border-border-default bg-background p-1 shrink-0">
                 <Button
@@ -529,6 +782,74 @@ export const SkillsPage = forwardRef<SkillsPageHandle, SkillsPageProps>(
               )}
             </div>
 
+            <div className="mb-5 flex flex-wrap items-center gap-2">
+              <div className="w-full sm:w-44">
+                <Select
+                  value={categoryFilter}
+                  onValueChange={(value) =>
+                    setCategoryFilter(value as SkillMarketCategory)
+                  }
+                >
+                  <SelectTrigger
+                    className="bg-card text-foreground"
+                    aria-label={t("skills.market.category")}
+                  >
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {(
+                      [
+                        "all",
+                        "coding",
+                        "design",
+                        "automation",
+                        "data",
+                        "content",
+                        "other",
+                      ] as SkillMarketCategory[]
+                    ).map((category) => (
+                      <SelectItem key={category} value={category}>
+                        {categoryLabel(category)}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="w-full sm:w-40">
+                <Select
+                  value={sortOrder}
+                  onValueChange={(value) =>
+                    setSortOrder(value as SkillMarketSort)
+                  }
+                >
+                  <SelectTrigger
+                    className="bg-card text-foreground"
+                    aria-label={t("skills.market.sort")}
+                  >
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="relevance">
+                      {t("skills.market.sortOptions.relevance")}
+                    </SelectItem>
+                    {effectiveSource === "skillssh" && (
+                      <SelectItem value="popular">
+                        {t("skills.market.sortOptions.popular")}
+                      </SelectItem>
+                    )}
+                    <SelectItem value="name">
+                      {t("skills.market.sortOptions.name")}
+                    </SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              <span className="ml-auto text-[10px] text-muted-foreground">
+                {t("skills.market.installTargetHint", {
+                  app: targetAppLabel,
+                })}
+              </span>
+            </div>
+
             {/* 内容区域 */}
             {effectiveSource === "repos" ? (
               /* ===== 仓库模式 ===== */
@@ -567,6 +888,21 @@ export const SkillsPage = forwardRef<SkillsPageHandle, SkillsPageProps>(
                     <SkillCard
                       key={skill.key}
                       skill={skill}
+                      sourceLabel={t("skills.market.configuredSource")}
+                      trustLabel={t("skills.market.unverifiedBadge")}
+                      categoryLabel={categoryLabel(
+                        inferSkillMarketCategory(skill),
+                      )}
+                      targetLabel={t("skills.market.cardTarget", {
+                        app: targetAppLabel,
+                      })}
+                      onView={() =>
+                        setDetail({
+                          skill,
+                          source: "repos",
+                          category: inferSkillMarketCategory(skill),
+                        })
+                      }
                       onInstall={handleInstall}
                       onUninstall={handleUninstall}
                     />
@@ -583,6 +919,21 @@ export const SkillsPage = forwardRef<SkillsPageHandle, SkillsPageProps>(
                       {t("skills.skillssh.loading")}
                     </span>
                   </div>
+                ) : skillsShFailed ? (
+                  <div className="flex h-64 flex-col items-center justify-center gap-3 text-center">
+                    <p className="text-sm font-medium text-destructive">
+                      {t("skills.skillssh.error")}
+                    </p>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      onClick={() => void refetchSkillsSh()}
+                    >
+                      <RefreshCw className="h-3.5 w-3.5" />
+                      {t("common.refresh")}
+                    </Button>
+                  </div>
                 ) : skillsShQuery.length < 2 ? (
                   <div className="flex flex-col items-center justify-center h-64 text-center">
                     <Search className="h-12 w-12 text-muted-foreground/30 mb-4" />
@@ -598,19 +949,41 @@ export const SkillsPage = forwardRef<SkillsPageHandle, SkillsPageProps>(
                       })}
                     </p>
                   </div>
+                ) : filteredSkillsShResults.length === 0 ? (
+                  <div className="flex flex-col items-center justify-center h-48 text-center">
+                    <p className="text-lg font-medium text-foreground">
+                      {t("skills.noResults")}
+                    </p>
+                  </div>
                 ) : (
                   <>
                     <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                      {accumulatedResults.map((skill) => {
+                      {filteredSkillsShResults.map((skill) => {
                         const installed = isSkillsShInstalled(skill);
+                        const discoverable = skillsShToDiscoverableSkill(skill);
+                        const category = inferSkillMarketCategory(discoverable);
                         return (
                           <SkillCard
                             key={skill.key}
                             skill={{
-                              ...toDiscoverableSkill(skill),
+                              ...discoverable,
                               installed,
                             }}
                             installs={skill.installs}
+                            sourceLabel={t("skills.market.communitySource")}
+                            trustLabel={t("skills.market.unverifiedBadge")}
+                            categoryLabel={categoryLabel(category)}
+                            targetLabel={t("skills.market.cardTarget", {
+                              app: targetAppLabel,
+                            })}
+                            onView={() =>
+                              setDetail({
+                                skill: { ...discoverable, installed },
+                                source: "skillssh",
+                                category,
+                                installs: skill.installs,
+                              })
+                            }
                             onInstall={handleInstall}
                             onUninstall={handleUninstall}
                           />
@@ -658,6 +1031,108 @@ export const SkillsPage = forwardRef<SkillsPageHandle, SkillsPageProps>(
             onClose={() => setRepoManagerOpen(false)}
           />
         )}
+
+        <Dialog
+          open={Boolean(detail)}
+          onOpenChange={(open) => !open && setDetail(null)}
+        >
+          <DialogContent className="max-h-[85vh] max-w-2xl overflow-y-auto">
+            {detail && (
+              <>
+                <DialogHeader>
+                  <div className="flex flex-wrap items-center gap-2 pr-8">
+                    <DialogTitle>{detail.skill.name}</DialogTitle>
+                    <Badge variant="secondary">{detailSourceLabel}</Badge>
+                    <Badge variant="outline">
+                      {categoryLabel(detail.category)}
+                    </Badge>
+                    {typeof detail.installs === "number" && (
+                      <Badge variant="outline">
+                        {t("skills.skillssh.installs", {
+                          count: detail.installs,
+                        })}
+                      </Badge>
+                    )}
+                  </div>
+                  <DialogDescription>
+                    {detail.skill.description || t("skills.noDescription")}
+                  </DialogDescription>
+                </DialogHeader>
+
+                <div className="grid gap-3 text-sm sm:grid-cols-2">
+                  <div className="rounded-lg border bg-muted/20 p-3">
+                    <p className="text-[10px] uppercase tracking-wider text-muted-foreground">
+                      {t("skills.market.publisher")}
+                    </p>
+                    <p className="mt-1 font-medium">{detail.skill.repoOwner}</p>
+                  </div>
+                  <div className="rounded-lg border bg-muted/20 p-3">
+                    <p className="text-[10px] uppercase tracking-wider text-muted-foreground">
+                      {t("skills.market.repository")}
+                    </p>
+                    <p className="mt-1 break-all font-medium">
+                      {detail.skill.repoOwner}/{detail.skill.repoName}
+                    </p>
+                  </div>
+                  <div className="rounded-lg border bg-muted/20 p-3">
+                    <p className="text-[10px] uppercase tracking-wider text-muted-foreground">
+                      {t("skills.market.branch")}
+                    </p>
+                    <p className="mt-1 font-medium">
+                      {detail.skill.repoBranch || "main"}
+                    </p>
+                  </div>
+                  <div className="rounded-lg border bg-muted/20 p-3">
+                    <p className="text-[10px] uppercase tracking-wider text-muted-foreground">
+                      {t("skills.market.installTarget")}
+                    </p>
+                    <p className="mt-1 font-medium">{targetAppLabel}</p>
+                  </div>
+                </div>
+
+                <div className="flex items-start gap-3 rounded-lg border border-amber-500/30 bg-amber-500/[0.06] p-3 text-xs leading-5 text-amber-900 dark:text-amber-200">
+                  <ShieldAlert className="mt-0.5 h-4 w-4 shrink-0" />
+                  <div>
+                    <p className="font-semibold">
+                      {t("skills.market.securityTitle")}
+                    </p>
+                    <p className="mt-0.5 text-amber-800/85 dark:text-amber-200/80">
+                      {t("skills.market.securityDescription")}
+                    </p>
+                  </div>
+                </div>
+
+                <DialogFooter>
+                  {detail.skill.readmeUrl && (
+                    <Button
+                      type="button"
+                      variant="outline"
+                      onClick={() => void openDetailSource()}
+                    >
+                      {t("skills.market.viewSource")}
+                    </Button>
+                  )}
+                  <Button
+                    type="button"
+                    disabled={
+                      detail.skill.installed || installMutation.isPending
+                    }
+                    onClick={() => void handleInstall(detail.skill.key)}
+                  >
+                    {installMutation.isPending && (
+                      <Loader2 className="h-4 w-4 animate-spin" />
+                    )}
+                    {detail.skill.installed
+                      ? t("skills.installed")
+                      : t("skills.market.installTo", {
+                          app: targetAppLabel,
+                        })}
+                  </Button>
+                </DialogFooter>
+              </>
+            )}
+          </DialogContent>
+        </Dialog>
       </div>
     );
   },

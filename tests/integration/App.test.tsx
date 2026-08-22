@@ -279,6 +279,35 @@ describe("App integration with MSW", { timeout: 15_000 }, () => {
     expect(toastErrorMock).not.toHaveBeenCalled();
   });
 
+  it("keeps the Skill Market inside Skills as a second tab", async () => {
+    setSettings({ firstRunNoticeConfirmed: true });
+    const { default: App } = await import("@/App");
+    renderApp(App);
+
+    await screen.findByRole("heading", { name: "工作台" });
+    fireEvent.click(screen.getByRole("button", { name: "能力中心" }));
+    const skillsCardDescription =
+      await screen.findByText("给 AI 工具安装可复用的专业能力");
+    fireEvent.click(skillsCardDescription.closest("button")!);
+
+    expect(await screen.findByTestId("skills-hub")).toBeInTheDocument();
+    const installedTab = screen.getByTestId("skills-tab-installed");
+    const marketTab = screen.getByTestId("skills-tab-market");
+    expect(installedTab).toHaveTextContent("skills.market.installedTab");
+    expect(marketTab).toHaveTextContent("skills.market.marketTab");
+    expect(installedTab).toHaveAttribute("aria-selected", "true");
+    expect(marketTab).toHaveAttribute("aria-selected", "false");
+
+    fireEvent.click(marketTab);
+    expect(marketTab).toHaveAttribute("aria-selected", "true");
+    expect(
+      await screen.findByRole("heading", { name: "skills.market.title" }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByLabelText("skills.market.installTarget"),
+    ).toBeInTheDocument();
+  });
+
   it("shows toast when auto sync fails in background", async () => {
     const { default: App } = await import("@/App");
     renderApp(App);
