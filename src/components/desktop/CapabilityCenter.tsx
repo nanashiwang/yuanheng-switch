@@ -111,7 +111,7 @@ export function CapabilityCenter({ activeApp, onOpen }: CapabilityCenterProps) {
             size="sm"
             onClick={() => onOpen("skillsDiscovery")}
           >
-            <Compass className="h-4 w-4" /> {dt("发现能力")}
+            <Compass className="h-4 w-4" /> {t("skills.market.marketTab")}
           </Button>
         }
       />
@@ -234,7 +234,7 @@ export function CapabilityCenter({ activeApp, onOpen }: CapabilityCenterProps) {
         >
           <PackageCheck className="h-4 w-4 text-primary" />
           <span className="flex-1 text-[11px] text-muted-foreground">
-            {dt("从技能仓库发现并安装新能力；安装后可按工具启用。")}
+            {t("skills.market.entryDescription")}
           </span>
           <ArrowRight className="h-3.5 w-3.5 text-muted-foreground" />
         </button>

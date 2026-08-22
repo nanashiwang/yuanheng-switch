@@ -2401,6 +2401,43 @@
       "error": "Failed to search skills.sh",
       "poweredBy": "Powered by skills.sh"
     },
+    "market": {
+      "sectionLabel": "Skills sections",
+      "installedTab": "Installed",
+      "marketTab": "Skill Market",
+      "title": "Skill Market",
+      "description": "Search community catalogs or repositories you added. Review the source and code before installing.",
+      "entryDescription": "Find community skills in the Skill Market and enable them per tool after installation.",
+      "unverifiedBadge": "Community · Unverified",
+      "configuredSource": "Added repository",
+      "communitySource": "skills.sh community",
+      "installTarget": "Install target",
+      "installTargetHint": "New installs are enabled for {{app}}",
+      "cardTarget": "Target: {{app}}",
+      "category": "Category",
+      "categories": {
+        "all": "All categories",
+        "coding": "Development",
+        "design": "Design & image",
+        "automation": "Automation",
+        "data": "Data & analytics",
+        "content": "Content creation",
+        "other": "Other"
+      },
+      "sort": "Sort",
+      "sortOptions": {
+        "relevance": "Relevance",
+        "popular": "Installs",
+        "name": "Name"
+      },
+      "publisher": "Publisher",
+      "repository": "Repository",
+      "branch": "Branch",
+      "securityTitle": "Review before installing",
+      "securityDescription": "Community skills may contain prompts, scripts, and external dependencies. YuanHeng uses its existing safe installation flow, but a community listing is not an official review. Inspect the source before installing.",
+      "viewSource": "View source",
+      "installTo": "Install to {{app}}"
+    },
     "filter": {
       "placeholder": "Filter by status",
       "all": "All",
@@ -3088,7 +3125,7 @@
       "tools": "Tool Management",
       "capabilities": "Capability Center",
       "skills": "Skills",
-      "skillsDiscovery": "Discover Skills",
+      "skillsDiscovery": "Skill Market",
       "mcp": "MCP",
       "prompts": "Prompts",
       "agents": "Agents",
@@ -3162,7 +3199,7 @@
       "restore": "Restore",
       "import": "Import",
       "discover": "Discover",
-      "discoveryDescription": "Find and install capabilities from trusted repositories."
+      "discoveryDescription": "Search community catalogs and added repositories, then review the source before installing."
     },
     "mcp": {
       "description": "Manage MCP servers shared by AI tools.",

@@ -2401,6 +2401,43 @@
       "error": "skills.sh の検索に失敗しました",
       "poweredBy": "Powered by skills.sh"
     },
+    "market": {
+      "sectionLabel": "Skills セクション",
+      "installedTab": "インストール済み",
+      "marketTab": "Skill マーケット",
+      "title": "Skill マーケット",
+      "description": "コミュニティカタログや追加済みリポジトリから Skill を検索できます。インストール前にソースを確認してください。",
+      "entryDescription": "Skill マーケットでコミュニティ Skill を検索し、ツールごとに有効化できます。",
+      "unverifiedBadge": "コミュニティ · 未検証",
+      "configuredSource": "追加済みリポジトリ",
+      "communitySource": "skills.sh コミュニティ",
+      "installTarget": "インストール先",
+      "installTargetHint": "新規インストールは {{app}} で有効になります",
+      "cardTarget": "対象：{{app}}",
+      "category": "カテゴリ",
+      "categories": {
+        "all": "すべて",
+        "coding": "開発",
+        "design": "デザイン・画像",
+        "automation": "自動化",
+        "data": "データ分析",
+        "content": "コンテンツ制作",
+        "other": "その他"
+      },
+      "sort": "並び順",
+      "sortOptions": {
+        "relevance": "関連度",
+        "popular": "インストール数",
+        "name": "名前"
+      },
+      "publisher": "公開者",
+      "repository": "リポジトリ",
+      "branch": "ブランチ",
+      "securityTitle": "インストール前に確認",
+      "securityDescription": "コミュニティ Skill にはプロンプト、スクリプト、外部依存関係が含まれる場合があります。コミュニティ掲載は公式審査を意味しないため、インストール前にソースを確認してください。",
+      "viewSource": "ソースを見る",
+      "installTo": "{{app}} にインストール"
+    },
     "filter": {
       "placeholder": "状態で絞り込み",
       "all": "すべて",
@@ -3088,7 +3125,7 @@
       "tools": "ツール管理",
       "capabilities": "機能センター",
       "skills": "Skills",
-      "skillsDiscovery": "Skills を探す",
+      "skillsDiscovery": "Skill マーケット",
       "mcp": "MCP",
       "prompts": "Prompts",
       "agents": "Agents",
@@ -3162,7 +3199,7 @@
       "restore": "復元",
       "import": "インポート",
       "discover": "探す",
-      "discoveryDescription": "信頼できるリポジトリから機能を探してインストールします。"
+      "discoveryDescription": "コミュニティカタログと追加済みリポジトリから検索し、インストール前にソースを確認できます。"
     },
     "mcp": {
       "description": "AI ツールで共有する MCP サーバーを管理します。",

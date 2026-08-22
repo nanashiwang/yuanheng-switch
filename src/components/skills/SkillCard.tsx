@@ -21,6 +21,11 @@ interface SkillCardProps {
   onInstall: (key: string) => Promise<void>;
   onUninstall: (key: string) => Promise<void>;
   installs?: number;
+  sourceLabel?: string;
+  trustLabel?: string;
+  categoryLabel?: string;
+  targetLabel?: string;
+  onView?: (skill: SkillCardSkill) => void;
 }
 
 export function SkillCard({
@@ -28,6 +33,11 @@ export function SkillCard({
   onInstall,
   onUninstall,
   installs,
+  sourceLabel,
+  trustLabel,
+  categoryLabel,
+  targetLabel,
+  onView,
 }: SkillCardProps) {
   const { t } = useTranslation();
   const [loading, setLoading] = useState(false);
@@ -51,6 +61,10 @@ export function SkillCard({
   };
 
   const handleOpenGithub = async () => {
+    if (onView) {
+      onView(skill);
+      return;
+    }
     if (skill.readmeUrl) {
       try {
         await settingsApi.openExternal(skill.readmeUrl);
@@ -73,7 +87,7 @@ export function SkillCard({
             <CardTitle className="text-base font-semibold truncate">
               {skill.name}
             </CardTitle>
-            <div className="flex items-center gap-2 mt-1.5">
+            <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
               {showDirectory && (
                 <CardDescription className="text-xs truncate">
                   {skill.directory}
@@ -94,6 +108,30 @@ export function SkillCard({
                 >
                   <Download className="h-2.5 w-2.5 mr-0.5" />
                   {installs.toLocaleString()}
+                </Badge>
+              )}
+              {sourceLabel && (
+                <Badge
+                  variant="secondary"
+                  className="h-4 shrink-0 px-1.5 py-0 text-[10px]"
+                >
+                  {sourceLabel}
+                </Badge>
+              )}
+              {trustLabel && (
+                <Badge
+                  variant="outline"
+                  className="h-4 shrink-0 border-amber-500/35 bg-amber-500/5 px-1.5 py-0 text-[10px] text-amber-700 dark:text-amber-300"
+                >
+                  {trustLabel}
+                </Badge>
+              )}
+              {categoryLabel && (
+                <Badge
+                  variant="outline"
+                  className="h-4 shrink-0 px-1.5 py-0 text-[10px]"
+                >
+                  {categoryLabel}
                 </Badge>
               )}
             </div>
@@ -117,8 +155,13 @@ export function SkillCard({
       ) : (
         <div className="flex-1" />
       )}
+      {targetLabel && (
+        <div className="px-6 pb-3 text-[10px] text-muted-foreground">
+          {targetLabel}
+        </div>
+      )}
       <CardFooter className="flex gap-2 pt-3 border-t border-border/50 relative z-10">
-        {skill.readmeUrl && (
+        {(skill.readmeUrl || onView) && (
           <Button
             variant="ghost"
             size="sm"

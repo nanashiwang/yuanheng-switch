@@ -2403,6 +2403,43 @@
       "error": "搜尋 skills.sh 失敗",
       "poweredBy": "由 skills.sh 提供"
     },
+    "market": {
+      "sectionLabel": "Skills 分區",
+      "installedTab": "已安裝",
+      "marketTab": "Skill 市場",
+      "title": "Skill 市場",
+      "description": "從社群目錄或你加入的儲存庫搜尋需要的 Skill；安裝前請檢查來源與程式碼。",
+      "entryDescription": "在 Skill 市場搜尋社群能力；安裝後可依工具啟用。",
+      "unverifiedBadge": "社群來源 · 未驗證",
+      "configuredSource": "已加入儲存庫",
+      "communitySource": "skills.sh 社群",
+      "installTarget": "安裝目標",
+      "installTargetHint": "安裝後預設啟用到 {{app}}",
+      "cardTarget": "目標：{{app}}",
+      "category": "分類",
+      "categories": {
+        "all": "全部分類",
+        "coding": "程式開發",
+        "design": "設計與圖像",
+        "automation": "自動化",
+        "data": "資料分析",
+        "content": "內容創作",
+        "other": "其他"
+      },
+      "sort": "排序",
+      "sortOptions": {
+        "relevance": "相關度",
+        "popular": "安裝量",
+        "name": "名稱"
+      },
+      "publisher": "發布者",
+      "repository": "來源儲存庫",
+      "branch": "分支",
+      "securityTitle": "安裝前安全提示",
+      "securityDescription": "社群 Skill 可能包含提示詞、指令碼與外部相依套件。YuanHeng 會使用既有安全安裝流程，但社群來源不代表官方審核，請在安裝前查看原始碼。",
+      "viewSource": "查看原始碼",
+      "installTo": "安裝到 {{app}}"
+    },
     "filter": {
       "placeholder": "狀態篩選",
       "all": "全部",
@@ -3090,7 +3127,7 @@
       "tools": "工具管理",
       "capabilities": "能力中心",
       "skills": "技能",
-      "skillsDiscovery": "探索技能",
+      "skillsDiscovery": "Skill 市場",
       "mcp": "MCP",
       "prompts": "提示詞",
       "agents": "代理",
@@ -3164,7 +3201,7 @@
       "restore": "還原",
       "import": "匯入",
       "discover": "探索",
-      "discoveryDescription": "從可信任的儲存庫尋找並安裝工具能力。"
+      "discoveryDescription": "從社群目錄與已加入儲存庫搜尋 Skill，安裝前可核對來源。"
     },
     "mcp": {
       "description": "管理 AI 工具共用的 MCP 伺服器。",

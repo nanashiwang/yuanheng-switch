@@ -253,6 +253,9 @@ export const handlers = [
     return success(setToolLaunchDirectory(tool, cwd));
   }),
   http.post(`${TAURI_ENDPOINT}/get_installed_skills`, () => success([])),
+  http.post(`${TAURI_ENDPOINT}/scan_unmanaged_skills`, () => success([])),
+  http.post(`${TAURI_ENDPOINT}/discover_available_skills`, () => success([])),
+  http.post(`${TAURI_ENDPOINT}/get_skill_repos`, () => success([])),
   http.post(
     `${TAURI_ENDPOINT}/set_installed_skill_order`,
     async ({ request }) => {

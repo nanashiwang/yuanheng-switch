@@ -2401,6 +2401,43 @@
       "error": "수색에 실패 skills.sh",
       "poweredBy": "skills.sh 제공"
     },
+    "market": {
+      "sectionLabel": "스킬 섹션",
+      "installedTab": "설치됨",
+      "marketTab": "Skill 마켓",
+      "title": "Skill 마켓",
+      "description": "커뮤니티 카탈로그나 추가한 저장소에서 필요한 Skill을 검색하세요. 설치 전에 출처와 코드를 확인하세요.",
+      "entryDescription": "Skill 마켓에서 커뮤니티 기능을 찾고 설치 후 도구별로 활성화하세요.",
+      "unverifiedBadge": "커뮤니티 · 미검증",
+      "configuredSource": "추가한 저장소",
+      "communitySource": "skills.sh 커뮤니티",
+      "installTarget": "설치 대상",
+      "installTargetHint": "새 설치는 {{app}}에서 활성화됩니다",
+      "cardTarget": "대상: {{app}}",
+      "category": "카테고리",
+      "categories": {
+        "all": "전체 카테고리",
+        "coding": "개발",
+        "design": "디자인 및 이미지",
+        "automation": "자동화",
+        "data": "데이터 분석",
+        "content": "콘텐츠 제작",
+        "other": "기타"
+      },
+      "sort": "정렬",
+      "sortOptions": {
+        "relevance": "관련도",
+        "popular": "설치 수",
+        "name": "이름"
+      },
+      "publisher": "게시자",
+      "repository": "저장소",
+      "branch": "브랜치",
+      "securityTitle": "설치 전 확인",
+      "securityDescription": "커뮤니티 Skill에는 프롬프트, 스크립트 및 외부 종속성이 포함될 수 있습니다. 커뮤니티 등록은 공식 검토를 의미하지 않으므로 설치 전에 소스를 확인하세요.",
+      "viewSource": "소스 보기",
+      "installTo": "{{app}}에 설치"
+    },
     "filter": {
       "placeholder": "상태별 필터링",
       "all": "모두",
@@ -3088,7 +3125,7 @@
       "tools": "도구",
       "capabilities": "기능",
       "skills": "스킬",
-      "skillsDiscovery": "스킬 찾기",
+      "skillsDiscovery": "Skill 마켓",
       "mcp": "MCP",
       "prompts": "프롬프트",
       "agents": "에이전트",
@@ -3162,7 +3199,7 @@
       "restore": "복원",
       "import": "가져오기",
       "discover": "찾기",
-      "discoveryDescription": "신뢰할 수 있는 저장소에서 기능을 찾아 설치합니다."
+      "discoveryDescription": "커뮤니티 카탈로그와 추가한 저장소를 검색하고 설치 전에 출처를 확인하세요."
     },
     "mcp": {
       "description": "AI 도구가 공유하는 MCP 서버를 관리합니다.",
