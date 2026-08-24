@@ -8,8 +8,7 @@ use crate::app_config::{AppType, InstalledSkill, UnmanagedSkill};
 use crate::error::format_skill_error;
 use crate::services::skill::{
     DiscoverableSkill, ImportSkillSelection, MigrationResult, Skill, SkillBackupEntry, SkillRepo,
-    SkillSecurityReport, SkillService, SkillStorageLocation, SkillUninstallResult,
-    SkillUpdateInfo,
+    SkillSecurityReport, SkillService, SkillStorageLocation, SkillUninstallResult, SkillUpdateInfo,
     SkillsShSearchResult,
 };
 use crate::store::AppState;

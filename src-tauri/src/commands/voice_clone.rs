@@ -188,9 +188,10 @@ fn split_voice_clone_text(text: &str) -> Vec<String> {
         let mut end = hard_end;
         if hard_end < chars.len() {
             let preferred_start = start + MAX_SEGMENT_TEXT_CHARS / 2;
-            if let Some(boundary) = (preferred_start..hard_end).rev().find(|index| {
-                matches!(chars[*index], '。' | '！' | '？' | '.' | '!' | '?' | '\n')
-            }) {
+            if let Some(boundary) = (preferred_start..hard_end)
+                .rev()
+                .find(|index| matches!(chars[*index], '。' | '！' | '？' | '.' | '!' | '?' | '\n'))
+            {
                 end = boundary + 1;
             }
         }
@@ -389,7 +390,9 @@ mod tests {
         let text = format!("{}。{}。", "甲".repeat(4_400), "乙".repeat(4_400));
         let segments = split_voice_clone_text(&text);
         assert_eq!(segments.len(), 2);
-        assert!(segments.iter().all(|segment| segment.chars().count() <= 4_500));
+        assert!(segments
+            .iter()
+            .all(|segment| segment.chars().count() <= 4_500));
         assert!(segments[0].ends_with('。'));
     }
 }

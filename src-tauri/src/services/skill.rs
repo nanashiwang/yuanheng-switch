@@ -539,8 +539,8 @@ impl SkillService {
             "exe", "dll", "dylib", "so", "bin", "com", "msi", "pkg", "appimage",
         ];
         const EXECUTABLE_EXTENSIONS: &[&str] = &[
-            "sh", "bash", "zsh", "fish", "ps1", "bat", "cmd", "py", "js", "mjs",
-            "cjs", "ts", "tsx", "rb", "pl", "php", "lua", "jar",
+            "sh", "bash", "zsh", "fish", "ps1", "bat", "cmd", "py", "js", "mjs", "cjs", "ts",
+            "tsx", "rb", "pl", "php", "lua", "jar",
         ];
 
         let mut findings = Vec::new();
@@ -625,7 +625,10 @@ impl SkillService {
                     "wget|sh",
                     "invoke-expression",
                 ];
-                if critical_patterns.iter().any(|pattern| normalized.contains(pattern)) {
+                if critical_patterns
+                    .iter()
+                    .any(|pattern| normalized.contains(pattern))
+                {
                     Self::push_security_finding(
                         &mut findings,
                         "destructive_or_remote_exec",
@@ -647,7 +650,10 @@ impl SkillService {
                     "nan_api_key",
                     "meta_api_key",
                 ];
-                if sensitive_patterns.iter().any(|pattern| normalized.contains(pattern)) {
+                if sensitive_patterns
+                    .iter()
+                    .any(|pattern| normalized.contains(pattern))
+                {
                     Self::push_security_finding(
                         &mut findings,
                         "sensitive_data_access",
@@ -670,7 +676,10 @@ impl SkillService {
                     "chmod +x",
                     "eval(",
                 ];
-                if process_patterns.iter().any(|pattern| normalized.contains(pattern)) {
+                if process_patterns
+                    .iter()
+                    .any(|pattern| normalized.contains(pattern))
+                {
                     Self::push_security_finding(
                         &mut findings,
                         "process_execution",
@@ -692,7 +701,10 @@ impl SkillService {
                     "wget ",
                     "invoke-webrequest",
                 ];
-                if network_patterns.iter().any(|pattern| normalized.contains(pattern)) {
+                if network_patterns
+                    .iter()
+                    .any(|pattern| normalized.contains(pattern))
+                {
                     Self::push_security_finding(
                         &mut findings,
                         "network_access",
@@ -1180,10 +1192,7 @@ impl SkillService {
         Ok(installed_skill)
     }
 
-    pub async fn inspect_security(
-        &self,
-        skill: &DiscoverableSkill,
-    ) -> Result<SkillSecurityReport> {
+    pub async fn inspect_security(&self, skill: &DiscoverableSkill) -> Result<SkillSecurityReport> {
         let source_rel = Self::sanitize_skill_source_path(&skill.directory)
             .ok_or_else(|| anyhow!("Skill 路径无效"))?;
         let repo = SkillRepo {
@@ -1192,9 +1201,12 @@ impl SkillService {
             branch: skill.repo_branch.clone(),
             enabled: true,
         };
-        let (temp_dir, _) = timeout(std::time::Duration::from_secs(60), self.download_repo(&repo))
-            .await
-            .map_err(|_| anyhow!("Skill 安全检查下载超时"))??;
+        let (temp_dir, _) = timeout(
+            std::time::Duration::from_secs(60),
+            self.download_repo(&repo),
+        )
+        .await
+        .map_err(|_| anyhow!("Skill 安全检查下载超时"))??;
         let result = (|| {
             let source = Self::resolve_skill_source_dir(&temp_dir, &skill.directory)
                 .ok_or_else(|| anyhow!("仓库中未找到 Skill 目录"))?;
