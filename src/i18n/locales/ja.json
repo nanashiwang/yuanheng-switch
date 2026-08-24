@@ -2353,6 +2353,8 @@
       "parseMetadataFailed": "スキルメタデータの解析に失敗しました",
       "getHomeDirFailed": "ユーザーのホームディレクトリを取得できません",
       "noSkillsInZip": "ZIP ファイルにスキルが見つかりません（SKILL.md ファイルが必要です）",
+      "securityBlocked": "重大なセキュリティリスクを検出したためインストールをブロックしました",
+      "securityConfirmationRequired": "この Skill には明示的な確認が必要な高リスク機能が含まれています",
       "networkError": "ネットワークエラー",
       "fsError": "ファイルシステムエラー",
       "unknownError": "不明なエラー",
@@ -2364,7 +2366,8 @@
         "checkDiskSpace": "ディスク容量を確認してください",
         "checkPermission": "ディレクトリの権限を確認してください",
         "uninstallFirst": "同名のスキルを先にアンインストールしてください",
-        "checkZipContent": "ZIP ファイルに有効なスキルディレクトリ（SKILL.md を含む）が含まれていることを確認してください"
+        "checkZipContent": "ZIP ファイルに有効なスキルディレクトリ（SKILL.md を含む）が含まれていることを確認してください",
+        "reviewSource": "セキュリティレポートとソースを確認してからインストールを判断してください"
       }
     },
     "repo": {
@@ -2435,6 +2438,20 @@
       "branch": "ブランチ",
       "securityTitle": "インストール前に確認",
       "securityDescription": "コミュニティ Skill にはプロンプト、スクリプト、外部依存関係が含まれる場合があります。コミュニティ掲載は公式審査を意味しないため、インストール前にソースを確認してください。",
+      "securityScanning": "Skill の内容をダウンロードしてスキャンしています…",
+      "securityScanFailed": "セキュリティスキャンに失敗しました。未確認のコードを端末へ追加しないため、現在はインストールできません。",
+      "securitySummary": "{{files}} 件のファイル（実行可能スクリプト {{executables}} 件）をスキャンし、{{findings}} 件のリスク通知を検出しました。",
+      "securityBlocked": "高リスク Skill のインストールをブロックしました",
+      "securityBlockedDescription": "ネイティブバイナリ、破壊的コマンド、またはダウンロード後に直接実行するパターンを検出しました。",
+      "highRiskConfirm": "この Skill はローカルコマンドの実行や機密認証情報へのアクセスが可能です。ファイルとソースを確認してください。それでもインストールしますか？",
+      "knownSource": "既知の提供元・確認は必要",
+      "communityUnverified": "コミュニティ提供・未検証",
+      "risk": {
+        "low": "低リスク",
+        "medium": "中リスク",
+        "high": "高リスク",
+        "critical": "重大リスク"
+      },
       "viewSource": "ソースを見る",
       "installTo": "{{app}} にインストール"
     },
@@ -3165,6 +3182,16 @@
       "textPlaceholder": "クローン音声で読み上げる内容を入力してください...",
       "textRequired": "生成するテキストを入力してください",
       "instructionTitle": "声と話し方の指示",
+      "profileTitle": "このセッションの音声プロファイル",
+      "profilePlaceholder": "現在の参照音声に名前を付ける",
+      "saveProfile": "音声を保存",
+      "profileSaved": "このセッションに音声を保存しました",
+      "profileSessionHint": "音声は現在のクライアントセッションにのみ保持され、アプリ終了時に消去されます。",
+      "segmentHint": "長文は文単位で自動分割され、各セグメントを個別に試聴・ダウンロードできます。",
+      "segmentTitle": "セグメント {{current}} / {{total}}",
+      "segmentCount": "{{count}} セグメント",
+      "historyTitle": "このセッションの生成履歴",
+      "deleteHistory": "生成履歴を削除",
       "consentLabel": "これは自分の声である、または声の権利者から明示的な許可を得ており、今回の生成に使用することに同意します。",
       "consentRequired": "音声の使用許可を確認してください",
       "generate": "クローン音声を生成",

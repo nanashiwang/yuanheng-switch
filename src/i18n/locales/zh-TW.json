@@ -2355,6 +2355,8 @@
       "parseMetadataFailed": "解析技能中繼資料失敗",
       "getHomeDirFailed": "無法取得使用者主目錄",
       "noSkillsInZip": "ZIP 檔案中未找到技能（需包含 SKILL.md 檔案）",
+      "securityBlocked": "偵測到嚴重安全風險，已阻止安裝",
+      "securityConfirmationRequired": "此 Skill 包含需要明確確認的高風險能力",
       "networkError": "網路錯誤",
       "fsError": "檔案系統錯誤",
       "unknownError": "未知錯誤",
@@ -2366,7 +2368,8 @@
         "checkDiskSpace": "請檢查磁碟空間",
         "checkPermission": "請檢查目錄權限",
         "uninstallFirst": "請先解除安裝已安裝的同名技能",
-        "checkZipContent": "請確認 ZIP 檔案包含有效的技能目錄（含 SKILL.md 檔案）"
+        "checkZipContent": "請確認 ZIP 檔案包含有效的技能目錄（含 SKILL.md 檔案）",
+        "reviewSource": "請查看安全檢查結果和原始碼後再決定是否安裝"
       }
     },
     "repo": {
@@ -2437,6 +2440,20 @@
       "branch": "分支",
       "securityTitle": "安裝前安全提示",
       "securityDescription": "社群 Skill 可能包含提示詞、指令碼與外部相依套件。YuanHeng 會使用既有安全安裝流程，但社群來源不代表官方審核，請在安裝前查看原始碼。",
+      "securityScanning": "正在下載並掃描 Skill 內容……",
+      "securityScanFailed": "安全檢查失敗，為避免未經檢查的程式碼進入本機，目前無法安裝。",
+      "securitySummary": "已掃描 {{files}} 個檔案，其中 {{executables}} 個可執行腳本，發現 {{findings}} 項風險提示。",
+      "securityBlocked": "已阻止高風險 Skill 安裝",
+      "securityBlockedDescription": "偵測到原生二進位檔、破壞性命令或下載後直接執行模式。",
+      "highRiskConfirm": "此 Skill 可執行本機命令或存取敏感憑證。請先核對下方檔案與原始碼。確認仍要安裝嗎？",
+      "knownSource": "已知來源 · 仍需審查",
+      "communityUnverified": "社群來源 · 未驗證",
+      "risk": {
+        "low": "低風險",
+        "medium": "中風險",
+        "high": "高風險",
+        "critical": "嚴重風險"
+      },
       "viewSource": "查看原始碼",
       "installTo": "安裝到 {{app}}"
     },
@@ -3167,6 +3184,16 @@
       "textPlaceholder": "輸入希望用複製聲音朗讀的內容……",
       "textRequired": "請輸入需要產生的文字",
       "instructionTitle": "聲音與表達要求",
+      "profileTitle": "本次工作階段音色",
+      "profilePlaceholder": "為目前參考聲音命名",
+      "saveProfile": "儲存音色",
+      "profileSaved": "音色已儲存到本次工作階段",
+      "profileSessionHint": "音訊只保留在目前客戶端工作階段中，關閉客戶端後自動清除。",
+      "segmentHint": "長文字將按語句自動分段產生，每段可單獨試聽和下載。",
+      "segmentTitle": "第 {{current}} / {{total}} 段",
+      "segmentCount": "{{count}} 段",
+      "historyTitle": "本次產生記錄",
+      "deleteHistory": "刪除產生記錄",
       "consentLabel": "我確認這是本人聲音，或我已取得聲音權利人的明確授權，並同意將該聲音用於本次產生。",
       "consentRequired": "請先確認聲音使用授權",
       "generate": "產生複製語音",

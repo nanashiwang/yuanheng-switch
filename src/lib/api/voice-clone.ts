@@ -12,6 +12,14 @@ export interface VoiceCloneResult {
   audioBase64: string;
   mimeType: string;
   finalTextPreview: string | null;
+  segments: VoiceCloneSegment[];
+}
+
+export interface VoiceCloneSegment {
+  audioBase64: string;
+  mimeType: string;
+  text: string;
+  finalTextPreview: string | null;
 }
 
 export const voiceCloneApi = {

@@ -253,6 +253,16 @@ export const handlers = [
     return success(setToolLaunchDirectory(tool, cwd));
   }),
   http.post(`${TAURI_ENDPOINT}/get_installed_skills`, () => success([])),
+  http.post(`${TAURI_ENDPOINT}/inspect_skill_security`, () =>
+    success({
+      risk: "low",
+      blocked: false,
+      sourceTrust: "community",
+      filesScanned: 1,
+      executableFiles: 0,
+      findings: [],
+    }),
+  ),
   http.post(`${TAURI_ENDPOINT}/scan_unmanaged_skills`, () => success([])),
   http.post(`${TAURI_ENDPOINT}/discover_available_skills`, () => success([])),
   http.post(`${TAURI_ENDPOINT}/get_skill_repos`, () => success([])),

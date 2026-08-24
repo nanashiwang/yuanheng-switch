@@ -24,6 +24,7 @@ function createSwitcher(
       lastSyncedAt: null,
     },
     terminalModels: [],
+    modelMeta: {},
     bootstrapPhase,
     bootstrapRefreshing: false,
     retryBootstrap,
@@ -34,6 +35,7 @@ function createSwitcher(
     groups: {},
     reasoning: {},
     pendingApps: new Set(),
+    installingApps: new Set(),
     restartRequiredApps: new Set(),
     launchDirectories: {},
     launchDirectoryPendingApps: new Set(),
@@ -121,5 +123,4 @@ describe("FocusToolCard", () => {
     fireEvent.click(directoryButton);
     expect(switcher.chooseLaunchDirectory).toHaveBeenCalledWith("claude");
   });
-
 });

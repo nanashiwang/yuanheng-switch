@@ -2353,6 +2353,8 @@
       "parseMetadataFailed": "解析技能元数据失败",
       "getHomeDirFailed": "无法获取用户主目录",
       "noSkillsInZip": "ZIP 文件中未找到技能（需包含 SKILL.md 文件）",
+      "securityBlocked": "检测到严重安全风险，已阻止安装",
+      "securityConfirmationRequired": "该 Skill 包含需要明确确认的高风险能力",
       "networkError": "网络错误",
       "fsError": "文件系统错误",
       "unknownError": "未知错误",
@@ -2364,7 +2366,8 @@
         "checkDiskSpace": "请检查磁盘空间",
         "checkPermission": "请检查目录权限",
         "uninstallFirst": "请先卸载已安装的同名技能",
-        "checkZipContent": "请确认 ZIP 文件包含有效的技能目录（含 SKILL.md 文件）"
+        "checkZipContent": "请确认 ZIP 文件包含有效的技能目录（含 SKILL.md 文件）",
+        "reviewSource": "请查看安全检查结果和源码后再决定是否安装"
       }
     },
     "repo": {
@@ -2435,6 +2438,20 @@
       "branch": "分支",
       "securityTitle": "安装前安全提示",
       "securityDescription": "社区 Skill 可能包含提示词、脚本和外部依赖。YuanHeng 会使用现有安全安装流程，但社区来源不代表官方审核，请在安装前查看源码。",
+      "securityScanning": "正在下载并扫描 Skill 内容……",
+      "securityScanFailed": "安全检查失败，为避免未经检查的代码进入本机，当前无法安装。",
+      "securitySummary": "已扫描 {{files}} 个文件，其中 {{executables}} 个可执行脚本，发现 {{findings}} 项风险提示。",
+      "securityBlocked": "已阻止高危 Skill 安装",
+      "securityBlockedDescription": "检测到原生二进制、破坏性命令或下载后直接执行模式。",
+      "highRiskConfirm": "该 Skill 可以执行本机命令或访问敏感凭据。请先核对下方文件与源码。确认仍要安装吗？",
+      "knownSource": "已知来源 · 仍需审查",
+      "communityUnverified": "社区来源 · 未验证",
+      "risk": {
+        "low": "低风险",
+        "medium": "中风险",
+        "high": "高风险",
+        "critical": "严重风险"
+      },
       "viewSource": "查看源码",
       "installTo": "安装到 {{app}}"
     },
@@ -3165,6 +3182,16 @@
       "textPlaceholder": "输入希望用克隆声音朗读的内容……",
       "textRequired": "请输入需要生成的文字",
       "instructionTitle": "声音与表达要求",
+      "profileTitle": "本次会话音色",
+      "profilePlaceholder": "给当前参考声音命名",
+      "saveProfile": "保存音色",
+      "profileSaved": "音色已保存到本次会话",
+      "profileSessionHint": "音频只保存在当前客户端会话中，关闭客户端后自动清除。",
+      "segmentHint": "长文本将按语句自动分段生成，每段可单独试听和下载。",
+      "segmentTitle": "第 {{current}} / {{total}} 段",
+      "segmentCount": "{{count}} 段",
+      "historyTitle": "本次生成记录",
+      "deleteHistory": "删除生成记录",
       "consentLabel": "我确认这是本人声音，或我已获得声音权利人的明确授权，并同意将该声音用于本次生成。",
       "consentRequired": "请先确认声音使用授权",
       "generate": "生成克隆语音",

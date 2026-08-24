@@ -80,6 +80,36 @@ pub struct DiscoverableSkill {
     pub repo_branch: String,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum SkillSecurityRisk {
+    Low,
+    Medium,
+    High,
+    Critical,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SkillSecurityFinding {
+    pub code: String,
+    pub risk: SkillSecurityRisk,
+    pub title: String,
+    pub message: String,
+    pub path: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SkillSecurityReport {
+    pub risk: SkillSecurityRisk,
+    pub blocked: bool,
+    pub source_trust: String,
+    pub files_scanned: usize,
+    pub executable_files: usize,
+    pub findings: Vec<SkillSecurityFinding>,
+}
+
 /// 技能对象（兼容旧 API，内部使用 DiscoverableSkill）
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Skill {
@@ -460,6 +490,249 @@ impl SkillService {
         format!("https://github.com/{owner}/{repo}/blob/{branch}/{doc_path}")
     }
 
+    fn skill_source_trust(skill: &DiscoverableSkill) -> String {
+        if skill.repo_owner.eq_ignore_ascii_case("anthropics")
+            && skill.repo_name.eq_ignore_ascii_case("skills")
+        {
+            "known".to_string()
+        } else {
+            "community".to_string()
+        }
+    }
+
+    fn push_security_finding(
+        findings: &mut Vec<SkillSecurityFinding>,
+        code: &str,
+        risk: SkillSecurityRisk,
+        title: &str,
+        message: &str,
+        path: &Path,
+        root: &Path,
+    ) {
+        let relative_path = path
+            .strip_prefix(root)
+            .unwrap_or(path)
+            .to_string_lossy()
+            .replace('\\', "/");
+        if findings
+            .iter()
+            .any(|finding| finding.code == code && finding.path == relative_path)
+        {
+            return;
+        }
+        findings.push(SkillSecurityFinding {
+            code: code.to_string(),
+            risk,
+            title: title.to_string(),
+            message: message.to_string(),
+            path: relative_path,
+        });
+    }
+
+    fn scan_skill_security_dir(
+        skill: &DiscoverableSkill,
+        root: &Path,
+    ) -> Result<SkillSecurityReport> {
+        const MAX_FILES: usize = 2_000;
+        const MAX_TEXT_FILE_BYTES: u64 = 1_500_000;
+        const BINARY_EXTENSIONS: &[&str] = &[
+            "exe", "dll", "dylib", "so", "bin", "com", "msi", "pkg", "appimage",
+        ];
+        const EXECUTABLE_EXTENSIONS: &[&str] = &[
+            "sh", "bash", "zsh", "fish", "ps1", "bat", "cmd", "py", "js", "mjs", "cjs", "ts",
+            "tsx", "rb", "pl", "php", "lua", "jar",
+        ];
+
+        let mut findings = Vec::new();
+        let mut files_scanned = 0usize;
+        let mut executable_files = 0usize;
+        let mut stack = vec![root.to_path_buf()];
+
+        while let Some(directory) = stack.pop() {
+            for entry in fs::read_dir(&directory)? {
+                let entry = entry?;
+                let path = entry.path();
+                let metadata = fs::symlink_metadata(&path)?;
+                if metadata.file_type().is_symlink() {
+                    Self::push_security_finding(
+                        &mut findings,
+                        "symlink",
+                        SkillSecurityRisk::High,
+                        "包含符号链接",
+                        "符号链接可能把安装范围引向 Skill 目录之外。",
+                        &path,
+                        root,
+                    );
+                    continue;
+                }
+                if metadata.is_dir() {
+                    stack.push(path);
+                    continue;
+                }
+                if !metadata.is_file() {
+                    continue;
+                }
+                files_scanned += 1;
+                if files_scanned > MAX_FILES {
+                    Self::push_security_finding(
+                        &mut findings,
+                        "too_many_files",
+                        SkillSecurityRisk::High,
+                        "文件数量异常",
+                        "Skill 文件数量超过安全扫描上限。",
+                        &path,
+                        root,
+                    );
+                    break;
+                }
+
+                let extension = path
+                    .extension()
+                    .and_then(|value| value.to_str())
+                    .unwrap_or_default()
+                    .to_ascii_lowercase();
+                if BINARY_EXTENSIONS.contains(&extension.as_str()) {
+                    executable_files += 1;
+                    Self::push_security_finding(
+                        &mut findings,
+                        "native_binary",
+                        SkillSecurityRisk::Critical,
+                        "包含原生可执行文件",
+                        "社区 Skill 不应直接携带无法审查的原生二进制文件。",
+                        &path,
+                        root,
+                    );
+                    continue;
+                }
+                if EXECUTABLE_EXTENSIONS.contains(&extension.as_str()) {
+                    executable_files += 1;
+                }
+                if metadata.len() > MAX_TEXT_FILE_BYTES {
+                    continue;
+                }
+                let Ok(content) = fs::read_to_string(&path) else {
+                    continue;
+                };
+                let normalized = content.to_ascii_lowercase();
+
+                let critical_patterns = [
+                    "rm -rf /",
+                    "format c:",
+                    "remove-item -recurse -force c:\\",
+                    "curl | sh",
+                    "curl|sh",
+                    "wget | sh",
+                    "wget|sh",
+                    "invoke-expression",
+                ];
+                if critical_patterns
+                    .iter()
+                    .any(|pattern| normalized.contains(pattern))
+                {
+                    Self::push_security_finding(
+                        &mut findings,
+                        "destructive_or_remote_exec",
+                        SkillSecurityRisk::Critical,
+                        "检测到高危执行模式",
+                        "脚本包含破坏性命令或下载后直接执行的模式。",
+                        &path,
+                        root,
+                    );
+                }
+
+                let sensitive_patterns = [
+                    "/.ssh/",
+                    "\\.ssh\\",
+                    ".aws/credentials",
+                    "auth.json",
+                    "keychain",
+                    "credential manager",
+                    "nan_api_key",
+                    "meta_api_key",
+                ];
+                if sensitive_patterns
+                    .iter()
+                    .any(|pattern| normalized.contains(pattern))
+                {
+                    Self::push_security_finding(
+                        &mut findings,
+                        "sensitive_data_access",
+                        SkillSecurityRisk::High,
+                        "可能访问敏感凭据",
+                        "脚本或说明中出现 SSH、云凭据、认证文件或密钥相关路径。",
+                        &path,
+                        root,
+                    );
+                }
+
+                let process_patterns = [
+                    "child_process",
+                    "std::process::command",
+                    "subprocess.",
+                    "os.system(",
+                    "powershell.exe",
+                    "cmd.exe",
+                    "sudo ",
+                    "chmod +x",
+                    "eval(",
+                ];
+                if process_patterns
+                    .iter()
+                    .any(|pattern| normalized.contains(pattern))
+                {
+                    Self::push_security_finding(
+                        &mut findings,
+                        "process_execution",
+                        SkillSecurityRisk::High,
+                        "可执行本机命令",
+                        "该 Skill 包含启动进程、提权或动态执行代码的能力。",
+                        &path,
+                        root,
+                    );
+                }
+
+                let network_patterns = [
+                    "https://",
+                    "http://",
+                    "fetch(",
+                    "requests.",
+                    "reqwest::",
+                    "curl ",
+                    "wget ",
+                    "invoke-webrequest",
+                ];
+                if network_patterns
+                    .iter()
+                    .any(|pattern| normalized.contains(pattern))
+                {
+                    Self::push_security_finding(
+                        &mut findings,
+                        "network_access",
+                        SkillSecurityRisk::Medium,
+                        "包含网络访问",
+                        "该 Skill 可能向外部服务发送请求，请确认目标域名和数据范围。",
+                        &path,
+                        root,
+                    );
+                }
+            }
+        }
+
+        let risk = findings
+            .iter()
+            .map(|finding| finding.risk)
+            .max()
+            .unwrap_or(SkillSecurityRisk::Low);
+        Ok(SkillSecurityReport {
+            risk,
+            blocked: risk == SkillSecurityRisk::Critical,
+            source_trust: Self::skill_source_trust(skill),
+            files_scanned,
+            executable_files,
+            findings,
+        })
+    }
+
     /// 从旧 readme_url 中提取仓库内文档路径，兼容 `blob`/`tree` 两种格式
     fn extract_doc_path_from_url(url: &str) -> Option<String> {
         let marker = if url.contains("/blob/") {
@@ -671,6 +944,7 @@ impl SkillService {
         db: &Arc<Database>,
         skill: &DiscoverableSkill,
         current_app: &AppType,
+        security_acknowledged: bool,
     ) -> Result<InstalledSkill> {
         let ssot_dir = Self::get_ssot_dir()?;
 
@@ -706,7 +980,11 @@ impl SkillService {
                     let mut updated = existing.clone();
                     updated.apps.set_enabled_for(current_app, true);
                     db.save_skill(&updated)?;
-                    Self::sync_to_app_dir(&updated.directory, current_app)?;
+                    if let Err(error) = Self::sync_to_app_dir(&updated.directory, current_app) {
+                        let _ = db.save_skill(existing);
+                        let _ = Self::remove_from_app(&updated.directory, current_app);
+                        return Err(error);
+                    }
                     log::info!(
                         "Skill {} 已存在，更新 {:?} 启用状态",
                         updated.name,
@@ -799,7 +1077,38 @@ impl SkillService {
                 )));
             }
 
-            Self::copy_dir_recursive(&canonical_source, &dest)?;
+            let security_report = Self::scan_skill_security_dir(skill, &canonical_source)?;
+            if security_report.blocked {
+                let _ = fs::remove_dir_all(&temp_dir);
+                return Err(anyhow!(format_skill_error(
+                    "SKILL_SECURITY_BLOCKED",
+                    &[],
+                    Some("reviewSource"),
+                )));
+            }
+            if security_report.risk >= SkillSecurityRisk::High && !security_acknowledged {
+                let _ = fs::remove_dir_all(&temp_dir);
+                return Err(anyhow!(format_skill_error(
+                    "SKILL_SECURITY_CONFIRMATION_REQUIRED",
+                    &[],
+                    Some("reviewSource"),
+                )));
+            }
+
+            let staging = ssot_dir.join(format!(
+                ".{install_name}.installing-{}",
+                uuid::Uuid::new_v4()
+            ));
+            if let Err(error) = Self::copy_dir_recursive(&canonical_source, &staging) {
+                let _ = fs::remove_dir_all(&staging);
+                let _ = fs::remove_dir_all(&temp_dir);
+                return Err(error);
+            }
+            if let Err(error) = fs::rename(&staging, &dest) {
+                let _ = fs::remove_dir_all(&staging);
+                let _ = fs::remove_dir_all(&temp_dir);
+                return Err(error.into());
+            }
             let _ = fs::remove_dir_all(&temp_dir);
 
             // 使用实际下载成功的分支，避免 readme_url / repo_branch 与真实分支不一致。
@@ -861,10 +1170,18 @@ impl SkillService {
         };
 
         // 保存到数据库
-        db.save_skill(&installed_skill)?;
+        if let Err(error) = db.save_skill(&installed_skill) {
+            let _ = fs::remove_dir_all(&dest);
+            return Err(error.into());
+        }
 
         // 同步到当前应用目录
-        Self::sync_to_app_dir(&install_name, current_app)?;
+        if let Err(error) = Self::sync_to_app_dir(&install_name, current_app) {
+            let _ = Self::remove_from_app(&install_name, current_app);
+            let _ = db.delete_skill(&installed_skill.id);
+            let _ = fs::remove_dir_all(&dest);
+            return Err(error);
+        }
 
         log::info!(
             "Skill {} 安装成功，已启用 {:?}",
@@ -873,6 +1190,37 @@ impl SkillService {
         );
 
         Ok(installed_skill)
+    }
+
+    pub async fn inspect_security(&self, skill: &DiscoverableSkill) -> Result<SkillSecurityReport> {
+        let source_rel = Self::sanitize_skill_source_path(&skill.directory)
+            .ok_or_else(|| anyhow!("Skill 路径无效"))?;
+        let repo = SkillRepo {
+            owner: skill.repo_owner.clone(),
+            name: skill.repo_name.clone(),
+            branch: skill.repo_branch.clone(),
+            enabled: true,
+        };
+        let (temp_dir, _) = timeout(
+            std::time::Duration::from_secs(60),
+            self.download_repo(&repo),
+        )
+        .await
+        .map_err(|_| anyhow!("Skill 安全检查下载超时"))??;
+        let result = (|| {
+            let source = Self::resolve_skill_source_dir(&temp_dir, &skill.directory)
+                .ok_or_else(|| anyhow!("仓库中未找到 Skill 目录"))?;
+            let canonical_temp = temp_dir.canonicalize().unwrap_or_else(|_| temp_dir.clone());
+            let canonical_source = source
+                .canonicalize()
+                .with_context(|| format!("无法读取 Skill 目录: {}", source_rel.display()))?;
+            if !canonical_source.starts_with(&canonical_temp) || !canonical_source.is_dir() {
+                return Err(anyhow!("Skill 路径超出仓库范围"));
+            }
+            Self::scan_skill_security_dir(skill, &canonical_source)
+        })();
+        let _ = fs::remove_dir_all(&temp_dir);
+        result
     }
 
     /// 卸载 Skill
@@ -3268,5 +3616,57 @@ mod tests {
         );
         assert!(BUILTIN_IMAGEGEN_SCRIPT.contains("/v1/images/${"));
         assert!(BUILTIN_IMAGEGEN_SCRIPT.contains("/v1/responses"));
+    }
+
+    fn security_test_skill() -> DiscoverableSkill {
+        DiscoverableSkill {
+            key: "owner/repo:test".to_string(),
+            name: "Test".to_string(),
+            description: String::new(),
+            directory: "test".to_string(),
+            readme_url: None,
+            repo_owner: "owner".to_string(),
+            repo_name: "repo".to_string(),
+            repo_branch: "main".to_string(),
+        }
+    }
+
+    #[test]
+    fn security_scan_blocks_native_binaries_and_remote_exec() {
+        let temp = tempdir().expect("tempdir");
+        write_skill(temp.path(), "Unsafe Skill");
+        fs::write(temp.path().join("payload.exe"), b"MZ").expect("write binary");
+        fs::write(temp.path().join("install.sh"), "curl|sh").expect("write script");
+
+        let report = SkillService::scan_skill_security_dir(&security_test_skill(), temp.path())
+            .expect("scan skill");
+
+        assert_eq!(report.risk, SkillSecurityRisk::Critical);
+        assert!(report.blocked);
+        assert!(report
+            .findings
+            .iter()
+            .any(|finding| finding.code == "native_binary"));
+    }
+
+    #[test]
+    fn security_scan_reports_network_and_sensitive_access() {
+        let temp = tempdir().expect("tempdir");
+        write_skill(temp.path(), "Review Skill");
+        fs::write(
+            temp.path().join("script.py"),
+            "import requests\nrequests.get('https://example.com')\nopen('~/.ssh/id_rsa')",
+        )
+        .expect("write script");
+
+        let report = SkillService::scan_skill_security_dir(&security_test_skill(), temp.path())
+            .expect("scan skill");
+
+        assert_eq!(report.risk, SkillSecurityRisk::High);
+        assert!(!report.blocked);
+        assert!(report
+            .findings
+            .iter()
+            .any(|finding| finding.code == "sensitive_data_access"));
     }
 }

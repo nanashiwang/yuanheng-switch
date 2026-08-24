@@ -8,7 +8,7 @@ use crate::app_config::{AppType, InstalledSkill, UnmanagedSkill};
 use crate::error::format_skill_error;
 use crate::services::skill::{
     DiscoverableSkill, ImportSkillSelection, MigrationResult, Skill, SkillBackupEntry, SkillRepo,
-    SkillService, SkillStorageLocation, SkillUninstallResult, SkillUpdateInfo,
+    SkillSecurityReport, SkillService, SkillStorageLocation, SkillUninstallResult, SkillUpdateInfo,
     SkillsShSearchResult,
 };
 use crate::store::AppState;
@@ -155,6 +155,7 @@ pub fn delete_skill_backup(backup_id: String) -> Result<bool, String> {
 pub async fn install_skill_unified(
     skill: DiscoverableSkill,
     current_app: String,
+    security_acknowledged: Option<bool>,
     service: State<'_, SkillServiceState>,
     app_state: State<'_, AppState>,
 ) -> Result<InstalledSkill, String> {
@@ -162,7 +163,24 @@ pub async fn install_skill_unified(
 
     service
         .0
-        .install(&app_state.db, &skill, &app_type)
+        .install(
+            &app_state.db,
+            &skill,
+            &app_type,
+            security_acknowledged.unwrap_or(false),
+        )
+        .await
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub async fn inspect_skill_security(
+    skill: DiscoverableSkill,
+    service: State<'_, SkillServiceState>,
+) -> Result<SkillSecurityReport, String> {
+    service
+        .0
+        .inspect_security(&skill)
         .await
         .map_err(|e| e.to_string())
 }
@@ -357,7 +375,7 @@ pub async fn install_skill_for_app(
 
     service
         .0
-        .install(&app_state.db, &skill, &app_type)
+        .install(&app_state.db, &skill, &app_type, false)
         .await
         .map_err(|e| e.to_string())?;
 

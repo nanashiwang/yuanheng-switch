@@ -47,6 +47,12 @@ import {
   clearRestartRequired,
   markRestartRequired,
 } from "./desktopRestartState";
+import { useDesktopInstallFlow } from "./useDesktopInstallFlow";
+import {
+  clearToolInventoryCache,
+  TOOL_INVENTORY_CACHE_TTL_MS,
+  writeToolInventoryCache,
+} from "./toolInventoryCache";
 
 export const DESKTOP_TOOLS: YuanhengToolId[] = [
   "claude",
@@ -77,6 +83,8 @@ export const TOOL_VERSION_TARGETS: Partial<Record<YuanhengToolId, string>> = {
   ...TOOL_COMMANDS,
   "claude-desktop": "claude-desktop",
 };
+
+const TOOL_SETUP_TARGETS = Object.values(TOOL_VERSION_TARGETS);
 
 export const DESKTOP_DOWNLOAD_URLS: Partial<Record<YuanhengToolId, string>> = {
   "claude-desktop": "https://claude.ai/download",
@@ -154,11 +162,18 @@ export function ToolSetupGrid({
   const refreshConnection = useRefreshYuanheng();
   const statuses = useYuanhengToolStatuses();
   const configure = useConfigureYuanhengTools();
+  const desktopInstall = useDesktopInstallFlow();
   const launchDirectoryState = useToolLaunchDirectories();
   const versions = useQuery({
     queryKey: ["desktop", "tool-versions"],
-    queryFn: () =>
-      settingsApi.getToolVersions(Object.values(TOOL_VERSION_TARGETS)),
+    queryFn: async () => {
+      const data = await settingsApi.getToolVersions(TOOL_SETUP_TARGETS);
+      writeToolInventoryCache(TOOL_SETUP_TARGETS, data);
+      return data;
+    },
+    staleTime: TOOL_INVENTORY_CACHE_TTL_MS,
+    refetchOnMount: "always",
+    refetchOnWindowFocus: false,
   });
   const [selected, setSelected] = useState<YuanhengToolId[]>([]);
   const [models, setModels] = useState<Partial<Record<YuanhengToolId, string>>>(
@@ -184,6 +199,20 @@ export function ToolSetupGrid({
   const groupMap = useMemo(
     () => new Map((connection?.groups ?? []).map((group) => [group.id, group])),
     [connection?.groups],
+  );
+  const modelMeta = useMemo(
+    () =>
+      Object.fromEntries(
+        yuanhengTerminalModels(connection).map((model) => [
+          model,
+          {
+            groups: connection?.modelGroups[model]?.length ?? 0,
+            reasoningLevels: connection?.reasoningLevels[model]?.length ?? 0,
+            available: true,
+          },
+        ]),
+      ),
+    [connection],
   );
 
   const preferredGroup = (model: string, current?: string) =>
@@ -308,8 +337,10 @@ export function ToolSetupGrid({
             .join("；"),
         );
       }
+      return succeeded.length > 0 && failed.length === 0;
     } catch (error) {
       toast.error(extractErrorMessage(error) || dt("工具配置失败"));
+      return false;
     }
   };
 
@@ -355,12 +386,43 @@ export function ToolSetupGrid({
     if (!command && !downloadUrl) return;
     try {
       if (downloadUrl) {
-        await settingsApi.openExternal(downloadUrl);
+        const versionTarget = TOOL_VERSION_TARGETS[app];
+        if (!versionTarget) return;
+        const monitor = desktopInstall.openAndMonitor(
+          app,
+          versionTarget,
+          downloadUrl,
+        );
         toast.success(
           dt("已打开 {{v0}} 官方下载页，安装完成后请刷新检测", {
             v0: toolLabel(app),
           }),
         );
+        const result = await monitor;
+        if (result.status === "cancelled") return;
+        if (result.status === "timeout") {
+          toast.info(
+            dt("暂未检测到 {{v0}}，可重新检测或手动选择路径", {
+              v0: toolLabel(app),
+            }),
+          );
+          return;
+        }
+        await versions.refetch();
+        if (connection?.connected) {
+          const configured = await configureApps([app]);
+          if (!configured) {
+            toast.info(
+              dt("已检测到 {{v0}}，但自动配置未完成，可点击配置重试", {
+                v0: toolLabel(app),
+              }),
+            );
+          }
+        } else {
+          toast.success(
+            dt("已检测到 {{v0}}，现在可以进行配置", { v0: toolLabel(app) }),
+          );
+        }
         return;
       }
       if (!command) return;
@@ -376,6 +438,8 @@ export function ToolSetupGrid({
     try {
       const selected = await settingsApi.pickDesktopAppPath(app);
       if (!selected) return;
+      desktopInstall.stop(app);
+      clearToolInventoryCache();
       await versions.refetch();
       toast.success(dt("已保存 {{v0}} 应用路径", { v0: toolLabel(app) }));
     } catch (error) {
@@ -386,6 +450,7 @@ export function ToolSetupGrid({
   const clearDesktopPath = async (app: YuanhengToolId) => {
     try {
       await settingsApi.clearDesktopAppPath(app);
+      clearToolInventoryCache();
       await versions.refetch();
       toast.success(dt("已恢复自动检测"));
     } catch (error) {
@@ -473,6 +538,7 @@ export function ToolSetupGrid({
   };
 
   const refresh = async () => {
+    clearToolInventoryCache();
     if (connection?.connected) {
       try {
         await refreshConnection.mutateAsync();
@@ -580,6 +646,7 @@ export function ToolSetupGrid({
             : undefined;
           const canInstall = Boolean(command || DESKTOP_DOWNLOAD_URLS[app]);
           const installed = isInstalled(app);
+          const installing = desktopInstall.monitoringApps.has(app);
           const status = statusMap.get(app);
           const configured = Boolean(status?.configured);
           const selectable = Boolean(
@@ -879,6 +946,7 @@ export function ToolSetupGrid({
                     models={availableModels}
                     value={selectedModel}
                     recommended={status.recommendedModel}
+                    modelMeta={modelMeta}
                     label={dt("{{v0}} 模型选择", { v0: toolLabel(app) })}
                     disabled={configure.isPending}
                     onRefresh={refreshModels}
@@ -1021,6 +1089,7 @@ export function ToolSetupGrid({
                   <Button
                     size="sm"
                     className="flex-1"
+                    disabled={installing}
                     aria-label={
                       DESKTOP_DOWNLOAD_URLS[app]
                         ? dt("打开 {{v0}} 官方下载页", { v0: toolLabel(app) })
@@ -1031,10 +1100,16 @@ export function ToolSetupGrid({
                       void installTool(app);
                     }}
                   >
-                    <Download className="h-3.5 w-3.5" />
-                    {DESKTOP_DOWNLOAD_URLS[app]
-                      ? dt("官方下载")
-                      : dt("一键安装")}
+                    {installing ? (
+                      <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                    ) : (
+                      <Download className="h-3.5 w-3.5" />
+                    )}
+                    {installing
+                      ? dt("等待安装")
+                      : DESKTOP_DOWNLOAD_URLS[app]
+                        ? dt("官方下载")
+                        : dt("一键安装")}
                   </Button>
                 ) : (
                   <Button

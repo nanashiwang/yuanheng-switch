@@ -11,6 +11,7 @@ import {
   RotateCw,
   ShieldAlert,
   Stethoscope,
+  Undo2,
   Wrench,
 } from "lucide-react";
 import { toast } from "sonner";
@@ -19,6 +20,7 @@ import { settingsApi, yuanhengApi } from "@/lib/api";
 import { copyText } from "@/lib/clipboard";
 import {
   useRepairYuanheng,
+  useRollbackYuanhengTools,
   useRotateYuanhengCredential,
   useYuanhengConnection,
   useYuanhengDiagnostics,
@@ -66,6 +68,7 @@ export function YuanhengHealthCard({
   const diagnostics = useYuanhengDiagnostics();
   const repair = useRepairYuanheng();
   const rotateCredential = useRotateYuanhengCredential();
+  const rollbackTools = useRollbackYuanhengTools();
   const [expanded, setExpanded] = useState(false);
   const report = diagnostics.data;
   const meta = STATUS_META[report?.status ?? "warning"];
@@ -88,8 +91,24 @@ export function YuanhengHealthCard({
       toast.success(dt("体检完成，一切正常"));
       return;
     }
+    const repairTargets =
+      report?.checks
+        .filter((check) => check.action?.startsWith("repair_"))
+        .map((check) => `• ${dt(check.title)}`) ?? [];
+    if (
+      repairTargets.length > 0 &&
+      !window.confirm(
+        `${dt("即将执行以下修复：")}\n${repairTargets.join("\n")}\n\n${dt(
+          "修复前会保留可恢复的原工具配置，是否继续？",
+        )}`,
+      )
+    ) {
+      return;
+    }
     try {
-      const result = await repair.mutateAsync();
+      const result = await repair.mutateAsync(
+        [...actions].filter(Boolean) as string[],
+      );
       await diagnostics.refetch();
       toast.success(
         result.repairedTools.length > 0
@@ -155,6 +174,33 @@ export function YuanhengHealthCard({
       toast.success(dt("脱敏诊断已导出：{{v0}}", { v0: savedPath }));
     } catch (error) {
       toast.error(extractErrorMessage(error) || dt("导出诊断失败"));
+    }
+  };
+
+  const rollbackToolConfigs = async () => {
+    if (
+      !window.confirm(
+        dt(
+          "将恢复元衡接管前的工具配置，并保留账号连接。外部修改过的文件不会被覆盖，是否继续？",
+        ),
+      )
+    ) {
+      return;
+    }
+    try {
+      const result = await rollbackTools.mutateAsync();
+      await diagnostics.refetch();
+      const changed = result.restoredTools.length + result.removedTools.length;
+      toast.success(
+        changed > 0
+          ? dt("已回滚 {{v0}} 个工具配置", { v0: changed })
+          : dt("没有可安全回滚的工具配置"),
+      );
+      if (result.warnings.length > 0) {
+        toast.info(dt("部分外部修改的配置已保留，请查看诊断详情"));
+      }
+    } catch (error) {
+      toast.error(extractErrorMessage(error) || dt("回滚工具配置失败"));
     }
   };
 
@@ -290,6 +336,22 @@ export function YuanhengHealthCard({
                 <RotateCw className="h-3.5 w-3.5" />
               )}
               {dt("重新生成本机凭据")}
+            </Button>
+          )}
+          {connection?.connected && report.readyTools > 0 && (
+            <Button
+              variant="ghost"
+              size="sm"
+              className="w-full text-[11px]"
+              disabled={rollbackTools.isPending}
+              onClick={() => void rollbackToolConfigs()}
+            >
+              {rollbackTools.isPending ? (
+                <Loader2 className="h-3.5 w-3.5 animate-spin" />
+              ) : (
+                <Undo2 className="h-3.5 w-3.5" />
+              )}
+              {dt("恢复接管前配置")}
             </Button>
           )}
         </div>

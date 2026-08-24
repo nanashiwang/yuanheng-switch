@@ -140,11 +140,17 @@ export function useYuanhengDiagnostics() {
 export function useRepairYuanheng() {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: async () => {
-      const connection = await yuanhengApi.refresh();
+    mutationFn: async (actions: string[] = []) => {
+      const connection = actions.includes("repair_credentials")
+        ? await yuanhengApi.rotateDeviceToken()
+        : await yuanhengApi.refresh();
       const statuses = await yuanhengApi.getToolStatuses();
       const apps = statuses
-        .filter((item) => item.needsUpdate)
+        .filter(
+          (item) =>
+            item.needsUpdate ||
+            (actions.includes("repair_tools") && item.configured),
+        )
         .map((item) => item.app);
       if (apps.length > 0) await yuanhengApi.configureTools(apps);
       return { connection, repairedTools: apps };
@@ -173,6 +179,20 @@ export function useRotateYuanhengCredential() {
       queryClient.setQueryData(yuanhengKeys.connection, connection);
       queryClient.invalidateQueries({ queryKey: yuanhengKeys.tools });
       queryClient.invalidateQueries({ queryKey: yuanhengKeys.diagnostics });
+    },
+  });
+}
+
+export function useRollbackYuanhengTools() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: () => yuanhengApi.rollbackTools(),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: yuanhengKeys.tools });
+      queryClient.invalidateQueries({ queryKey: yuanhengKeys.diagnostics });
+      queryClient.invalidateQueries({
+        queryKey: ["desktop", "tool-connections"],
+      });
     },
   });
 }

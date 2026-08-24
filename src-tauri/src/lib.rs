@@ -1485,6 +1485,7 @@ pub fn run() {
             commands::get_skill_backups,
             commands::delete_skill_backup,
             commands::install_skill_unified,
+            commands::inspect_skill_security,
             commands::uninstall_skill_unified,
             commands::restore_skill_backup,
             commands::toggle_skill_app,
@@ -1602,6 +1603,7 @@ pub fn run() {
             commands::refresh_yuanheng_connection,
             commands::rotate_yuanheng_device_token,
             commands::disconnect_yuanheng,
+            commands::rollback_yuanheng_tools,
             commands::open_yuanheng_topup,
             // Universal Provider management
             commands::get_universal_providers,

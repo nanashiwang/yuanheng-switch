@@ -63,6 +63,25 @@ export interface DiscoverableSkill {
   repoBranch: string;
 }
 
+export type SkillSecurityRisk = "low" | "medium" | "high" | "critical";
+
+export interface SkillSecurityFinding {
+  code: string;
+  risk: SkillSecurityRisk;
+  title: string;
+  message: string;
+  path: string;
+}
+
+export interface SkillSecurityReport {
+  risk: SkillSecurityRisk;
+  blocked: boolean;
+  sourceTrust: "known" | "community";
+  filesScanned: number;
+  executableFiles: number;
+  findings: SkillSecurityFinding[];
+}
+
 /** 未管理的 Skill（用于导入） */
 export interface UnmanagedSkill {
   directory: string;
@@ -162,8 +181,19 @@ export const skillsApi = {
   async installUnified(
     skill: DiscoverableSkill,
     currentApp: AppId,
+    securityAcknowledged = false,
   ): Promise<InstalledSkill> {
-    return await invoke("install_skill_unified", { skill, currentApp });
+    return await invoke("install_skill_unified", {
+      skill,
+      currentApp,
+      securityAcknowledged,
+    });
+  },
+
+  async inspectSecurity(
+    skill: DiscoverableSkill,
+  ): Promise<SkillSecurityReport> {
+    return await invoke("inspect_skill_security", { skill });
   },
 
   /** 卸载 Skill（统一卸载） */

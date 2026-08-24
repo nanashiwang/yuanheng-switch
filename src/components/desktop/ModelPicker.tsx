@@ -14,7 +14,7 @@ import {
   PopoverTrigger,
 } from "@/components/ui/popover";
 import { cn } from "@/lib/utils";
-import { sortModelNames } from "./modelVendors";
+import { modelVendorOf, sortModelNames } from "./modelVendors";
 import { dt } from "./desktopI18n";
 
 export function ModelPicker({
@@ -27,6 +27,7 @@ export function ModelPicker({
   triggerLabel,
   onChange,
   onRefresh,
+  modelMeta,
 }: {
   models: string[];
   value?: string;
@@ -37,6 +38,10 @@ export function ModelPicker({
   triggerLabel?: string;
   onChange: (value: string) => void;
   onRefresh?: () => void;
+  modelMeta?: Record<
+    string,
+    { groups?: number; reasoningLevels?: number; available?: boolean }
+  >;
 }) {
   const [open, setOpen] = useState(false);
   const orderedModels = useMemo(
@@ -87,34 +92,48 @@ export function ModelPicker({
                 count: orderedModels.length,
               })}
             >
-              {orderedModels.map((model) => (
-                <CommandItem
-                  key={model}
-                  value={model}
-                  onSelect={() => {
-                    onChange(model);
-                    setOpen(false);
-                  }}
-                >
-                  <Check
-                    className={cn(
-                      "mr-1 h-3.5 w-3.5",
-                      value === model ? "opacity-100" : "opacity-0",
+              {orderedModels.map((model) => {
+                const vendor = modelVendorOf(model);
+                const meta = modelMeta?.[model];
+                return (
+                  <CommandItem
+                    key={model}
+                    value={`${model} ${vendor.label}`}
+                    disabled={meta?.available === false}
+                    onSelect={() => {
+                      onChange(model);
+                      setOpen(false);
+                    }}
+                  >
+                    <Check
+                      className={cn(
+                        "mr-1 h-3.5 w-3.5",
+                        value === model ? "opacity-100" : "opacity-0",
+                      )}
+                    />
+                    <span className="min-w-0 flex-1">
+                      <span className="block truncate">{model}</span>
+                      <span className="block truncate text-[9px] text-muted-foreground">
+                        {vendor.label}
+                        {meta?.groups ? ` · ${meta.groups} ${dt("分组")}` : ""}
+                        {meta?.reasoningLevels
+                          ? ` · ${meta.reasoningLevels} ${dt("推理等级")}`
+                          : ""}
+                      </span>
+                    </span>
+                    {model === value && (
+                      <span className="shrink-0 text-[9px] font-medium text-primary">
+                        {dt("当前")}
+                      </span>
                     )}
-                  />
-                  <span className="min-w-0 flex-1 truncate">{model}</span>
-                  {model === value && (
-                    <span className="shrink-0 text-[9px] font-medium text-primary">
-                      {dt("当前")}
-                    </span>
-                  )}
-                  {model === recommended && (
-                    <span className="shrink-0 text-[9px] text-emerald-600">
-                      {dt("推荐")}
-                    </span>
-                  )}
-                </CommandItem>
-              ))}
+                    {model === recommended && (
+                      <span className="shrink-0 text-[9px] text-emerald-600">
+                        {dt("推荐")}
+                      </span>
+                    )}
+                  </CommandItem>
+                );
+              })}
             </CommandGroup>
           </CommandList>
         </Command>
