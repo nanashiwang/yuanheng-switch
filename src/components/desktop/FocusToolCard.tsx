@@ -145,6 +145,7 @@ export function FocusToolCard({
   const {
     connection,
     terminalModels,
+    modelMeta,
     bootstrapPhase,
     retryBootstrap,
     runnableRows,
@@ -365,6 +366,7 @@ export function FocusToolCard({
               models={selectedVendor?.models ?? []}
               value={visibleModel}
               recommended={recommendedModel}
+              modelMeta={modelMeta}
               label={dt("{{v0}} {{v1}}模型", {
                 v0: toolLabel(app),
                 v1: selectedVendor?.label ?? "",

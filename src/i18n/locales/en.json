@@ -2353,6 +2353,8 @@
       "parseMetadataFailed": "Failed to parse skill metadata",
       "getHomeDirFailed": "Unable to get user home directory",
       "noSkillsInZip": "No skills found in ZIP file (requires SKILL.md file)",
+      "securityBlocked": "Installation was blocked because a critical security risk was detected",
+      "securityConfirmationRequired": "This Skill contains high-risk capabilities that require explicit confirmation",
       "networkError": "Network error",
       "fsError": "File system error",
       "unknownError": "Unknown error",
@@ -2364,7 +2366,8 @@
         "checkDiskSpace": "Please check disk space",
         "checkPermission": "Please check directory permissions",
         "uninstallFirst": "Please uninstall the existing skill with the same name first",
-        "checkZipContent": "Please verify the ZIP file contains valid skill directories (with SKILL.md files)"
+        "checkZipContent": "Please verify the ZIP file contains valid skill directories (with SKILL.md files)",
+        "reviewSource": "Review the security report and source before deciding whether to install"
       }
     },
     "repo": {
@@ -2435,6 +2438,20 @@
       "branch": "Branch",
       "securityTitle": "Review before installing",
       "securityDescription": "Community skills may contain prompts, scripts, and external dependencies. YuanHeng uses its existing safe installation flow, but a community listing is not an official review. Inspect the source before installing.",
+      "securityScanning": "Downloading and scanning Skill contents...",
+      "securityScanFailed": "The security scan failed. Installation is disabled so uninspected code is not added to this device.",
+      "securitySummary": "Scanned {{files}} files, including {{executables}} executable scripts, with {{findings}} risk notices.",
+      "securityBlocked": "High-risk Skill installation blocked",
+      "securityBlockedDescription": "A native binary, destructive command, or download-and-execute pattern was detected.",
+      "highRiskConfirm": "This Skill can run local commands or access sensitive credentials. Review the listed files and source first. Install anyway?",
+      "knownSource": "Known source · review still required",
+      "communityUnverified": "Community source · unverified",
+      "risk": {
+        "low": "Low risk",
+        "medium": "Medium risk",
+        "high": "High risk",
+        "critical": "Critical risk"
+      },
       "viewSource": "View source",
       "installTo": "Install to {{app}}"
     },
@@ -3165,6 +3182,16 @@
       "textPlaceholder": "Enter the text to read with the cloned voice...",
       "textRequired": "Enter text to generate",
       "instructionTitle": "Voice and delivery instructions",
+      "profileTitle": "Voice profiles for this session",
+      "profilePlaceholder": "Name the current reference voice",
+      "saveProfile": "Save voice",
+      "profileSaved": "Voice saved for this session",
+      "profileSessionHint": "Audio stays only in the current client session and is cleared when the app closes.",
+      "segmentHint": "Long text is split by sentence. Each segment can be previewed and downloaded separately.",
+      "segmentTitle": "Segment {{current}} / {{total}}",
+      "segmentCount": "{{count}} segments",
+      "historyTitle": "Generation history for this session",
+      "deleteHistory": "Delete generation record",
       "consentLabel": "I confirm this is my voice or I have explicit permission from the voice owner, and I consent to using it for this generation.",
       "consentRequired": "Confirm voice-use permission first",
       "generate": "Generate cloned voice",

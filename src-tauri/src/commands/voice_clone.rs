@@ -16,7 +16,8 @@ const MAX_REFERENCE_BASE64_BYTES: usize = 10_000_000;
 const MAX_REFERENCE_AUDIO_BYTES: usize = 7_500_000;
 const MAX_RESPONSE_BYTES: usize = 40 * 1024 * 1024;
 const MAX_OUTPUT_AUDIO_BYTES: usize = 24 * 1024 * 1024;
-const MAX_TEXT_CHARS: usize = 5_000;
+const MAX_TEXT_CHARS: usize = 20_000;
+const MAX_SEGMENT_TEXT_CHARS: usize = 4_500;
 const MAX_INSTRUCTION_CHARS: usize = 500;
 
 #[derive(Debug, Deserialize)]
@@ -34,6 +35,16 @@ pub struct VoiceCloneRequest {
 pub struct VoiceCloneResult {
     pub audio_base64: String,
     pub mime_type: String,
+    pub final_text_preview: Option<String>,
+    pub segments: Vec<VoiceCloneSegment>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct VoiceCloneSegment {
+    pub audio_base64: String,
+    pub mime_type: String,
+    pub text: String,
     pub final_text_preview: Option<String>,
 }
 
@@ -129,7 +140,7 @@ fn upstream_error_message(status: StatusCode, value: Option<&Value>) -> String {
     }
 }
 
-fn extract_voice_clone_result(value: &Value) -> Result<VoiceCloneResult, String> {
+fn extract_voice_clone_segment(value: &Value, text: &str) -> Result<VoiceCloneSegment, String> {
     let raw_audio = value
         .pointer("/choices/0/message/audio/data")
         .and_then(Value::as_str)
@@ -151,9 +162,10 @@ fn extract_voice_clone_result(value: &Value) -> Result<VoiceCloneResult, String>
         return Err("声音克隆返回的音频超过客户端大小限制".to_string());
     }
 
-    Ok(VoiceCloneResult {
+    Ok(VoiceCloneSegment {
         audio_base64: audio_base64.to_string(),
         mime_type: "audio/wav".to_string(),
+        text: text.to_string(),
         final_text_preview: value
             .pointer("/choices/0/message/final_text_preview")
             .and_then(Value::as_str)
@@ -161,6 +173,81 @@ fn extract_voice_clone_result(value: &Value) -> Result<VoiceCloneResult, String>
             .filter(|text| !text.is_empty())
             .map(str::to_string),
     })
+}
+
+fn split_voice_clone_text(text: &str) -> Vec<String> {
+    let chars: Vec<char> = text.chars().collect();
+    if chars.len() <= MAX_SEGMENT_TEXT_CHARS {
+        return vec![text.trim().to_string()];
+    }
+
+    let mut segments = Vec::new();
+    let mut start = 0usize;
+    while start < chars.len() {
+        let hard_end = (start + MAX_SEGMENT_TEXT_CHARS).min(chars.len());
+        let mut end = hard_end;
+        if hard_end < chars.len() {
+            let preferred_start = start + MAX_SEGMENT_TEXT_CHARS / 2;
+            if let Some(boundary) = (preferred_start..hard_end).rev().find(|index| {
+                matches!(chars[*index], '。' | '！' | '？' | '.' | '!' | '?' | '\n')
+            }) {
+                end = boundary + 1;
+            }
+        }
+        let segment: String = chars[start..end].iter().collect();
+        let segment = segment.trim();
+        if !segment.is_empty() {
+            segments.push(segment.to_string());
+        }
+        start = end;
+    }
+    segments
+}
+
+async fn generate_voice_clone_segment(
+    client: &reqwest::Client,
+    api_token: &str,
+    request: &ValidatedVoiceCloneRequest,
+    text: &str,
+) -> Result<VoiceCloneSegment, String> {
+    let body = json!({
+        "model": VOICE_CLONE_MODEL,
+        "messages": [
+            { "role": "user", "content": request.instruction.as_str() },
+            { "role": "assistant", "content": text }
+        ],
+        "audio": {
+            "format": "wav",
+            "voice": format!(
+                "data:{};base64,{}",
+                request.mime_type, request.reference_audio_base64.as_str()
+            )
+        },
+        "stream": false
+    });
+
+    let response = client
+        .post(VOICE_CLONE_ENDPOINT)
+        .header("Accept", "application/json")
+        .header("User-Agent", "yuanheng-desktop/voice-clone")
+        .bearer_auth(api_token)
+        .json(&body)
+        .send()
+        .await
+        .map_err(|error| format!("连接声音克隆服务失败: {error}"))?;
+    let status = response.status();
+    let response_body = read_limited_response(response).await?;
+    let value: Value = serde_json::from_slice(&response_body).map_err(|_| {
+        if status.is_success() {
+            "声音克隆服务返回了无法识别的响应".to_string()
+        } else {
+            format!("声音克隆失败 (HTTP {})", status.as_u16())
+        }
+    })?;
+    if !status.is_success() {
+        return Err(upstream_error_message(status, Some(&value)));
+    }
+    extract_voice_clone_segment(&value, text)
 }
 
 async fn read_limited_response(response: reqwest::Response) -> Result<Vec<u8>, String> {
@@ -201,44 +288,40 @@ pub async fn generate_yuanheng_voice_clone(
         .timeout(Duration::from_secs(180))
         .build()
         .map_err(|error| format!("创建声音克隆客户端失败: {error}"))?;
-    let body = json!({
-        "model": VOICE_CLONE_MODEL,
-        "messages": [
-            { "role": "user", "content": request.instruction },
-            { "role": "assistant", "content": request.text }
-        ],
-        "audio": {
-            "format": "wav",
-            "voice": format!(
-                "data:{};base64,{}",
-                request.mime_type, request.reference_audio_base64
-            )
-        },
-        "stream": false
-    });
-
-    let response = client
-        .post(VOICE_CLONE_ENDPOINT)
-        .header("Accept", "application/json")
-        .header("User-Agent", "yuanheng-desktop/voice-clone")
-        .bearer_auth(api_token)
-        .json(&body)
-        .send()
-        .await
-        .map_err(|error| format!("连接声音克隆服务失败: {error}"))?;
-    let status = response.status();
-    let response_body = read_limited_response(response).await?;
-    let value: Value = serde_json::from_slice(&response_body).map_err(|_| {
-        if status.is_success() {
-            "声音克隆服务返回了无法识别的响应".to_string()
-        } else {
-            format!("声音克隆失败 (HTTP {})", status.as_u16())
+    let text_segments = split_voice_clone_text(&request.text);
+    let mut segments = Vec::with_capacity(text_segments.len());
+    let mut total_audio_bytes = 0usize;
+    for (index, segment_text) in text_segments.iter().enumerate() {
+        let segment = generate_voice_clone_segment(&client, &api_token, &request, segment_text)
+            .await
+            .map_err(|error| {
+                if text_segments.len() > 1 {
+                    format!("第 {} 段生成失败: {error}", index + 1)
+                } else {
+                    error
+                }
+            })?;
+        total_audio_bytes = total_audio_bytes.saturating_add(
+            BASE64_STANDARD
+                .decode(&segment.audio_base64)
+                .map(|bytes| bytes.len())
+                .unwrap_or(MAX_OUTPUT_AUDIO_BYTES),
+        );
+        if total_audio_bytes > MAX_RESPONSE_BYTES {
+            return Err("声音克隆分段结果总大小超过客户端限制".to_string());
         }
-    })?;
-    if !status.is_success() {
-        return Err(upstream_error_message(status, Some(&value)));
+        segments.push(segment);
     }
-    extract_voice_clone_result(&value)
+    let first = segments
+        .first()
+        .cloned()
+        .ok_or_else(|| "声音克隆未返回任何分段结果".to_string())?;
+    Ok(VoiceCloneResult {
+        audio_base64: first.audio_base64,
+        mime_type: first.mime_type,
+        final_text_preview: first.final_text_preview,
+        segments,
+    })
 }
 
 #[cfg(test)]
@@ -288,8 +371,9 @@ mod tests {
                 }
             }]
         });
-        let result = extract_voice_clone_result(&value).unwrap();
+        let result = extract_voice_clone_segment(&value, "测试文本").unwrap();
         assert_eq!(result.audio_base64, encoded);
+        assert_eq!(result.text, "测试文本");
         assert_eq!(result.final_text_preview.as_deref(), Some("实际朗读文本"));
     }
 
@@ -298,5 +382,14 @@ mod tests {
         let value = json!({ "error": { "message": "invalid data:audio/wav;base64,AAAA" } });
         let message = upstream_error_message(StatusCode::BAD_REQUEST, Some(&value));
         assert_eq!(message, "声音克隆失败 (HTTP 400)");
+    }
+
+    #[test]
+    fn long_text_is_split_on_sentence_boundaries() {
+        let text = format!("{}。{}。", "甲".repeat(4_400), "乙".repeat(4_400));
+        let segments = split_voice_clone_text(&text);
+        assert_eq!(segments.len(), 2);
+        assert!(segments.iter().all(|segment| segment.chars().count() <= 4_500));
+        assert!(segments[0].ends_with('。'));
     }
 }

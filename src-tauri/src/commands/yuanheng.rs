@@ -2570,9 +2570,9 @@ fn remove_codex_surface_artifacts(state: &AppState) -> Result<bool, String> {
     Ok(desktop_provider.is_some() || profile_should_remove)
 }
 
-fn disconnect_yuanheng_inner(state: &AppState) -> Result<YuanhengDisconnectResult, String> {
+fn restore_managed_tools_inner(state: &AppState) -> Result<YuanhengDisconnectResult, String> {
     let mut result = YuanhengDisconnectResult {
-        disconnected: true,
+        disconnected: false,
         ..Default::default()
     };
     let mut codex_restored = false;
@@ -2618,6 +2618,12 @@ fn disconnect_yuanheng_inner(state: &AppState) -> Result<YuanhengDisconnectResul
             result.warnings.push(format!("workbuddy: {error}"));
         }
     }
+    Ok(result)
+}
+
+fn disconnect_yuanheng_inner(state: &AppState) -> Result<YuanhengDisconnectResult, String> {
+    let mut result = restore_managed_tools_inner(state)?;
+    result.disconnected = true;
     for key in [
         TOKEN_KEY,
         USER_ID_KEY,
@@ -2910,6 +2916,68 @@ async fn diagnose_yuanheng_inner(state: &AppState) -> Result<YuanhengDiagnosticR
     }
 
     let tool_statuses = all_tool_statuses(state, &connection);
+    let invalid_model_tools: Vec<String> = tool_statuses
+        .iter()
+        .filter(|item| item.configured)
+        .filter_map(|item| {
+            let model = item.model.as_deref()?;
+            let model_missing = !connection.models.iter().any(|candidate| candidate == model);
+            let group_missing = item.group.as_deref().is_some_and(|group| {
+                !connection
+                    .model_groups
+                    .get(model)
+                    .is_some_and(|groups| groups.iter().any(|candidate| candidate == group))
+            });
+            (model_missing || group_missing).then(|| item.app.clone())
+        })
+        .collect();
+    if invalid_model_tools.is_empty() {
+        checks.push(YuanhengDiagnosticCheck {
+            id: "model_catalog".to_string(),
+            status: "ok".to_string(),
+            title: "模型与分组匹配".to_string(),
+            message: "已配置工具使用的模型仍在当前账号目录中。".to_string(),
+            action: None,
+        });
+    } else {
+        checks.push(YuanhengDiagnosticCheck {
+            id: "model_catalog".to_string(),
+            status: "error".to_string(),
+            title: "模型或分组已经失效".to_string(),
+            message: format!(
+                "{} 个工具使用了当前账号目录中不存在的模型或分组。",
+                invalid_model_tools.len()
+            ),
+            action: Some("repair_tools".to_string()),
+        });
+    }
+
+    let local_route_required = tool_statuses.iter().any(|item| {
+        item.configured
+            && matches!(
+                item.app.as_str(),
+                "claude-desktop" | "codex" | CHATGPT_DESKTOP_NAMESPACE
+            )
+    });
+    if local_route_required {
+        if state.proxy_service.is_running().await {
+            checks.push(YuanhengDiagnosticCheck {
+                id: "local_route".to_string(),
+                status: "ok".to_string(),
+                title: "本地模型路由正常".to_string(),
+                message: "需要本地协议适配的桌面工具可以访问元衡。".to_string(),
+                action: None,
+            });
+        } else {
+            checks.push(YuanhengDiagnosticCheck {
+                id: "local_route".to_string(),
+                status: "error".to_string(),
+                title: "本地模型路由未运行".to_string(),
+                message: "Codex 或 Claude Desktop 的配置存在，但本地协议路由未启动。".to_string(),
+                action: Some("repair_tools".to_string()),
+            });
+        }
+    }
     let ready_tools = tool_statuses.iter().filter(|item| item.configured).count();
     let attention_tools: Vec<String> = tool_statuses
         .iter()
@@ -3538,6 +3606,15 @@ pub fn disconnect_yuanheng(
         let _ = window.close();
     }
     disconnect_yuanheng_inner(&state)
+}
+
+/// 恢复元衡接管前的工具配置，但保留账号连接和本机凭据。
+/// 仅在存在可验证的历史配置时恢复；外部修改过的文件会保留并返回警告。
+#[tauri::command]
+pub fn rollback_yuanheng_tools(
+    state: State<'_, AppState>,
+) -> Result<YuanhengDisconnectResult, String> {
+    restore_managed_tools_inner(&state)
 }
 
 #[cfg(test)]

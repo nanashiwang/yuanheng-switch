@@ -536,6 +536,39 @@ export const DESKTOP_EN: Record<string, string> = {
   选择本机已安装的工具后即可一键配置:
     "Select installed tools to configure them with one click.",
   登录后会自动检查: "Checks run automatically after sign-in.",
+  "已打开 {{v0}} 官方下载页，元衡将在后台等待安装完成":
+    "Opened the official {{v0}} download page. YuanHeng will detect the installation in the background.",
+  "暂未检测到 {{v0}}，可重新检测或手动选择路径":
+    "{{v0}} was not detected yet. Retry detection or choose the app path manually.",
+  "已检测到 {{v0}}，并完成元衡配置":
+    "Detected {{v0}} and completed YuanHeng configuration.",
+  "已检测到 {{v0}}，现在可以进行配置":
+    "Detected {{v0}}. It is ready to configure.",
+  "已检测到 {{v0}}，但自动配置未完成，可点击配置重试":
+    "Detected {{v0}}, but automatic configuration did not finish. Use Configure to retry.",
+  自动配置失败: "Automatic configuration failed",
+  等待安装: "Waiting for Install",
+  "将恢复元衡接管前的工具配置，并保留账号连接。外部修改过的文件不会被覆盖，是否继续？":
+    "Restore tool configurations from before YuanHeng took control while keeping the account connected? Externally modified files will not be overwritten.",
+  "已回滚 {{v0}} 个工具配置": "Rolled back {{v0}} tool configurations",
+  没有可安全回滚的工具配置: "No tool configurations can be safely rolled back",
+  "部分外部修改的配置已保留，请查看诊断详情":
+    "Some externally modified configurations were preserved. Review the diagnostic details.",
+  回滚工具配置失败: "Failed to roll back tool configurations",
+  恢复接管前配置: "Restore Previous Configurations",
+  "即将执行以下修复：": "The following repairs will be applied:",
+  "修复前会保留可恢复的原工具配置，是否继续？":
+    "Recoverable original tool configurations will be preserved before repair. Continue?",
+  模型与分组匹配: "Models and Groups Match",
+  已配置工具使用的模型仍在当前账号目录中:
+    "Configured tools still use models available to the current account.",
+  模型或分组已经失效: "Model or Group Is No Longer Available",
+  本地模型路由正常: "Local Model Route Healthy",
+  需要本地协议适配的桌面工具可以访问元衡:
+    "Desktop tools that require local protocol adaptation can reach YuanHeng.",
+  本地模型路由未运行: "Local Model Route Is Not Running",
+  "Codex 或 Claude Desktop 的配置存在，但本地协议路由未启动。":
+    "Codex or Claude Desktop is configured, but the local protocol route is not running.",
 };
 
 const DYNAMIC_EN: Array<[RegExp, (...matches: string[]) => string]> = [
@@ -544,6 +577,11 @@ const DYNAMIC_EN: Array<[RegExp, (...matches: string[]) => string]> = [
     (count) => `${count} tool configurations have changed.`,
   ],
   [/^(\d+) 个工具已经就绪。$/, (count) => `${count} tools are ready.`],
+  [
+    /^(\d+) 个工具使用了当前账号目录中不存在的模型或分组。$/,
+    (count) =>
+      `${count} tools use a model or group that is unavailable to the current account.`,
+  ],
 ];
 
 const DYNAMIC_KO: Array<[RegExp, (...matches: string[]) => string]> = [
@@ -552,6 +590,11 @@ const DYNAMIC_KO: Array<[RegExp, (...matches: string[]) => string]> = [
     (count) => `${count}개 도구 구성이 변경되었습니다.`,
   ],
   [/^(\d+) 个工具已经就绪。$/, (count) => `${count}개 도구가 준비되었습니다.`],
+  [
+    /^(\d+) 个工具使用了当前账号目录中不存在的模型或分组。$/,
+    (count) =>
+      `${count}개 도구가 현재 계정에 없는 모델 또는 그룹을 사용합니다.`,
+  ],
 ];
 
 const DYNAMIC_JA: Array<[RegExp, (...matches: string[]) => string]> = [
@@ -563,6 +606,11 @@ const DYNAMIC_JA: Array<[RegExp, (...matches: string[]) => string]> = [
     /^(\d+) 个工具已经就绪。$/,
     (count) => `${count}個のツールが準備完了しました。`,
   ],
+  [
+    /^(\d+) 个工具使用了当前账号目录中不存在的模型或分组。$/,
+    (count) =>
+      `${count}個のツールが現在のアカウントで利用できないモデルまたはグループを使用しています。`,
+  ],
 ];
 
 const DYNAMIC_ZH_TW: Array<[RegExp, (...matches: string[]) => string]> = [
@@ -571,6 +619,10 @@ const DYNAMIC_ZH_TW: Array<[RegExp, (...matches: string[]) => string]> = [
     (count) => `偵測到 ${count} 個工具設定發生變更。`,
   ],
   [/^(\d+) 个工具已经就绪。$/, (count) => `${count} 個工具已就緒。`],
+  [
+    /^(\d+) 个工具使用了当前账号目录中不存在的模型或分组。$/,
+    (count) => `${count} 個工具使用了目前帳號目錄中不存在的模型或分組。`,
+  ],
 ];
 
 function translateDynamic(

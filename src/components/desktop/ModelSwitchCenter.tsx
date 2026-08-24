@@ -42,6 +42,7 @@ export function ModelSwitchCenter({
   const {
     connection,
     terminalModels,
+    modelMeta,
     bootstrapPhase,
     bootstrapRefreshing,
     retryBootstrap,
@@ -51,6 +52,7 @@ export function ModelSwitchCenter({
     groups,
     reasoning,
     pendingApps,
+    installingApps,
     restartRequiredApps,
     statusMap,
     codexBridge,
@@ -181,6 +183,7 @@ export function ModelSwitchCenter({
             const runnable = connected && installed && supported;
             const configured = Boolean(installed && status?.configured);
             const pending = pendingApps.has(app);
+            const installing = installingApps.has(app);
             const selectedModel =
               models[app] ??
               status?.model ??
@@ -314,12 +317,19 @@ export function ModelSwitchCenter({
                         <Button
                           size="sm"
                           className="h-8 px-2.5 text-[10px]"
+                          disabled={installing}
                           onClick={() => void install(app)}
                         >
-                          <Download className="h-3.5 w-3.5" />
-                          {DESKTOP_DOWNLOAD_URLS[app]
-                            ? dt("官方下载")
-                            : dt("一键安装")}
+                          {installing ? (
+                            <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                          ) : (
+                            <Download className="h-3.5 w-3.5" />
+                          )}
+                          {installing
+                            ? dt("等待安装")
+                            : DESKTOP_DOWNLOAD_URLS[app]
+                              ? dt("官方下载")
+                              : dt("一键安装")}
                         </Button>
                       )}
                     </div>
@@ -336,6 +346,7 @@ export function ModelSwitchCenter({
                         models={terminalModels}
                         value={selectedModel}
                         recommended={status?.recommendedModel}
+                        modelMeta={modelMeta}
                         label={dt("{{v0}} 模型选择", { v0: toolLabel(app) })}
                         disabled={pending}
                         className="mt-0 h-8"

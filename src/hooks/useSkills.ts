@@ -104,10 +104,17 @@ export function useInstallSkill() {
     mutationFn: ({
       skill,
       currentApp,
+      securityAcknowledged,
     }: {
       skill: DiscoverableSkill;
       currentApp: AppId;
-    }) => skillsApi.installUnified(skill, currentApp),
+      securityAcknowledged?: boolean;
+    }) =>
+      skillsApi.installUnified(
+        skill,
+        currentApp,
+        securityAcknowledged ?? false,
+      ),
     onSuccess: (installedSkill, _vars, _ctx) => {
       const { skill } = _vars;
       // 直接更新 installed 缓存

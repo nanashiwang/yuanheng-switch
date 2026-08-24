@@ -29,6 +29,7 @@ import {
   Search,
   Loader2,
   Settings,
+  ShieldCheck,
   ShieldAlert,
   Store,
   type LucideIcon,
@@ -48,11 +49,12 @@ import {
 import type { AppId } from "@/lib/api/types";
 import type {
   DiscoverableSkill,
+  SkillSecurityReport,
   SkillRepo,
   SkillsShDiscoverableSkill,
 } from "@/lib/api/skills";
 import { formatSkillError } from "@/lib/errors/skillErrorParser";
-import { settingsApi } from "@/lib/api";
+import { settingsApi, skillsApi } from "@/lib/api";
 import { APP_ICON_MAP, SKILLS_APP_IDS } from "@/config/appConfig";
 
 export type SkillsPageSource = "repos" | "skillssh";
@@ -253,6 +255,15 @@ export const SkillsPage = forwardRef<SkillsPageHandle, SkillsPageProps>(
       normalizeSkillTargetApp(initialApp),
     );
     const [detail, setDetail] = useState<SkillMarketDetail | null>(null);
+    const [securityReports, setSecurityReports] = useState<
+      Record<string, SkillSecurityReport>
+    >({});
+    const [securityInspectingKey, setSecurityInspectingKey] = useState<
+      string | null
+    >(null);
+    const [securityInspectionError, setSecurityInspectionError] = useState<
+      string | null
+    >(null);
 
     // skills.sh 搜索状态
     const [searchSource, setSearchSource] =
@@ -378,6 +389,39 @@ export const SkillsPage = forwardRef<SkillsPageHandle, SkillsPageProps>(
       openRepoManager: () => setRepoManagerOpen(true),
     }));
 
+    const inspectSecurity = async (skill: DiscoverableSkill) => {
+      const cached = securityReports[skill.key];
+      if (cached) return cached;
+      setSecurityInspectingKey(skill.key);
+      setSecurityInspectionError(null);
+      try {
+        const report = await skillsApi.inspectSecurity(skill);
+        setSecurityReports((current) => ({
+          ...current,
+          [skill.key]: report,
+        }));
+        return report;
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        setSecurityInspectionError(message);
+        throw error;
+      } finally {
+        setSecurityInspectingKey((current) =>
+          current === skill.key ? null : current,
+        );
+      }
+    };
+
+    useEffect(() => {
+      if (!detail) {
+        setSecurityInspectionError(null);
+        return;
+      }
+      void inspectSecurity(detail.skill).catch(() => undefined);
+      // Security reports are immutable for the selected repository snapshot in this view.
+      // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [detail?.skill.key]);
+
     const handleInstall = async (key: string) => {
       let skill: DiscoverableSkill | undefined;
 
@@ -396,9 +440,25 @@ export const SkillsPage = forwardRef<SkillsPageHandle, SkillsPageProps>(
       }
 
       try {
+        const report = await inspectSecurity(skill);
+        if (report.blocked) {
+          toast.error(t("skills.market.securityBlocked"), {
+            description: t("skills.market.securityBlockedDescription"),
+            duration: 10000,
+          });
+          return;
+        }
+        const securityAcknowledged = report.risk === "high";
+        if (
+          securityAcknowledged &&
+          !window.confirm(t("skills.market.highRiskConfirm"))
+        ) {
+          return;
+        }
         await installMutation.mutateAsync({
           skill,
           currentApp: targetApp,
+          securityAcknowledged,
         });
         toast.success(t("skills.installSuccess", { name: skill.name }), {
           closeButton: true,
@@ -568,6 +628,9 @@ export const SkillsPage = forwardRef<SkillsPageHandle, SkillsPageProps>(
             : "skills.market.configuredSource",
         )
       : "";
+    const detailSecurityReport = detail
+      ? securityReports[detail.skill.key]
+      : undefined;
     const openDetailSource = async () => {
       if (!detail?.skill.readmeUrl) return;
       try {
@@ -1090,16 +1153,85 @@ export const SkillsPage = forwardRef<SkillsPageHandle, SkillsPageProps>(
                   </div>
                 </div>
 
-                <div className="flex items-start gap-3 rounded-lg border border-amber-500/30 bg-amber-500/[0.06] p-3 text-xs leading-5 text-amber-900 dark:text-amber-200">
-                  <ShieldAlert className="mt-0.5 h-4 w-4 shrink-0" />
-                  <div>
-                    <p className="font-semibold">
-                      {t("skills.market.securityTitle")}
-                    </p>
-                    <p className="mt-0.5 text-amber-800/85 dark:text-amber-200/80">
-                      {t("skills.market.securityDescription")}
-                    </p>
+                <div className="space-y-2 rounded-lg border border-amber-500/30 bg-amber-500/[0.06] p-3 text-xs leading-5 text-amber-900 dark:text-amber-200">
+                  <div className="flex items-start gap-3">
+                    {detailSecurityReport?.risk === "low" ? (
+                      <ShieldCheck className="mt-0.5 h-4 w-4 shrink-0 text-emerald-600" />
+                    ) : (
+                      <ShieldAlert className="mt-0.5 h-4 w-4 shrink-0" />
+                    )}
+                    <div className="min-w-0 flex-1">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <p className="font-semibold">
+                          {t("skills.market.securityTitle")}
+                        </p>
+                        {detailSecurityReport && (
+                          <Badge
+                            variant="outline"
+                            className="bg-background/70 text-[9px]"
+                          >
+                            {t(
+                              `skills.market.risk.${detailSecurityReport.risk}`,
+                            )}
+                          </Badge>
+                        )}
+                        {detailSecurityReport && (
+                          <Badge
+                            variant="outline"
+                            className="bg-background/70 text-[9px]"
+                          >
+                            {t(
+                              detailSecurityReport.sourceTrust === "known"
+                                ? "skills.market.knownSource"
+                                : "skills.market.communityUnverified",
+                            )}
+                          </Badge>
+                        )}
+                      </div>
+                      {securityInspectingKey === detail.skill.key ? (
+                        <p className="mt-1 flex items-center gap-1.5 text-amber-800/85 dark:text-amber-200/80">
+                          <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                          {t("skills.market.securityScanning")}
+                        </p>
+                      ) : securityInspectionError ? (
+                        <p className="mt-1 text-destructive">
+                          {t("skills.market.securityScanFailed")}
+                        </p>
+                      ) : detailSecurityReport ? (
+                        <p className="mt-1 text-amber-800/85 dark:text-amber-200/80">
+                          {t("skills.market.securitySummary", {
+                            files: detailSecurityReport.filesScanned,
+                            executables: detailSecurityReport.executableFiles,
+                            findings: detailSecurityReport.findings.length,
+                          })}
+                        </p>
+                      ) : (
+                        <p className="mt-0.5 text-amber-800/85 dark:text-amber-200/80">
+                          {t("skills.market.securityDescription")}
+                        </p>
+                      )}
+                    </div>
                   </div>
+
+                  {detailSecurityReport?.findings.slice(0, 6).map((finding) => (
+                    <div
+                      key={`${finding.code}:${finding.path}`}
+                      className="rounded-md border border-amber-500/20 bg-background/55 px-2.5 py-2"
+                    >
+                      <div className="flex items-center justify-between gap-2">
+                        <p className="font-medium">{finding.title}</p>
+                        <span className="text-[9px] uppercase opacity-75">
+                          {t(`skills.market.risk.${finding.risk}`)}
+                        </span>
+                      </div>
+                      <p className="mt-0.5 text-[10px] opacity-85">
+                        {finding.message}
+                      </p>
+                      <p className="mt-0.5 break-all font-mono text-[9px] opacity-65">
+                        {finding.path}
+                      </p>
+                    </div>
+                  ))}
                 </div>
 
                 <DialogFooter>
@@ -1115,7 +1247,11 @@ export const SkillsPage = forwardRef<SkillsPageHandle, SkillsPageProps>(
                   <Button
                     type="button"
                     disabled={
-                      detail.skill.installed || installMutation.isPending
+                      detail.skill.installed ||
+                      installMutation.isPending ||
+                      securityInspectingKey === detail.skill.key ||
+                      Boolean(securityInspectionError) ||
+                      detailSecurityReport?.blocked
                     }
                     onClick={() => void handleInstall(detail.skill.key)}
                   >

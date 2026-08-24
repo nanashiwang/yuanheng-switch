@@ -35,6 +35,15 @@ import {
   launchDirectoryLabel,
   useToolLaunchDirectories,
 } from "./useToolLaunchDirectories";
+import { useDesktopInstallFlow } from "./useDesktopInstallFlow";
+import {
+  clearToolInventoryCache,
+  readToolInventoryCache,
+  TOOL_INVENTORY_CACHE_TTL_MS,
+  writeToolInventoryCache,
+} from "./toolInventoryCache";
+
+const TOOL_INVENTORY_TARGETS = Object.values(TOOL_VERSION_TARGETS);
 
 export const providerIconOf = (app: YuanhengToolId) =>
   app === "codex" || app === "chatgpt-desktop"
@@ -56,12 +65,26 @@ export function useModelSwitchCenter() {
   const statuses = useYuanhengToolStatuses();
   const configure = useConfigureYuanhengTools();
   const codexBridge = useCodexSessionBridgeStatus();
+  const desktopInstall = useDesktopInstallFlow();
+  const cachedInventory = useMemo(
+    () => readToolInventoryCache(TOOL_INVENTORY_TARGETS),
+    [],
+  );
   const inventory = useQuery({
     queryKey: ["desktop", "tool-inventory"],
-    queryFn: () =>
-      settingsApi.getInstalledToolVersions(Object.values(TOOL_VERSION_TARGETS)),
+    queryFn: async () => {
+      const data = await settingsApi.getInstalledToolVersions(
+        TOOL_INVENTORY_TARGETS,
+      );
+      writeToolInventoryCache(TOOL_INVENTORY_TARGETS, data);
+      return data;
+    },
+    initialData: cachedInventory?.data,
+    initialDataUpdatedAt: cachedInventory?.savedAt,
+    staleTime: TOOL_INVENTORY_CACHE_TTL_MS,
     retry: false,
-    refetchOnWindowFocus: true,
+    refetchOnMount: "always",
+    refetchOnWindowFocus: false,
   });
   const [models, setModels] = useState<Partial<Record<YuanhengToolId, string>>>(
     {},
@@ -92,6 +115,20 @@ export function useModelSwitchCenter() {
   const terminalModels = useMemo(
     () => yuanhengTerminalModels(connection),
     [connection],
+  );
+  const modelMeta = useMemo(
+    () =>
+      Object.fromEntries(
+        terminalModels.map((model) => [
+          model,
+          {
+            groups: connection?.modelGroups[model]?.length ?? 0,
+            reasoningLevels: connection?.reasoningLevels[model]?.length ?? 0,
+            available: true,
+          },
+        ]),
+      ),
+    [connection?.modelGroups, connection?.reasoningLevels, terminalModels],
   );
 
   useEffect(
@@ -183,14 +220,17 @@ export function useModelSwitchCenter() {
   const hasInventory = inventory.data !== undefined;
   const hasStatuses = statuses.data !== undefined;
   const bootstrapPhase: ModelSwitchBootstrapPhase =
-    !hasInventory || !hasStatuses
-      ? (!hasInventory && inventory.isError) ||
-        (!hasStatuses && statuses.isError)
-        ? "error"
-        : "loading"
-      : "ready";
+    inventory.isError || statuses.isError
+      ? "error"
+      : !hasInventory || !hasStatuses
+        ? (!hasInventory && inventory.isError) ||
+          (!hasStatuses && statuses.isError)
+          ? "error"
+          : "loading"
+        : "ready";
 
   const retryBootstrap = async () => {
+    clearToolInventoryCache();
     await Promise.all([inventory.refetch(), statuses.refetch()]);
   };
 
@@ -207,12 +247,65 @@ export function useModelSwitchCenter() {
     if (!command && !downloadUrl) return;
     try {
       if (downloadUrl) {
-        await settingsApi.openExternal(downloadUrl);
+        if (!command) return;
+        const monitor = desktopInstall.openAndMonitor(
+          app,
+          command,
+          downloadUrl,
+        );
         toast.success(
           dt("已打开 {{v0}} 官方下载页，安装完成后请刷新检测", {
             v0: toolLabel(app),
           }),
         );
+        const result = await monitor;
+        if (result.status === "cancelled") return;
+        if (result.status === "timeout") {
+          toast.info(
+            dt("暂未检测到 {{v0}}，可重新检测或手动选择路径", {
+              v0: toolLabel(app),
+            }),
+          );
+          return;
+        }
+        await inventory.refetch();
+        const freshStatuses = await yuanhengApi.getToolStatuses();
+        const status = freshStatuses.find((item) => item.app === app);
+        const selectedModel = models[app] ?? status?.recommendedModel;
+        if (connection?.connected && status?.supported && selectedModel) {
+          const group = pickPreferredGroup(
+            connection,
+            selectedModel,
+            groups[app] ?? status.group ?? undefined,
+          );
+          const selectedReasoning =
+            reasoning[app] ?? status.reasoning ?? "auto";
+          const supportedReasoning =
+            connection.reasoningLevels[selectedModel] ?? [];
+          const normalizedReasoning: YuanhengReasoningLevel =
+            selectedReasoning === "auto" ||
+            supportedReasoning.includes(selectedReasoning)
+              ? selectedReasoning
+              : "auto";
+          const configured = await configure.mutateAsync({
+            apps: [app],
+            models: { [app]: selectedModel },
+            groups: group ? { [app]: group } : undefined,
+            reasoning: { [app]: normalizedReasoning },
+          });
+          const configuredResult = configured.find((item) => item.app === app);
+          if (!configuredResult?.configured) {
+            throw new Error(configuredResult?.error || dt("自动配置失败"));
+          }
+          markRestartRequired(app);
+          toast.success(
+            dt("已检测到 {{v0}}，并完成元衡配置", { v0: toolLabel(app) }),
+          );
+        } else {
+          toast.success(
+            dt("已检测到 {{v0}}，现在可以进行配置", { v0: toolLabel(app) }),
+          );
+        }
         return;
       }
       if (!command) return;
@@ -229,6 +322,8 @@ export function useModelSwitchCenter() {
     try {
       const selected = await settingsApi.pickDesktopAppPath(app);
       if (!selected) return;
+      desktopInstall.stop(app);
+      clearToolInventoryCache();
       await inventory.refetch();
       toast.success(dt("已保存 {{v0}} 应用路径", { v0: toolLabel(app) }));
     } catch (error) {
@@ -489,6 +584,7 @@ export function useModelSwitchCenter() {
   return {
     connection,
     terminalModels,
+    modelMeta,
     bootstrapPhase,
     bootstrapRefreshing: inventory.isFetching || statuses.isFetching,
     retryBootstrap,
@@ -499,6 +595,7 @@ export function useModelSwitchCenter() {
     groups,
     reasoning,
     pendingApps,
+    installingApps: desktopInstall.monitoringApps,
     restartRequiredApps,
     launchDirectories: launchDirectoryState.directories,
     launchDirectoryPendingApps: launchDirectoryState.pendingApps,

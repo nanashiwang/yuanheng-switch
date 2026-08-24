@@ -39,6 +39,9 @@ function getErrorI18nKey(code: string): string {
     EMPTY_ARCHIVE: "skills.error.emptyArchive",
     GET_HOME_DIR_FAILED: "skills.error.getHomeDirFailed",
     NO_SKILLS_IN_ZIP: "skills.error.noSkillsInZip",
+    SKILL_SECURITY_BLOCKED: "skills.error.securityBlocked",
+    SKILL_SECURITY_CONFIRMATION_REQUIRED:
+      "skills.error.securityConfirmationRequired",
   };
 
   return mapping[code] || "skills.error.unknownError";
@@ -59,6 +62,7 @@ function getSuggestionI18nKey(suggestion: string): string {
     http403: "skills.error.http403",
     http404: "skills.error.http404",
     http429: "skills.error.http429",
+    reviewSource: "skills.error.suggestion.reviewSource",
   };
 
   return mapping[suggestion] || suggestion;

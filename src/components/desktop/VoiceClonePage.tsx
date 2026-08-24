@@ -2,7 +2,9 @@ import { useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import {
   AlertCircle,
+  BookmarkPlus,
   CheckCircle2,
+  Clock3,
   Download,
   FileAudio,
   Loader2,
@@ -18,6 +20,7 @@ import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Label } from "@/components/ui/label";
+import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { voiceCloneApi } from "@/lib/api";
 import { useYuanhengConnection } from "@/lib/query/yuanheng";
@@ -53,6 +56,25 @@ interface ActiveRecording {
   startedAt: number;
 }
 
+interface GeneratedVoiceSegment {
+  url: string;
+  text: string;
+  finalTextPreview: string | null;
+}
+
+interface VoiceCloneHistoryItem {
+  id: string;
+  createdAt: number;
+  label: string;
+  segments: GeneratedVoiceSegment[];
+}
+
+interface VoiceProfile {
+  id: string;
+  name: string;
+  reference: ReferenceAudio;
+}
+
 function modelMatchesVoiceClone(model: string): boolean {
   return model.toLowerCase().replace(/^xiaomi\//, "") === MODEL;
 }
@@ -63,10 +85,14 @@ export function VoiceClonePage() {
   const inputRef = useRef<HTMLInputElement>(null);
   const recordingRef = useRef<ActiveRecording | null>(null);
   const recordingTimerRef = useRef<number | null>(null);
-  const outputUrlRef = useRef<string | null>(null);
+  const generatedUrlsRef = useRef(new Set<string>());
   const [reference, setReference] = useState<ReferenceAudio | null>(null);
   const [referenceUrl, setReferenceUrl] = useState<string | null>(null);
-  const [outputUrl, setOutputUrl] = useState<string | null>(null);
+  const [activeResult, setActiveResult] =
+    useState<VoiceCloneHistoryItem | null>(null);
+  const [history, setHistory] = useState<VoiceCloneHistoryItem[]>([]);
+  const [voiceProfiles, setVoiceProfiles] = useState<VoiceProfile[]>([]);
+  const [profileName, setProfileName] = useState("");
   const [text, setText] = useState("");
   const [instruction, setInstruction] = useState(
     t("desktop.voiceClone.defaultInstruction"),
@@ -76,7 +102,6 @@ export function VoiceClonePage() {
   const [isRecording, setIsRecording] = useState(false);
   const [recordingSeconds, setRecordingSeconds] = useState(0);
   const [isGenerating, setIsGenerating] = useState(false);
-  const [finalTextPreview, setFinalTextPreview] = useState<string | null>(null);
 
   const modelAvailable = Boolean(
     connection?.models.some(modelMatchesVoiceClone),
@@ -92,13 +117,9 @@ export function VoiceClonePage() {
     return () => URL.revokeObjectURL(url);
   }, [reference]);
 
-  useEffect(() => {
-    outputUrlRef.current = outputUrl;
-  }, [outputUrl]);
-
   useEffect(
     () => () => {
-      if (outputUrlRef.current) URL.revokeObjectURL(outputUrlRef.current);
+      for (const url of generatedUrlsRef.current) URL.revokeObjectURL(url);
       if (recordingTimerRef.current !== null) {
         window.clearInterval(recordingTimerRef.current);
       }
@@ -115,10 +136,37 @@ export function VoiceClonePage() {
   );
 
   const clearOutput = () => {
-    setFinalTextPreview(null);
-    setOutputUrl((current) => {
-      if (current) URL.revokeObjectURL(current);
-      return null;
+    setActiveResult(null);
+  };
+
+  const saveVoiceProfile = () => {
+    if (!reference) {
+      toast.error(t("desktop.voiceClone.referenceRequired"));
+      return;
+    }
+    const name = profileName.trim() || reference.name;
+    setVoiceProfiles((current) =>
+      [
+        { id: crypto.randomUUID(), name, reference },
+        ...current.filter((profile) => profile.name !== name),
+      ].slice(0, 8),
+    );
+    setProfileName("");
+    toast.success(t("desktop.voiceClone.profileSaved"));
+  };
+
+  const removeHistoryItem = (id: string) => {
+    setHistory((current) => {
+      const removed = current.find((item) => item.id === id);
+      removed?.segments.forEach((segment) => {
+        URL.revokeObjectURL(segment.url);
+        generatedUrlsRef.current.delete(segment.url);
+      });
+      const next = current.filter((item) => item.id !== id);
+      setActiveResult((active) =>
+        active?.id === id ? (next[0] ?? null) : active,
+      );
+      return next;
     });
   };
 
@@ -251,10 +299,43 @@ export function VoiceClonePage() {
         instruction: instruction.trim(),
         consentConfirmed,
       });
-      const blob = base64ToAudioBlob(result.audioBase64, result.mimeType);
-      const url = URL.createObjectURL(blob);
-      setOutputUrl(url);
-      setFinalTextPreview(result.finalTextPreview);
+      const sourceSegments = result.segments?.length
+        ? result.segments
+        : [
+            {
+              audioBase64: result.audioBase64,
+              mimeType: result.mimeType,
+              text: text.trim(),
+              finalTextPreview: result.finalTextPreview,
+            },
+          ];
+      const segments = sourceSegments.map((segment) => {
+        const blob = base64ToAudioBlob(segment.audioBase64, segment.mimeType);
+        const url = URL.createObjectURL(blob);
+        generatedUrlsRef.current.add(url);
+        return {
+          url,
+          text: segment.text,
+          finalTextPreview: segment.finalTextPreview,
+        };
+      });
+      const item: VoiceCloneHistoryItem = {
+        id: crypto.randomUUID(),
+        createdAt: Date.now(),
+        label: text.trim().slice(0, 36),
+        segments,
+      };
+      setHistory((current) => {
+        const next = [item, ...current];
+        for (const expired of next.slice(8)) {
+          expired.segments.forEach((segment) => {
+            URL.revokeObjectURL(segment.url);
+            generatedUrlsRef.current.delete(segment.url);
+          });
+        }
+        return next.slice(0, 8);
+      });
+      setActiveResult(item);
       toast.success(t("desktop.voiceClone.generateSuccess"));
     } catch (error) {
       toast.error(t("desktop.voiceClone.generateFailed"), {
@@ -430,19 +511,67 @@ export function VoiceClonePage() {
               </div>
             </section>
 
+            <section className="space-y-2 rounded-xl border bg-muted/15 p-3">
+              <div className="flex items-center gap-2">
+                <BookmarkPlus className="h-4 w-4 text-primary" />
+                <Label htmlFor="voice-profile-name">
+                  {t("desktop.voiceClone.profileTitle")}
+                </Label>
+              </div>
+              <div className="flex gap-2">
+                <Input
+                  id="voice-profile-name"
+                  value={profileName}
+                  maxLength={40}
+                  placeholder={t("desktop.voiceClone.profilePlaceholder")}
+                  onChange={(event) => setProfileName(event.target.value)}
+                />
+                <Button
+                  type="button"
+                  variant="outline"
+                  disabled={!reference}
+                  onClick={saveVoiceProfile}
+                >
+                  {t("desktop.voiceClone.saveProfile")}
+                </Button>
+              </div>
+              {voiceProfiles.length > 0 && (
+                <div className="flex flex-wrap gap-2 pt-1">
+                  {voiceProfiles.map((profile) => (
+                    <Button
+                      key={profile.id}
+                      type="button"
+                      variant="secondary"
+                      size="sm"
+                      className="h-7 text-[10px]"
+                      onClick={() => {
+                        setReference(profile.reference);
+                        clearOutput();
+                      }}
+                    >
+                      {profile.name}
+                    </Button>
+                  ))}
+                </div>
+              )}
+              <p className="text-[9px] leading-4 text-muted-foreground">
+                {t("desktop.voiceClone.profileSessionHint")}
+              </p>
+            </section>
+
             <section className="space-y-2">
               <div className="flex items-center justify-between gap-3">
                 <Label htmlFor="voice-clone-text">
                   {t("desktop.voiceClone.textTitle")}
                 </Label>
                 <span className="text-[10px] text-muted-foreground">
-                  {text.length} / 5000
+                  {text.length} / 20000
                 </span>
               </div>
               <Textarea
                 id="voice-clone-text"
                 value={text}
-                maxLength={5000}
+                maxLength={20000}
                 className="min-h-[138px] resize-y"
                 placeholder={t("desktop.voiceClone.textPlaceholder")}
                 onChange={(event) => {
@@ -450,6 +579,11 @@ export function VoiceClonePage() {
                   clearOutput();
                 }}
               />
+              {text.length > 4500 && (
+                <p className="text-[10px] text-amber-600">
+                  {t("desktop.voiceClone.segmentHint")}
+                </p>
+              )}
             </section>
 
             <section className="space-y-2">
@@ -503,28 +637,40 @@ export function VoiceClonePage() {
               </h2>
             </div>
 
-            {outputUrl ? (
+            {activeResult ? (
               <div className="mt-5 space-y-4">
-                <div className="rounded-xl bg-primary/[0.05] p-4">
-                  <audio className="w-full" controls autoPlay src={outputUrl} />
-                </div>
-                {finalTextPreview && (
-                  <div className="rounded-lg border bg-muted/20 p-3">
-                    <p className="text-[10px] font-medium text-muted-foreground">
-                      {t("desktop.voiceClone.finalTextPreview")}
-                    </p>
-                    <p className="mt-1 text-xs leading-5">{finalTextPreview}</p>
-                  </div>
-                )}
-                <Button asChild variant="outline" className="w-full">
-                  <a
-                    href={outputUrl}
-                    download={`yuanheng-voice-clone-${Date.now()}.wav`}
+                {activeResult.segments.map((segment, index) => (
+                  <div
+                    key={`${activeResult.id}:${index}`}
+                    className="space-y-2 rounded-xl bg-primary/[0.05] p-4"
                   >
-                    <Download className="h-4 w-4" />
-                    {t("desktop.voiceClone.download")}
-                  </a>
-                </Button>
+                    <div className="flex items-center justify-between gap-2 text-[10px] text-muted-foreground">
+                      <span>
+                        {t("desktop.voiceClone.segmentTitle", {
+                          current: index + 1,
+                          total: activeResult.segments.length,
+                        })}
+                      </span>
+                      <a
+                        className="inline-flex items-center gap-1 text-primary hover:underline"
+                        href={segment.url}
+                        download={`yuanheng-voice-clone-${activeResult.createdAt}-${index + 1}.wav`}
+                      >
+                        <Download className="h-3.5 w-3.5" />
+                        {t("desktop.voiceClone.download")}
+                      </a>
+                    </div>
+                    <audio
+                      className="w-full"
+                      controls
+                      autoPlay={index === 0}
+                      src={segment.url}
+                    />
+                    <p className="line-clamp-3 text-[10px] leading-4 text-muted-foreground">
+                      {segment.finalTextPreview || segment.text}
+                    </p>
+                  </div>
+                ))}
               </div>
             ) : (
               <div className="flex min-h-[300px] flex-col items-center justify-center text-center">
@@ -537,6 +683,50 @@ export function VoiceClonePage() {
                 <p className="mt-1 max-w-[260px] text-[10px] leading-5 text-muted-foreground">
                   {t("desktop.voiceClone.emptyResultHint")}
                 </p>
+              </div>
+            )}
+
+            {history.length > 0 && (
+              <div className="mt-5 border-t pt-4">
+                <div className="flex items-center gap-2">
+                  <Clock3 className="h-4 w-4 text-muted-foreground" />
+                  <h3 className="text-xs font-semibold">
+                    {t("desktop.voiceClone.historyTitle")}
+                  </h3>
+                </div>
+                <div className="mt-2 space-y-2">
+                  {history.map((item) => (
+                    <div
+                      key={item.id}
+                      className="flex items-center gap-2 rounded-lg border bg-muted/15 px-3 py-2"
+                    >
+                      <button
+                        type="button"
+                        className="min-w-0 flex-1 text-left"
+                        onClick={() => setActiveResult(item)}
+                      >
+                        <p className="truncate text-[10px] font-medium">
+                          {item.label}
+                        </p>
+                        <p className="text-[9px] text-muted-foreground">
+                          {new Date(item.createdAt).toLocaleTimeString()} ·{" "}
+                          {t("desktop.voiceClone.segmentCount", {
+                            count: item.segments.length,
+                          })}
+                        </p>
+                      </button>
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="icon"
+                        aria-label={t("desktop.voiceClone.deleteHistory")}
+                        onClick={() => removeHistoryItem(item.id)}
+                      >
+                        <Trash2 className="h-3.5 w-3.5" />
+                      </Button>
+                    </div>
+                  ))}
+                </div>
               </div>
             )}
           </section>

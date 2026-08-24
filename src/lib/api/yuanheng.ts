@@ -200,6 +200,10 @@ export const yuanhengApi = {
     return invoke("disconnect_yuanheng");
   },
 
+  rollbackTools(): Promise<YuanhengDisconnectResult> {
+    return invoke("rollback_yuanheng_tools");
+  },
+
   openTopup(): Promise<boolean> {
     return invoke("open_yuanheng_topup");
   },
