@@ -26,7 +26,7 @@ export function AutoFailoverConfigPanel({
     autoFailoverEnabled: false,
     maxRetries: "3",
     streamingFirstByteTimeout: "60",
-    streamingIdleTimeout: "120",
+    streamingIdleTimeout: appType === "codex" ? "300" : "120",
     nonStreamingTimeout: "600",
     circuitFailureThreshold: "5",
     circuitSuccessThreshold: "2",

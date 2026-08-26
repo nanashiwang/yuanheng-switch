@@ -158,7 +158,7 @@ impl Database {
                 streaming_first_byte_timeout, streaming_idle_timeout, non_streaming_timeout,
                 circuit_failure_threshold, circuit_success_threshold, circuit_timeout_seconds,
                 circuit_error_rate_threshold, circuit_min_requests)
-                VALUES ('codex', 3, 60, 120, 600, 4, 2, 60, 0.6, 10)",
+                VALUES ('codex', 3, 60, 300, 600, 4, 2, 60, 0.6, 10)",
                 [],
             )
             .map_err(|e| AppError::Database(e.to_string()))?;
@@ -510,6 +510,11 @@ impl Database {
                         log::info!("迁移数据库从 v15 到 v16（重建 Codex 会话用量）");
                         Self::migrate_v15_to_v16(conn)?;
                         Self::set_user_version(conn, 16)?;
+                    }
+                    16 => {
+                        log::info!("迁移数据库从 v16 到 v17（延长 Codex 流式静默超时）");
+                        Self::migrate_v16_to_v17(conn)?;
+                        Self::set_user_version(conn, 17)?;
                     }
                     _ => {
                         return Err(AppError::Database(format!(
@@ -1521,6 +1526,28 @@ impl Database {
     fn migrate_v15_to_v16(conn: &Connection) -> Result<(), AppError> {
         let codex_dir = crate::codex_config::get_codex_config_dir();
         crate::services::session_usage_codex::reset_codex_usage_on_conn(conn, &codex_dir)
+    }
+
+    /// v16 -> v17: align Codex's legacy 120-second streaming idle timeout
+    /// with the new 300-second default. Values other than the old default are
+    /// treated as explicit user choices and preserved.
+    fn migrate_v16_to_v17(conn: &Connection) -> Result<(), AppError> {
+        if !Self::table_exists(conn, "proxy_config")?
+            || !Self::has_column(conn, "proxy_config", "app_type")?
+            || !Self::has_column(conn, "proxy_config", "streaming_idle_timeout")?
+        {
+            return Ok(());
+        }
+
+        conn.execute(
+            "UPDATE proxy_config
+             SET streaming_idle_timeout = 300, updated_at = datetime('now')
+             WHERE app_type = 'codex' AND streaming_idle_timeout = 120",
+            [],
+        )
+        .map_err(|e| AppError::Database(e.to_string()))?;
+
+        Ok(())
     }
 
     /// 插入默认模型定价数据
@@ -3065,7 +3092,7 @@ mod tests {
 
         Database::apply_schema_migrations_on_conn(&conn)?;
 
-        assert_eq!(Database::get_user_version(&conn)?, 16);
+        assert_eq!(Database::get_user_version(&conn)?, SCHEMA_VERSION);
         let counts: (i64, i64, i64, i64) = conn.query_row(
             "SELECT
                 (SELECT COUNT(*) FROM proxy_request_logs WHERE data_source = 'codex_session'),
@@ -3076,6 +3103,61 @@ mod tests {
             |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?)),
         )?;
         assert_eq!(counts, (0, 1, 0, 1));
+        Ok(())
+    }
+
+    #[test]
+    fn migrate_v16_to_v17_updates_only_legacy_codex_idle_timeout() -> Result<(), AppError> {
+        let conn = Connection::open_in_memory()?;
+        Database::create_tables_on_conn(&conn)?;
+        conn.execute(
+            "UPDATE proxy_config SET streaming_idle_timeout = 120 WHERE app_type = 'codex'",
+            [],
+        )?;
+        conn.execute(
+            "UPDATE proxy_config SET streaming_idle_timeout = 120 WHERE app_type = 'gemini'",
+            [],
+        )?;
+        Database::set_user_version(&conn, 16)?;
+
+        Database::apply_schema_migrations_on_conn(&conn)?;
+
+        assert_eq!(Database::get_user_version(&conn)?, 17);
+        let codex_timeout: i64 = conn.query_row(
+            "SELECT streaming_idle_timeout FROM proxy_config WHERE app_type = 'codex'",
+            [],
+            |row| row.get(0),
+        )?;
+        let gemini_timeout: i64 = conn.query_row(
+            "SELECT streaming_idle_timeout FROM proxy_config WHERE app_type = 'gemini'",
+            [],
+            |row| row.get(0),
+        )?;
+        assert_eq!(codex_timeout, 300);
+        assert_eq!(gemini_timeout, 120);
+
+        Ok(())
+    }
+
+    #[test]
+    fn migrate_v16_to_v17_preserves_custom_codex_idle_timeout() -> Result<(), AppError> {
+        let conn = Connection::open_in_memory()?;
+        Database::create_tables_on_conn(&conn)?;
+        conn.execute(
+            "UPDATE proxy_config SET streaming_idle_timeout = 240 WHERE app_type = 'codex'",
+            [],
+        )?;
+        Database::set_user_version(&conn, 16)?;
+
+        Database::apply_schema_migrations_on_conn(&conn)?;
+
+        let codex_timeout: i64 = conn.query_row(
+            "SELECT streaming_idle_timeout FROM proxy_config WHERE app_type = 'codex'",
+            [],
+            |row| row.get(0),
+        )?;
+        assert_eq!(codex_timeout, 240);
+
         Ok(())
     }
 }

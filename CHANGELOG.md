@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- Increased the Codex proxy streaming idle timeout default from 120 to 300 seconds; schema v17 updates Codex rows still set to 120 while preserving every other timeout value and other applications' settings.
 - Established the independent YuanHeng Switch product identity and repository ownership.
 - Isolated runtime data under `~/.yuanheng-switch` with its own database, logs, sync namespace, and deep-link scheme.
 - Replaced upstream update URLs and signing keys with YuanHeng-owned release infrastructure.
@@ -27,6 +28,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Upgrade notes
 
+- Schema v17 changes only Codex proxy rows still set to the former 120-second streaming idle timeout to 300 seconds; all other timeout values and application rows are preserved.
 - Schema v16 performs a one-time automatic rebuild of Codex session usage on first launch after upgrading: the database is backed up under `backups/`, `codex_session` data and cursors are reset, and the normal startup sync re-imports everything with the corrected parser. Expect seconds for typical data; the heaviest dataset measured (1,801 rollout files / 1.5 GB) took about 65 seconds. Later launches are incremental as before.
 - The rebuild recomputes usage from the rollout JSONL files, so history whose source log was already deleted cannot be reconstructed.
 - Fork files whose parent rollout is missing are deferred and reported instead of guessed; restoring the parent log and running “Rebuild Codex Usage” imports them later.

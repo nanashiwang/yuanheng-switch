@@ -258,7 +258,11 @@ impl Database {
                     auto_failover_enabled: false,
                     max_retries: 3,
                     streaming_first_byte_timeout: 60,
-                    streaming_idle_timeout: 120,
+                    streaming_idle_timeout: if app_type_owned == "codex" {
+                        300
+                    } else {
+                        120
+                    },
                     non_streaming_timeout: 600,
                     circuit_failure_threshold: 4,
                     circuit_success_threshold: 2,
@@ -326,7 +330,7 @@ impl Database {
         let (retries, fb_timeout, idle_timeout, cb_fail, cb_succ, cb_timeout, cb_rate, cb_min) =
             match app_type {
                 "claude" => (6, 90, 180, 8, 3, 90, 0.7, 15),
-                "codex" => (3, 60, 120, 4, 2, 60, 0.6, 10),
+                "codex" => (3, 60, 300, 4, 2, 60, 0.6, 10),
                 "gemini" => (5, 60, 120, 4, 2, 60, 0.6, 10),
                 "grokbuild" => (3, 60, 120, 4, 2, 60, 0.6, 10),
                 _ => (3, 60, 120, 4, 2, 60, 0.6, 10), // 默认值
@@ -382,7 +386,7 @@ impl Database {
                 streaming_first_byte_timeout, streaming_idle_timeout, non_streaming_timeout,
                 circuit_failure_threshold, circuit_success_threshold, circuit_timeout_seconds,
                 circuit_error_rate_threshold, circuit_min_requests
-            ) VALUES ('codex', 3, 60, 120, 600, 4, 2, 60, 0.6, 10)",
+            ) VALUES ('codex', 3, 60, 300, 600, 4, 2, 60, 0.6, 10)",
             [],
         )
         .map_err(|e| AppError::Database(e.to_string()))?;
