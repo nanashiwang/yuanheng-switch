@@ -254,8 +254,14 @@ fn versioned_catalog_filename(base_filename: &str, catalog: &Value) -> String {
     let digest = format!("{:x}", hasher.finalize());
     let digest = &digest[..12];
     let path = Path::new(base_filename);
-    let stem = path.file_stem().and_then(|value| value.to_str()).unwrap_or("catalog");
-    let extension = path.extension().and_then(|value| value.to_str()).unwrap_or("json");
+    let stem = path
+        .file_stem()
+        .and_then(|value| value.to_str())
+        .unwrap_or("catalog");
+    let extension = path
+        .extension()
+        .and_then(|value| value.to_str())
+        .unwrap_or("json");
     format!("{stem}-{digest}.{extension}")
 }
 
@@ -268,8 +274,14 @@ fn is_versioned_yuanheng_catalog_filename(filename: &str) -> bool {
     .iter()
     .any(|base| {
         let path = Path::new(base);
-        let stem = path.file_stem().and_then(|value| value.to_str()).unwrap_or("");
-        let extension = path.extension().and_then(|value| value.to_str()).unwrap_or("json");
+        let stem = path
+            .file_stem()
+            .and_then(|value| value.to_str())
+            .unwrap_or("");
+        let extension = path
+            .extension()
+            .and_then(|value| value.to_str())
+            .unwrap_or("json");
         let prefix = format!("{stem}-");
         filename.starts_with(&prefix)
             && filename.ends_with(&format!(".{extension}"))
@@ -277,7 +289,10 @@ fn is_versioned_yuanheng_catalog_filename(filename: &str) -> bool {
                 .strip_prefix(&prefix)
                 .and_then(|value| value.strip_suffix(&format!(".{extension}")))
                 .is_some_and(|digest| {
-                    digest.len() == 12 && digest.chars().all(|character| character.is_ascii_hexdigit())
+                    digest.len() == 12
+                        && digest
+                            .chars()
+                            .all(|character| character.is_ascii_hexdigit())
                 })
     })
 }
