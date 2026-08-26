@@ -246,6 +246,102 @@ pub fn get_codex_named_model_catalog_path(filename: &str) -> PathBuf {
     get_codex_config_dir().join(filename)
 }
 
+fn versioned_catalog_filename(base_filename: &str, catalog: &Value) -> String {
+    use sha2::{Digest, Sha256};
+
+    let mut hasher = Sha256::new();
+    hasher.update(serde_json::to_vec(catalog).unwrap_or_default());
+    let digest = format!("{:x}", hasher.finalize());
+    let digest = &digest[..12];
+    let path = Path::new(base_filename);
+    let stem = path
+        .file_stem()
+        .and_then(|value| value.to_str())
+        .unwrap_or("catalog");
+    let extension = path
+        .extension()
+        .and_then(|value| value.to_str())
+        .unwrap_or("json");
+    format!("{stem}-{digest}.{extension}")
+}
+
+fn is_versioned_yuanheng_catalog_filename(filename: &str) -> bool {
+    [
+        CC_SWITCH_CODEX_MODEL_CATALOG_FILENAME,
+        YUANHENG_TERMINAL_MODEL_CATALOG_FILENAME,
+        YUANHENG_DESKTOP_MODEL_CATALOG_FILENAME,
+    ]
+    .iter()
+    .any(|base| {
+        let path = Path::new(base);
+        let stem = path
+            .file_stem()
+            .and_then(|value| value.to_str())
+            .unwrap_or("");
+        let extension = path
+            .extension()
+            .and_then(|value| value.to_str())
+            .unwrap_or("json");
+        let prefix = format!("{stem}-");
+        filename.starts_with(&prefix)
+            && filename.ends_with(&format!(".{extension}"))
+            && filename
+                .strip_prefix(&prefix)
+                .and_then(|value| value.strip_suffix(&format!(".{extension}")))
+                .is_some_and(|digest| {
+                    digest.len() == 12
+                        && digest
+                            .chars()
+                            .all(|character| character.is_ascii_hexdigit())
+                })
+    })
+}
+
+fn cleanup_stale_yuanheng_catalogs(
+    base_filename: &str,
+    current_filename: &str,
+) -> Result<(), AppError> {
+    let dir = get_codex_config_dir();
+    let base_stem = Path::new(base_filename)
+        .file_stem()
+        .and_then(|value| value.to_str())
+        .unwrap_or("");
+    let entries = fs::read_dir(&dir).map_err(|error| AppError::io(&dir, error))?;
+    for entry in entries {
+        let entry = entry.map_err(|error| AppError::Message(error.to_string()))?;
+        let filename = entry.file_name().to_string_lossy().to_string();
+        if filename != current_filename
+            && is_versioned_yuanheng_catalog_filename(&filename)
+            && filename.starts_with(&format!("{base_stem}-"))
+        {
+            let path = entry.path();
+            if path.is_file() {
+                delete_file(&path)?;
+            }
+        }
+    }
+    Ok(())
+}
+
+pub fn remove_yuanheng_model_catalogs() -> Result<(), AppError> {
+    let dir = get_codex_config_dir();
+    if !dir.exists() {
+        return Ok(());
+    }
+    let entries = fs::read_dir(&dir).map_err(|error| AppError::io(&dir, error))?;
+    for entry in entries {
+        let entry = entry.map_err(|error| AppError::Message(error.to_string()))?;
+        let filename = entry.file_name().to_string_lossy().to_string();
+        if is_yuanheng_managed_catalog_filename(&filename) {
+            let path = entry.path();
+            if path.is_file() {
+                delete_file(&path)?;
+            }
+        }
+    }
+    Ok(())
+}
+
 /// 获取 Codex 供应商配置文件路径
 #[allow(dead_code)]
 pub fn get_codex_provider_paths(
@@ -1277,10 +1373,15 @@ pub fn prepare_codex_config_text_with_named_model_catalog(
     profile: CodexCatalogToolProfile,
     catalog_filename: &str,
 ) -> Result<String, AppError> {
-    let catalog_path = get_codex_named_model_catalog_path(catalog_filename);
     let config_text = apply_codex_gpt_context_window_default(config_text)?;
 
     if let Some(catalog) = codex_model_catalog_from_settings(settings, &config_text, profile)? {
+        // Codex caches the catalog by the filename in config.toml. A stable filename
+        // leaves the native menu showing the previous provider (usually GPT) until
+        // Codex is fully restarted. Version the managed filename by catalog content
+        // so a provider/model change is observable even when Codex remains open.
+        let versioned_filename = versioned_catalog_filename(catalog_filename, &catalog);
+        let catalog_path = get_codex_named_model_catalog_path(&versioned_filename);
         let config_text = set_codex_model_catalog_json_field(&config_text, Some(&catalog_path))?;
         // Disable web_search only for native gateways on the reject blacklist
         // (MiMo/LongCat/MiniMax by host or model brand; Qwen3-Coder by model).
@@ -1317,6 +1418,13 @@ pub fn prepare_codex_config_text_with_named_model_catalog(
         };
         let config_text = set_codex_native_web_search_field(&config_text, disable_web_search)?;
         write_json_file(&catalog_path, &catalog)?;
+        // Keep the legacy alias current for older Codex builds and existing
+        // restore/tests, but never point config.toml at the alias.
+        let legacy_path = get_codex_named_model_catalog_path(catalog_filename);
+        if legacy_path != catalog_path {
+            write_json_file(&legacy_path, &catalog)?;
+        }
+        cleanup_stale_yuanheng_catalogs(catalog_filename, &versioned_filename)?;
         Ok(config_text)
     } else {
         let config_text = set_codex_model_catalog_json_field(&config_text, None)?;
@@ -1334,7 +1442,7 @@ fn is_yuanheng_managed_catalog_filename(filename: &str) -> bool {
         CC_SWITCH_CODEX_MODEL_CATALOG_FILENAME
             | YUANHENG_TERMINAL_MODEL_CATALOG_FILENAME
             | YUANHENG_DESKTOP_MODEL_CATALOG_FILENAME
-    )
+    ) || is_versioned_yuanheng_catalog_filename(filename)
 }
 
 /// Reverse of `prepare_codex_config_text_with_model_catalog`: read the
@@ -3713,6 +3821,36 @@ web_search = "disabled"
 "#;
         let resolved = resolve_cc_switch_catalog_path(config, &generated).expect("path resolves");
         assert_eq!(resolved, generated);
+    }
+
+    #[test]
+    fn versioned_catalog_filename_changes_when_provider_models_change() {
+        let first = versioned_catalog_filename(
+            YUANHENG_DESKTOP_MODEL_CATALOG_FILENAME,
+            &json!({ "models": [{ "slug": "gpt-5.6-sol" }] }),
+        );
+        let second = versioned_catalog_filename(
+            YUANHENG_DESKTOP_MODEL_CATALOG_FILENAME,
+            &json!({ "models": [{ "slug": "deepseek-v4-pro" }] }),
+        );
+        assert_ne!(first, second);
+        assert!(first.starts_with("yuanheng-desktop-model-catalog-"));
+        assert!(first.ends_with(".json"));
+        assert!(is_yuanheng_managed_catalog_filename(&first));
+    }
+
+    #[test]
+    fn versioned_catalog_pointer_is_resolved_as_managed() {
+        let filename = versioned_catalog_filename(
+            CC_SWITCH_CODEX_MODEL_CATALOG_FILENAME,
+            &json!({ "models": [{ "slug": "deepseek-v4-flash" }] }),
+        );
+        let generated = PathBuf::from("/tmp/.codex/yuanheng-switch-model-catalog.json");
+        let config = format!("model_catalog_json = \"{filename}\"\n");
+        assert_eq!(
+            resolve_cc_switch_catalog_path(&config, &generated),
+            Some(generated.parent().unwrap().join(filename))
+        );
     }
 
     #[test]
