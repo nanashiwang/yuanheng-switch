@@ -2555,17 +2555,8 @@ fn remove_codex_surface_artifacts(state: &AppState) -> Result<bool, String> {
         std::fs::remove_file(&profile_path)
             .map_err(|error| format!("移除 Codex 终端独立配置失败: {error}"))?;
     }
-    for filename in [
-        crate::codex_config::YUANHENG_TERMINAL_MODEL_CATALOG_FILENAME,
-        crate::codex_config::YUANHENG_DESKTOP_MODEL_CATALOG_FILENAME,
-    ] {
-        let path = crate::codex_config::get_codex_named_model_catalog_path(filename);
-        if let Err(error) = std::fs::remove_file(&path) {
-            if error.kind() != std::io::ErrorKind::NotFound {
-                return Err(format!("移除 Codex 模型目录失败: {error}"));
-            }
-        }
-    }
+    crate::codex_config::remove_yuanheng_model_catalogs()
+        .map_err(|error| format!("移除 Codex 模型目录失败: {error}"))?;
 
     Ok(desktop_provider.is_some() || profile_should_remove)
 }
