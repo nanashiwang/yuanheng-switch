@@ -4486,12 +4486,12 @@ mod tests {
         .unwrap();
         assert!(terminal_config.contains("/codex/v1"));
         assert!(terminal_config.contains("model = \"gpt-5.6-sol\""));
-        assert!(terminal_config.contains("yuanheng-terminal-model-catalog.json"));
-        assert!(!terminal_config.contains("yuanheng-desktop-model-catalog.json"));
+        assert!(terminal_config.contains("yuanheng-terminal-model-catalog-"));
+        assert!(!terminal_config.contains("yuanheng-desktop-model-catalog-"));
         assert!(desktop_config.contains("/chatgpt-desktop/v1"));
         assert!(desktop_config.contains("model = \"k3\""));
-        assert!(desktop_config.contains("yuanheng-desktop-model-catalog.json"));
-        assert!(!desktop_config.contains("yuanheng-terminal-model-catalog.json"));
+        assert!(desktop_config.contains("yuanheng-desktop-model-catalog-"));
+        assert!(!desktop_config.contains("yuanheng-terminal-model-catalog-"));
         assert!(crate::codex_config::get_codex_named_model_catalog_path(
             crate::codex_config::YUANHENG_TERMINAL_MODEL_CATALOG_FILENAME
         )
