@@ -362,7 +362,7 @@ pub struct CodexHistoryMigrationTask {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub error: Option<String>,
     pub preview: CodexHistoryMigrationPreview,
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    #[serde(default)]
     pub pending_files: Vec<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub backup_dir: Option<String>,

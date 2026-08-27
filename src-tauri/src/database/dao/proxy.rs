@@ -253,16 +253,12 @@ impl Database {
                 // 如果不存在，创建默认配置
                 self.init_proxy_config_rows().await?;
                 Ok(AppProxyConfig {
-                    app_type: app_type_owned,
+                    app_type: app_type_owned.clone(),
                     enabled: false,
                     auto_failover_enabled: false,
                     max_retries: 3,
                     streaming_first_byte_timeout: 60,
-                    streaming_idle_timeout: if app_type_owned == "codex" {
-                        300
-                    } else {
-                        120
-                    },
+                    streaming_idle_timeout: if app_type_owned == "codex" { 300 } else { 120 },
                     non_streaming_timeout: 600,
                     circuit_failure_threshold: 4,
                     circuit_success_threshold: 2,

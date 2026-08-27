@@ -75,6 +75,42 @@ export interface CodexHistoryMigrationTask {
   rollbackRequested: boolean;
 }
 
+export type CodexHistoryMigrationTaskPayload = Omit<
+  CodexHistoryMigrationTask,
+  "preview" | "sourceProviderIds" | "pendingFiles"
+> & {
+  sourceProviderIds?: string[] | null;
+  pendingFiles?: string[] | null;
+  preview?: Partial<CodexHistoryMigrationPreview> | null;
+};
+
+/**
+ * Normalize migration payloads from older clients/backends. Rust omits empty
+ * vectors with `skip_serializing_if`, while the UI treats these collections as
+ * always-present arrays.
+ */
+export function normalizeCodexHistoryMigrationTask(
+  task: CodexHistoryMigrationTaskPayload | null | undefined,
+): CodexHistoryMigrationTask | null {
+  if (!task) return null;
+
+  return {
+    ...task,
+    sourceProviderIds: task.sourceProviderIds ?? [],
+    pendingFiles: task.pendingFiles ?? [],
+    preview: {
+      ordinarySessions: 0,
+      archivedSessions: 0,
+      activeSessions: 0,
+      databaseRows: 0,
+      physicalFiles: 0,
+      totalCount: 0,
+      ...(task.preview ?? {}),
+      providerCounts: task.preview?.providerCounts ?? {},
+    },
+  };
+}
+
 export interface WebDavSyncResult {
   status: string;
 }
