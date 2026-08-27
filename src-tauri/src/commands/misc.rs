@@ -3012,6 +3012,16 @@ fn launch_supported_desktop_app(
 }
 
 #[cfg(target_os = "windows")]
+fn launch_windows_store_desktop_app(aumid: &str) -> Result<(), String> {
+    std::process::Command::new("explorer.exe")
+        .arg(format!(r"shell:AppsFolder\{aumid}"))
+        .creation_flags(CREATE_NO_WINDOW)
+        .spawn()
+        .map_err(|error| format!("打开 Microsoft Store 应用失败: {error}"))?;
+    Ok(())
+}
+
+#[cfg(target_os = "windows")]
 fn launch_supported_desktop_app(
     tool: &str,
     resolution: crate::desktop_app_detection::DesktopAppResolution,
@@ -3032,17 +3042,34 @@ fn launch_supported_desktop_app(
     }
     match resolution.launch_target {
         Some(crate::desktop_app_detection::DesktopLaunchTarget::Path(executable)) => {
-            std::process::Command::new(&executable)
+            let launch_result = std::process::Command::new(&executable)
                 .creation_flags(CREATE_NO_WINDOW)
-                .spawn()
-                .map_err(|error| format!("打开桌面应用失败: {error}"))?;
+                .spawn();
+            if let Err(error) = launch_result {
+                let access_denied = error.kind() == std::io::ErrorKind::PermissionDenied
+                    || error.raw_os_error() == Some(5);
+                let store_aumid = access_denied
+                    .then(|| crate::desktop_app_detection::discover_windows_store_app(tool))
+                    .flatten()
+                    .and_then(|store| match store.launch_target {
+                        Some(
+                            crate::desktop_app_detection::DesktopLaunchTarget::AppUserModelId(
+                                aumid,
+                            ),
+                        ) => Some(aumid),
+                        _ => None,
+                    });
+                if let Some(aumid) = store_aumid {
+                    log::warn!(
+                        "桌面应用直接启动被 Windows 拒绝，改用可信 Microsoft Store AppID"
+                    );
+                    return launch_windows_store_desktop_app(&aumid);
+                }
+                return Err(format!("打开桌面应用失败: {error}"));
+            }
         }
         Some(crate::desktop_app_detection::DesktopLaunchTarget::AppUserModelId(aumid)) => {
-            std::process::Command::new("explorer.exe")
-                .arg(format!(r"shell:AppsFolder\{aumid}"))
-                .creation_flags(CREATE_NO_WINDOW)
-                .spawn()
-                .map_err(|error| format!("打开 Microsoft Store 应用失败: {error}"))?;
+            launch_windows_store_desktop_app(&aumid)?;
         }
         None => return Err("未检测到桌面应用，请先安装或选择应用路径".to_string()),
     }
