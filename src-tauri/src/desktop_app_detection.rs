@@ -134,13 +134,15 @@ pub(crate) fn validate_custom_desktop_app_path(
     let path = PathBuf::from(trimmed);
     let resolved = resolve_file_candidate(tool, &path)
         .ok_or_else(|| format!("所选路径中未找到 {}", executable_names(tool).join(" / ")))?;
-    let canonical = std::fs::canonicalize(&resolved)
-        .map_err(|error| format!("解析应用路径失败: {error}"))?;
+    let canonical =
+        std::fs::canonicalize(&resolved).map_err(|error| format!("解析应用路径失败: {error}"))?;
     if !direct_desktop_launch_path_allowed(&resolved)
         || !direct_desktop_launch_path_allowed(&canonical)
     {
-        return Err("Microsoft Store 应用不能通过 WindowsApps 内的 EXE 直接启动，请重新检测应用"
-            .to_string());
+        return Err(
+            "Microsoft Store 应用不能通过 WindowsApps 内的 EXE 直接启动，请重新检测应用"
+                .to_string(),
+        );
     }
     Ok(canonical)
 }
@@ -344,10 +346,9 @@ fn is_trusted_openai_store_aumid(value: &str) -> bool {
     matches!(
         family.as_str(),
         "openai.codex_2p2nqsd0c76g0" | "openai.chatgpt-desktop_2p2nqsd0c76g0"
-    )
-        && app_id.chars().all(|character| {
-            character.is_ascii_alphanumeric() || matches!(character, '.' | '_' | '-')
-        })
+    ) && app_id
+        .chars()
+        .all(|character| character.is_ascii_alphanumeric() || matches!(character, '.' | '_' | '-'))
 }
 
 #[cfg(target_os = "windows")]

@@ -3060,9 +3060,7 @@ fn launch_supported_desktop_app(
                         _ => None,
                     });
                 if let Some(aumid) = store_aumid {
-                    log::warn!(
-                        "桌面应用直接启动被 Windows 拒绝，改用可信 Microsoft Store AppID"
-                    );
+                    log::warn!("桌面应用直接启动被 Windows 拒绝，改用可信 Microsoft Store AppID");
                     return launch_windows_store_desktop_app(&aumid);
                 }
                 return Err(format!("打开桌面应用失败: {error}"));
