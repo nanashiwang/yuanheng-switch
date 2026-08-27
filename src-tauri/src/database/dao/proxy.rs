@@ -253,7 +253,7 @@ impl Database {
                 // 如果不存在，创建默认配置
                 self.init_proxy_config_rows().await?;
                 Ok(AppProxyConfig {
-                    app_type: app_type_owned,
+                    app_type: app_type_owned.clone(),
                     enabled: false,
                     auto_failover_enabled: false,
                     max_retries: 3,
