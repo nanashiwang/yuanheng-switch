@@ -6,7 +6,10 @@ import type { SettingsFormState } from "@/hooks/useSettings";
 import { ToggleRow } from "@/components/ui/toggle-row";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { settingsApi } from "@/lib/api";
-import type { CodexHistoryMigrationTask } from "@/lib/api/settings";
+import {
+  normalizeCodexHistoryMigrationTask,
+  type CodexHistoryMigrationTask,
+} from "@/lib/api/settings";
 import { Button } from "@/components/ui/button";
 import { extractErrorMessage } from "@/utils/errorUtils";
 
@@ -35,7 +38,7 @@ export function CodexAuthSettings({
     const refresh = async () => {
       try {
         const task = await settingsApi.getCodexHistoryMigrationStatus();
-        if (active) setMigrationTask(task);
+        if (active) setMigrationTask(normalizeCodexHistoryMigrationTask(task));
       } catch {
         // 历史状态读取失败不阻断其余设置。
       }
@@ -86,7 +89,7 @@ export function CodexAuthSettings({
     setMigrationBusy(true);
     try {
       const task = await action();
-      setMigrationTask(task);
+      setMigrationTask(normalizeCodexHistoryMigrationTask(task));
       if (task.status === "completed") {
         toast.success(t("settings.codexHistoryMigrationCompleted"));
       } else if (task.status === "rolled_back") {
@@ -257,10 +260,10 @@ export function CodexAuthSettings({
                     : migrationTask.error}
                 </p>
               )}
-            {migrationTask.pendingFiles.length > 0 && (
+            {(migrationTask.pendingFiles ?? []).length > 0 && (
               <p className="text-amber-700 dark:text-amber-300">
                 {t("settings.codexHistoryMigrationPending", {
-                  count: migrationTask.pendingFiles.length,
+                  count: (migrationTask.pendingFiles ?? []).length,
                 })}
               </p>
             )}
