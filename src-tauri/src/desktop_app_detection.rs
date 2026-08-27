@@ -82,6 +82,18 @@ fn filename_matches(tool: &str, path: &Path) -> bool {
         .any(|expected| expected.eq_ignore_ascii_case(name))
 }
 
+fn is_windows_apps_path(path: &Path) -> bool {
+    let normalized = path
+        .to_string_lossy()
+        .replace('\\', "/")
+        .to_ascii_lowercase();
+    normalized.contains("/program files/windowsapps/")
+}
+
+fn direct_desktop_launch_path_allowed(path: &Path) -> bool {
+    !is_windows_apps_path(path)
+}
+
 fn resolve_file_candidate(tool: &str, path: &Path) -> Option<PathBuf> {
     if path.is_file() && filename_matches(tool, path) {
         return Some(path.to_path_buf());
@@ -122,7 +134,17 @@ pub(crate) fn validate_custom_desktop_app_path(
     let path = PathBuf::from(trimmed);
     let resolved = resolve_file_candidate(tool, &path)
         .ok_or_else(|| format!("所选路径中未找到 {}", executable_names(tool).join(" / ")))?;
-    std::fs::canonicalize(&resolved).map_err(|error| format!("解析应用路径失败: {error}"))
+    let canonical =
+        std::fs::canonicalize(&resolved).map_err(|error| format!("解析应用路径失败: {error}"))?;
+    if !direct_desktop_launch_path_allowed(&resolved)
+        || !direct_desktop_launch_path_allowed(&canonical)
+    {
+        return Err(
+            "Microsoft Store 应用不能通过 WindowsApps 内的 EXE 直接启动，请重新检测应用"
+                .to_string(),
+        );
+    }
+    Ok(canonical)
 }
 
 fn custom_resolution(tool: &str, custom_path: Option<&str>) -> Option<DesktopAppResolution> {
@@ -209,6 +231,9 @@ fn automatic_classic_resolution(tool: &str) -> Option<DesktopAppResolution> {
             continue;
         };
         let canonical = std::fs::canonicalize(&resolved).unwrap_or(resolved);
+        if !direct_desktop_launch_path_allowed(&canonical) {
+            continue;
+        }
         if seen.contains(&canonical) {
             continue;
         }
@@ -309,6 +334,24 @@ struct StoreAppInfo {
 }
 
 #[cfg(target_os = "windows")]
+fn is_trusted_openai_store_aumid(value: &str) -> bool {
+    let Some((package_family, app_id)) = value.trim().split_once('!') else {
+        return false;
+    };
+    if package_family.contains('!') || app_id.is_empty() || app_id.contains('!') {
+        return false;
+    }
+
+    let family = package_family.to_ascii_lowercase();
+    matches!(
+        family.as_str(),
+        "openai.codex_2p2nqsd0c76g0" | "openai.chatgpt-desktop_2p2nqsd0c76g0"
+    ) && app_id
+        .chars()
+        .all(|character| character.is_ascii_alphanumeric() || matches!(character, '.' | '_' | '-'))
+}
+
+#[cfg(target_os = "windows")]
 fn powershell_encoded_command(script: &str) -> String {
     use base64::{engine::general_purpose::STANDARD, Engine as _};
     let mut bytes = Vec::with_capacity(script.len() * 2);
@@ -328,23 +371,48 @@ fn windows_store_resolution(tool: &str) -> Option<DesktopAppResolution> {
     const CREATE_NO_WINDOW: u32 = 0x08000000;
     let script = r#"
 $ErrorActionPreference = 'SilentlyContinue'
-$start = Get-StartApps | Where-Object { $_.Name -match '^(ChatGPT|Codex)$' } | Select-Object -First 1
-$pkg = Get-AppxPackage | Where-Object {
-  $_.Name -match '(?i)(openai.*chatgpt|chatgpt|openai.*codex)' -or
-  $_.PackageFamilyName -match '(?i)(openai.*chatgpt|chatgpt|openai.*codex)'
-} | Sort-Object Version -Descending | Select-Object -First 1
-$aumid = if ($start) { $start.AppID } else { $null }
-if (-not $aumid -and $pkg) {
+$trustedFamilies = @(
+  'OpenAI.Codex_2p2nqsd0c76g0',
+  'OpenAI.ChatGPT-Desktop_2p2nqsd0c76g0'
+)
+$packages = Get-AppxPackage | Where-Object {
+  $_.PackageFamilyName -in $trustedFamilies
+} | Sort-Object `
+  @{ Expression = { if ($_.PackageFamilyName -eq 'OpenAI.Codex_2p2nqsd0c76g0') { 0 } else { 1 } }; Ascending = $true }, `
+  @{ Expression = { [version]$_.Version }; Descending = $true }
+
+foreach ($pkg in $packages) {
   $manifest = Get-AppxPackageManifest $pkg
-  $appId = $manifest.Package.Applications.Application.Id | Select-Object -First 1
-  if ($appId) { $aumid = "$($pkg.PackageFamilyName)!$appId" }
-}
-if ($aumid -or $pkg) {
+  $appIds = @(
+    $manifest.Package.Applications.Application.Id |
+      Where-Object { $_ } |
+      ForEach-Object { $_.ToString() }
+  )
+  if ($appIds.Count -eq 0) { continue }
+  $familyPrefix = "$($pkg.PackageFamilyName)!"
+  $registeredAumid = Get-StartApps | Where-Object {
+    $candidateAumid = $_.AppID
+    if (-not $candidateAumid.StartsWith(
+      $familyPrefix,
+      [System.StringComparison]::OrdinalIgnoreCase
+    )) {
+      $false
+    } else {
+      $candidateAppId = $candidateAumid.Substring($familyPrefix.Length)
+      $appIds -contains $candidateAppId
+    }
+  } | Select-Object -ExpandProperty AppID -First 1
+  $aumid = if ($registeredAumid) {
+    $registeredAumid
+  } else {
+    "$familyPrefix$($appIds[0])"
+  }
   [PSCustomObject]@{
     appUserModelId = $aumid
-    installLocation = if ($pkg) { $pkg.InstallLocation } else { $null }
-    version = if ($pkg) { $pkg.Version.ToString() } else { $null }
+    installLocation = $pkg.InstallLocation
+    version = $pkg.Version.ToString()
   } | ConvertTo-Json -Compress
+  break
 }
 "#;
     let output = std::process::Command::new("powershell.exe")
@@ -364,7 +432,7 @@ if ($aumid -or $pkg) {
     }
     let info: StoreAppInfo = serde_json::from_slice(&output.stdout).ok()?;
     let aumid = info.app_user_model_id?.trim().to_string();
-    if aumid.is_empty() {
+    if !is_trusted_openai_store_aumid(&aumid) {
         return None;
     }
     let install_path = info
@@ -396,17 +464,25 @@ pub(crate) fn discover_desktop_app(tool: &str, custom_path: Option<&str>) -> Des
         found.custom_path = configured_custom;
         return found;
     }
-    if let Some(mut found) = automatic_classic_resolution(tool) {
-        found.custom_path_valid = configured_custom.is_none();
-        found.custom_path = configured_custom;
-        return found;
-    }
+    // Store/MSIX applications must be launched through their package identity.
+    // Resolve that identity before registry candidates, which can expose a
+    // protected WindowsApps executable that exists but cannot be spawned.
     if let Some(mut found) = windows_store_resolution(tool) {
         found.custom_path_valid = configured_custom.is_none();
         found.custom_path = configured_custom;
         return found;
     }
+    if let Some(mut found) = automatic_classic_resolution(tool) {
+        found.custom_path_valid = configured_custom.is_none();
+        found.custom_path = configured_custom;
+        return found;
+    }
     DesktopAppResolution::not_found(configured_custom)
+}
+
+#[cfg(target_os = "windows")]
+pub(crate) fn discover_windows_store_app(tool: &str) -> Option<DesktopAppResolution> {
+    windows_store_resolution(tool)
 }
 
 #[cfg(test)]
@@ -449,5 +525,39 @@ mod tests {
         assert_eq!(resolution.detection_source, "not_found");
         assert!(!resolution.custom_path_valid);
         assert_eq!(resolution.custom_path.as_deref(), Some("/missing/app"));
+    }
+
+    #[test]
+    fn windows_apps_executables_are_never_direct_launch_targets() {
+        assert!(!direct_desktop_launch_path_allowed(Path::new(
+            r"C:\Program Files\WindowsApps\OpenAI.Codex_1.2.3.0_x64__publisher\Codex.exe"
+        )));
+        assert!(!direct_desktop_launch_path_allowed(Path::new(
+            r"\\?\C:\Program Files\WindowsApps\OpenAI.ChatGPT-Desktop_1.2.3.0_x64__publisher\ChatGPT.exe"
+        )));
+        assert!(direct_desktop_launch_path_allowed(Path::new(
+            r"C:\Users\Alice\AppData\Local\Programs\Codex\Codex.exe"
+        )));
+    }
+
+    #[cfg(target_os = "windows")]
+    #[test]
+    fn trusted_store_aumid_rejects_same_name_shortcuts_and_paths() {
+        assert!(is_trusted_openai_store_aumid(
+            "OpenAI.Codex_2p2nqsd0c76g0!App"
+        ));
+        assert!(is_trusted_openai_store_aumid(
+            "OpenAI.ChatGPT-Desktop_2p2nqsd0c76g0!App"
+        ));
+        assert!(!is_trusted_openai_store_aumid(
+            r"C:\Users\Alice\Documents\Codex With Monitor.cmd"
+        ));
+        assert!(!is_trusted_openai_store_aumid("Codex"));
+        assert!(!is_trusted_openai_store_aumid(
+            "SomeoneElse.Codex_2p2nqsd0c76g0!App"
+        ));
+        assert!(!is_trusted_openai_store_aumid(
+            "OpenAI.Codex_2p2nqsd0c76g0!../../evil"
+        ));
     }
 }
