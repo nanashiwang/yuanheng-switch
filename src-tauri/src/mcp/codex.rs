@@ -348,6 +348,33 @@ pub fn sync_enabled_to_codex(config: &MultiAppConfig) -> Result<(), AppError> {
 
 /// 将单个 MCP 服务器同步到 Codex live 配置
 /// 始终使用 Codex 官方格式 [mcp_servers]，并清理可能存在的错误格式 [mcp.servers]
+///
+/// 用户可以手动编辑 config.toml。mcp_servers 若被写成字符串、数组等非表结构，
+/// 直接用索引写入会触发 toml_edit panic；先归一化为表，避免跨 FFI panic。
+fn upsert_mcp_server_table(
+    doc: &mut toml_edit::DocumentMut,
+    id: &str,
+    table: toml_edit::Table,
+) -> Result<(), AppError> {
+    if doc
+        .get("mcp_servers")
+        .is_none_or(|item| item.as_table_like().is_none())
+    {
+        if doc.get("mcp_servers").is_some_and(|item| !item.is_none()) {
+            log::warn!("Codex config.toml 的 mcp_servers 不是表，已重置为空表");
+        }
+        doc["mcp_servers"] = toml_edit::table();
+    }
+    let servers = doc
+        .get_mut("mcp_servers")
+        .and_then(toml_edit::Item::as_table_like_mut)
+        .ok_or_else(|| {
+            AppError::McpValidation("Codex config.toml 的 mcp_servers 不是表".to_string())
+        })?;
+    servers.insert(id, toml_edit::Item::Table(table));
+    Ok(())
+}
+
 pub fn sync_single_server_to_codex(
     _config: &MultiAppConfig,
     id: &str,
@@ -356,8 +383,6 @@ pub fn sync_single_server_to_codex(
     if !should_sync_codex_mcp() {
         return Ok(());
     }
-    use toml_edit::Item;
-
     // 读取现有的 config.toml
     let config_path = crate::codex_config::get_codex_config_path();
 
@@ -383,16 +408,9 @@ pub fn sync_single_server_to_codex(
         }
     }
 
-    // 确保 [mcp_servers] 表存在
-    if !doc.contains_key("mcp_servers") {
-        doc["mcp_servers"] = toml_edit::table();
-    }
-
     // 将 JSON 服务器规范转换为 TOML 表
     let toml_table = json_server_to_toml_table(server_spec)?;
-
-    // 使用唯一正确的格式：[mcp_servers]
-    doc["mcp_servers"][id] = Item::Table(toml_table);
+    upsert_mcp_server_table(&mut doc, id, toml_table)?;
 
     // 写回文件
     let new_text = doc.to_string();
