@@ -2564,7 +2564,15 @@
       "title": "批次匯入 MCP Servers",
       "targetApps": "目標應用程式",
       "serverCount": "MCP Servers ({{count}} 個)",
-      "enabledWarning": "匯入後將立即寫入所有指定應用程式的設定檔"
+      "enabledWarning": "匯入後將立即寫入所有指定應用程式的設定檔",
+      "command": "啟動命令與參數",
+      "endpoint": "服務端點",
+      "environment": "環境變數",
+      "enabledState": "啟用狀態",
+      "enabled": "已啟用",
+      "disabled": "未啟用",
+      "noServers": "找不到 MCP Server",
+      "reviewHint": "請在確認匯入前完整檢查命令、參數、環境變數與端點。"
     },
     "prompt": {
       "title": "匯入系統提示詞",
@@ -2591,7 +2599,12 @@
     "usageAutoInterval": "自動查詢",
     "usageAutoIntervalValue": "每 {{minutes}} 分鐘",
     "providerImportRemoved": "供應商匯入功能已移除",
-    "providerImportRemovedDescription": "連線現由元衡帳號統一管理，桌面應用程式不再新增供應商。"
+    "providerImportRemovedDescription": "連線現由元衡帳號統一管理，桌面應用程式不再新增供應商。",
+    "risk": {
+      "envHijack": "環境變數可能改變程序載入或代理行為",
+      "privateEndpoint": "目標是本機或內網位址，請確認這是預期的服務",
+      "shellCommand": "將透過 Shell 執行命令參數，請確認來源可信"
+    }
   },
   "iconPicker": {
     "search": "搜尋圖示",

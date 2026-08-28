@@ -2562,7 +2562,15 @@
       "title": "MCP サーバーを一括インポート",
       "targetApps": "ターゲットアプリ",
       "serverCount": "MCP サーバー（{{count}} 件）",
-      "enabledWarning": "インポート後、指定したすべてのアプリに即座に書き込まれます"
+      "enabledWarning": "インポート後、指定したすべてのアプリに即座に書き込まれます",
+      "command": "起動コマンドと引数",
+      "endpoint": "エンドポイント",
+      "environment": "環境変数",
+      "enabledState": "有効状態",
+      "enabled": "有効",
+      "disabled": "無効",
+      "noServers": "MCP サーバーが見つかりません",
+      "reviewHint": "インポート前にコマンド、引数、環境変数、エンドポイントを確認してください。"
     },
     "prompt": {
       "title": "システムプロンプトをインポート",
@@ -2589,7 +2597,12 @@
     "usageAutoInterval": "自動クエリ",
     "usageAutoIntervalValue": "{{minutes}} 分ごと",
     "providerImportRemoved": "プロバイダーのインポートは廃止されました",
-    "providerImportRemovedDescription": "接続は YuanHeng アカウントで一元管理されるため、デスクトップアプリからプロバイダーを追加できません。"
+    "providerImportRemovedDescription": "接続は YuanHeng アカウントで一元管理されるため、デスクトップアプリからプロバイダーを追加できません。",
+    "risk": {
+      "envHijack": "環境変数がプロセスの読み込みやプロキシ動作を変更する可能性があります",
+      "privateEndpoint": "ローカルまたはプライベートなエンドポイントです。想定したサービスか確認してください",
+      "shellCommand": "引数はシェル経由で実行されます。信頼できる提供元か確認してください"
+    }
   },
   "iconPicker": {
     "search": "アイコンを検索",
