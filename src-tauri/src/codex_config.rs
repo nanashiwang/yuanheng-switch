@@ -1298,7 +1298,22 @@ fn set_codex_model_catalog_json_field(
                 .file_name()
                 .and_then(|name| name.to_str())
                 .ok_or_else(|| AppError::Message("Invalid Codex model catalog path".to_string()))?;
-            doc["model_catalog_json"] = toml_edit::value(filename);
+            // 只有缺失或元亨自己管理的目录指针才能被接管；用户自定义的
+            // 文件名/路径必须保留，避免生成目录时覆盖用户配置。
+            let is_yuanheng_owned = doc
+                .get("model_catalog_json")
+                .and_then(|item| item.as_str())
+                .map(|value| {
+                    Path::new(value)
+                        .file_name()
+                        .and_then(|name| name.to_str())
+                        .map(is_yuanheng_managed_catalog_filename)
+                        .unwrap_or(false)
+                })
+                .unwrap_or(true);
+            if is_yuanheng_owned {
+                doc["model_catalog_json"] = toml_edit::value(filename);
+            }
         }
         None => {
             let should_remove = doc
@@ -4239,6 +4254,42 @@ model = "glm-5"
             parsed.get("model_catalog_json").and_then(|v| v.as_str()),
             Some("/Users/me/.codex/my-custom-catalog.json"),
             "None arm should NOT remove user-owned catalog"
+        );
+    }
+
+    #[test]
+    fn set_catalog_json_preserves_user_owned_full_path() {
+        let input = r#"model_provider = "custom"
+model = "glm-5"
+model_catalog_json = "/Users/me/.codex/my-custom-catalog.json"
+"#;
+        let result = set_codex_model_catalog_json_field(
+            input,
+            Some(Path::new("/tmp/yuanheng-model-catalog.json")),
+        )
+        .unwrap();
+        let parsed: toml::Value = toml::from_str(&result).unwrap();
+        assert_eq!(
+            parsed.get("model_catalog_json").and_then(|v| v.as_str()),
+            Some("/Users/me/.codex/my-custom-catalog.json")
+        );
+    }
+
+    #[test]
+    fn set_catalog_json_preserves_user_owned_relative_filename() {
+        let input = r#"model_provider = "custom"
+model = "glm-5"
+model_catalog_json = "my-custom-catalog.json"
+"#;
+        let result = set_codex_model_catalog_json_field(
+            input,
+            Some(Path::new("/tmp/yuanheng-model-catalog.json")),
+        )
+        .unwrap();
+        let parsed: toml::Value = toml::from_str(&result).unwrap();
+        assert_eq!(
+            parsed.get("model_catalog_json").and_then(|v| v.as_str()),
+            Some("my-custom-catalog.json")
         );
     }
 
