@@ -1567,7 +1567,6 @@ impl Database {
     /// 独立成版，兼容已经执行过 v17 迁移的开发数据库。存量行保持 NULL，
     /// 首轮扫描按旧行号转换为字节位置，之后使用字节偏移增量读取，并记录
     /// 游标边界指纹以识别外部重写。
-
     fn migrate_v17_to_v18(conn: &Connection) -> Result<(), AppError> {
         if Self::table_exists(conn, "session_log_sync")? {
             Self::add_column_if_missing(conn, "session_log_sync", "last_byte_offset", "INTEGER")?;
