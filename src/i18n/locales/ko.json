@@ -1574,6 +1574,11 @@
       "opencode_session": "OpenCode 세션"
     },
     "sessionSync": {
+      "title": "세션 로그 자동 스캔",
+      "description": "각 클라이언트의 로컬 세션 로그를 주기적으로 스캔하여 사용량을 집계합니다. 끄면 수동 동기화 시에만 로그를 스캔합니다",
+      "syncNow": "지금 동기화",
+      "syncCompleted": "동기화 완료: {{imported}}건 가져옴, {{files}}개 파일 스캔, 오류 {{errors}}건",
+      "syncFailed": "세션 사용량 동기화 실패: {{error}}",
       "trigger": "세션 로그 동기화",
       "import": "임포트 세션",
       "resync": "싱크",
