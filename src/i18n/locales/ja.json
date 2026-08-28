@@ -1574,12 +1574,18 @@
       "opencode_session": "OpenCode セッション"
     },
     "sessionSync": {
+      "title": "セッションログの自動スキャン",
+      "description": "各クライアントのローカルセッションログを定期的にスキャンして使用量を集計します。オフにすると手動同期時のみスキャンします",
+      "syncNow": "今すぐ同期",
+      "syncCompleted": "同期完了：{{imported}} 件追加、{{files}} ファイルをスキャン、エラー {{errors}} 件",
+      "syncFailed": "セッション使用量の同期に失敗しました：{{error}}",
       "trigger": "セッションログを同期",
       "import": "セッションをインポート",
       "resync": "同期",
       "imported": "セッションログから {{count}} 件のレコードをインポートしました",
       "upToDate": "セッションログは最新です",
       "failed": "セッション同期に失敗しました"
+
     },
     "rebuildCodex": {
       "title": "Codex 使用量メンテナンス",

@@ -1574,12 +1574,18 @@
       "opencode_session": "OpenCode Session"
     },
     "sessionSync": {
+      "title": "Auto-Scan Session Logs",
+      "description": "Periodically scans each client's local session logs to track usage; when off, logs are only scanned on manual sync",
+      "syncNow": "Sync Now",
+      "syncCompleted": "Sync completed: {{imported}} imported, {{files}} files scanned, {{errors}} errors",
+      "syncFailed": "Session usage sync failed: {{error}}",
       "trigger": "Sync session logs",
       "import": "Import Sessions",
       "resync": "Sync",
       "imported": "Imported {{count}} records from session logs",
       "upToDate": "Session logs are up to date",
       "failed": "Session sync failed"
+
     },
     "rebuildCodex": {
       "title": "Codex Usage Maintenance",

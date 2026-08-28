@@ -1574,12 +1574,18 @@
       "opencode_session": "OpenCode 会话日志"
     },
     "sessionSync": {
+      "title": "自动扫描会话记录",
+      "description": "定期扫描各客户端的本地会话记录以统计用量；关闭后仅在手动同步时扫描",
+      "syncNow": "立即同步",
+      "syncCompleted": "同步完成：新增 {{imported}} 条，扫描 {{files}} 个文件，错误 {{errors}}",
+      "syncFailed": "会话用量同步失败：{{error}}",
       "trigger": "同步会话日志",
       "import": "导入会话",
       "resync": "同步",
       "imported": "从会话日志导入了 {{count}} 条记录",
       "upToDate": "会话日志已是最新",
       "failed": "会话同步失败"
+
     },
     "rebuildCodex": {
       "title": "Codex 用量维护",
