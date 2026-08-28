@@ -757,6 +757,38 @@ impl SkillService {
         Some(path.to_string())
     }
 
+    /// 根据实际解析到的 Skill 目录，生成仓库内 `SKILL.md` 的相对路径。
+    fn doc_path_for_source(repo_root: &Path, source: &Path) -> Option<String> {
+        let rel = source.strip_prefix(repo_root).ok()?;
+        let mut parts: Vec<String> = rel
+            .components()
+            .filter_map(|component| match component {
+                std::path::Component::Normal(part) => Some(part.to_string_lossy().to_string()),
+                _ => None,
+            })
+            .collect();
+        parts.push("SKILL.md".to_string());
+        Some(parts.join("/"))
+    }
+
+    /// 选择文档路径：真实源目录优先，旧链接路径次之，目录名最后兜底。
+    fn choose_doc_path(
+        resolved_source_doc_path: Option<String>,
+        readme_url: Option<&str>,
+        directory: &str,
+    ) -> String {
+        if let Some(path) = resolved_source_doc_path {
+            return path;
+        }
+        if let Some(path) = readme_url.and_then(Self::extract_doc_path_from_url) {
+            if path.ends_with("/SKILL.md") || path == "SKILL.md" {
+                return path;
+            }
+            return format!("{}/SKILL.md", path.trim_end_matches('/'));
+        }
+        format!("{}/SKILL.md", directory.trim_end_matches('/'))
+    }
+
     // ========== 路径管理 ==========
 
     /// 获取 SSOT 目录（根据设置返回 ~/.yuanheng-switch/skills/ 或 ~/.agents/skills/）
@@ -1025,6 +1057,7 @@ impl SkillService {
         let dest = ssot_dir.join(&install_name);
 
         let mut repo_branch = skill.repo_branch.clone();
+        let mut resolved_doc_path = None;
 
         // 如果已存在则跳过下载
         if !dest.exists() {
@@ -1065,6 +1098,7 @@ impl SkillService {
                         Some("checkRepoUrl"),
                     ))
                 })?;
+            resolved_doc_path = Self::doc_path_for_source(&temp_dir, &source);
 
             let canonical_temp = temp_dir.canonicalize().unwrap_or_else(|_| temp_dir.clone());
             let canonical_source = source.canonicalize().map_err(|_| {
@@ -1129,18 +1163,11 @@ impl SkillService {
             }
         }
 
-        let doc_path = skill
-            .readme_url
-            .as_deref()
-            .and_then(Self::extract_doc_path_from_url)
-            .map(|path| {
-                if path.ends_with("/SKILL.md") || path == "SKILL.md" {
-                    path
-                } else {
-                    format!("{}/SKILL.md", path.trim_end_matches('/'))
-                }
-            })
-            .unwrap_or_else(|| format!("{}/SKILL.md", skill.directory.trim_end_matches('/')));
+        let doc_path = Self::choose_doc_path(
+            resolved_doc_path,
+            skill.readme_url.as_deref(),
+            &skill.directory,
+        );
 
         let readme_url = Some(Self::build_skill_doc_url(
             &skill.repo_owner,
@@ -1507,6 +1534,7 @@ impl SkillService {
                     Some("checkRepoUrl"),
                 ))
             })?;
+        let resolved_doc_path = Self::doc_path_for_source(&temp_dir, &source);
 
         // 备份旧文件
         let _ = Self::create_uninstall_backup(&skill);
@@ -1525,11 +1553,11 @@ impl SkillService {
         let (new_name, new_description) = Self::read_skill_name_desc(&skill_md, &skill.directory);
 
         // 更新 readme_url
-        let doc_path = skill
-            .readme_url
-            .as_deref()
-            .and_then(Self::extract_doc_path_from_url)
-            .unwrap_or_else(|| format!("{}/SKILL.md", skill.directory.trim_end_matches('/')));
+        let doc_path = Self::choose_doc_path(
+            resolved_doc_path,
+            skill.readme_url.as_deref(),
+            &skill.directory,
+        );
         let readme_url = Some(Self::build_skill_doc_url(
             &owner,
             &name,
@@ -3653,6 +3681,47 @@ mod tests {
         fs::create_dir_all(temp.path().join("ast-grep")).expect("create wrapper");
 
         assert!(SkillService::resolve_skill_source_dir(temp.path(), "ast-grep").is_none());
+    }
+
+    #[test]
+    fn choose_doc_path_prefers_resolved_nested_source() {
+        let resolved = SkillService::choose_doc_path(
+            Some("skills/category/foo/SKILL.md".to_string()),
+            Some("https://github.com/o/r"),
+            "foo",
+        );
+        assert_eq!(resolved, "skills/category/foo/SKILL.md");
+    }
+
+    #[test]
+    fn choose_doc_path_falls_back_to_existing_url_then_directory() {
+        assert_eq!(
+            SkillService::choose_doc_path(
+                None,
+                Some("https://github.com/o/r/tree/main/skills/foo"),
+                "foo",
+            ),
+            "skills/foo/SKILL.md"
+        );
+        assert_eq!(
+            SkillService::choose_doc_path(None, None, "skills/foo"),
+            "skills/foo/SKILL.md"
+        );
+    }
+
+    #[test]
+    fn doc_path_for_source_returns_repo_relative_path() {
+        let temp = tempdir().expect("tempdir");
+        let nested = temp.path().join("skills").join("category").join("foo");
+        fs::create_dir_all(&nested).expect("create nested dirs");
+        assert_eq!(
+            SkillService::doc_path_for_source(temp.path(), &nested),
+            Some("skills/category/foo/SKILL.md".to_string())
+        );
+        assert_eq!(
+            SkillService::doc_path_for_source(temp.path(), temp.path()),
+            Some("SKILL.md".to_string())
+        );
     }
 
     #[test]
