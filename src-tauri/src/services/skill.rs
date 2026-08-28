@@ -29,6 +29,12 @@ const BUILTIN_IMAGEGEN_OPENAI_YAML: &str =
 const BUILTIN_IMAGEGEN_SCRIPT: &str =
     include_str!("../resources/builtin_skills/meta-api-imagegen/scripts/meta_api_imagegen.mjs");
 
+// Skill ZIP 来自远程仓库或用户导入，限制归档和解压规模，避免路径穿越与 ZIP 炸弹。
+const MAX_SKILL_ZIP_BYTES: u64 = 100 * 1024 * 1024;
+const MAX_SKILL_ZIP_ENTRIES: usize = 10_000;
+const MAX_SKILL_UNCOMPRESSED_BYTES: u64 = 512 * 1024 * 1024;
+const MAX_SKILL_SYMLINK_TARGET_BYTES: u64 = 16 * 1024;
+
 // ========== 数据结构 ==========
 
 /// Skill 同步方式
@@ -2702,14 +2708,35 @@ impl SkillService {
             )));
         }
 
+        if response
+            .content_length()
+            .is_some_and(|length| length > MAX_SKILL_ZIP_BYTES)
+        {
+            return Err(anyhow!("Skill ZIP 文件过大，已拒绝下载"));
+        }
         let bytes = response.bytes().await?;
+        if bytes.len() as u64 > MAX_SKILL_ZIP_BYTES {
+            return Err(anyhow!("Skill ZIP 文件过大，已拒绝下载"));
+        }
         let cursor = std::io::Cursor::new(bytes);
         let mut archive = zip::ZipArchive::new(cursor)?;
+        if archive.len() > MAX_SKILL_ZIP_ENTRIES {
+            return Err(anyhow!("Skill ZIP 文件条目过多，已拒绝解压"));
+        }
 
         let root_name = if !archive.is_empty() {
             let first_file = archive.by_index(0)?;
-            let name = first_file.name();
-            name.split('/').next().unwrap_or("").to_string()
+            let path = first_file
+                .enclosed_name()
+                .ok_or_else(|| anyhow!("Skill ZIP 包含不安全路径"))?;
+            path.components()
+                .next()
+                .and_then(|component| match component {
+                    Component::Normal(name) => Some(name.to_string_lossy().to_string()),
+                    _ => None,
+                })
+                .filter(|name| !name.is_empty())
+                .ok_or_else(|| anyhow!("Skill ZIP 缺少有效根目录"))?
         } else {
             return Err(anyhow::anyhow!(format_skill_error(
                 "EMPTY_ARCHIVE",
@@ -2720,25 +2747,34 @@ impl SkillService {
 
         // 第一遍：解压普通文件和目录，收集 symlink 条目
         let mut symlinks: Vec<(PathBuf, String)> = Vec::new();
+        let mut total_uncompressed_bytes = 0u64;
 
         for i in 0..archive.len() {
             let mut file = archive.by_index(i)?;
-            let file_path = file.name().to_string();
+            total_uncompressed_bytes = total_uncompressed_bytes
+                .checked_add(file.size())
+                .ok_or_else(|| anyhow!("Skill ZIP 解压大小异常"))?;
+            if total_uncompressed_bytes > MAX_SKILL_UNCOMPRESSED_BYTES {
+                return Err(anyhow!("Skill ZIP 解压后体积过大，已拒绝解压"));
+            }
 
-            let relative_path =
-                if let Some(stripped) = file_path.strip_prefix(&format!("{root_name}/")) {
-                    stripped
-                } else {
-                    continue;
-                };
-
-            if relative_path.is_empty() {
+            let enclosed_path = file
+                .enclosed_name()
+                .ok_or_else(|| anyhow!("Skill ZIP 包含不安全路径"))?
+                .to_owned();
+            let relative_path = enclosed_path
+                .strip_prefix(Path::new(&root_name))
+                .map_err(|_| anyhow!("Skill ZIP 包含多个根目录"))?;
+            if relative_path.as_os_str().is_empty() {
                 continue;
             }
 
             let outpath = dest.join(relative_path);
 
             if file.is_symlink() {
+                if file.size() > MAX_SKILL_SYMLINK_TARGET_BYTES {
+                    return Err(anyhow!("Skill ZIP 符号链接目标过大，已拒绝解压"));
+                }
                 // 读取 symlink 目标路径
                 let mut target = String::new();
                 std::io::Read::read_to_string(&mut file, &mut target)?;
@@ -3135,23 +3171,36 @@ impl SkillService {
                 Some("checkZipContent"),
             )));
         }
+        if archive.len() > MAX_SKILL_ZIP_ENTRIES {
+            return Err(anyhow!("Skill ZIP 文件条目过多，已拒绝解压"));
+        }
 
         let temp_dir = tempfile::tempdir()?;
         let temp_path = temp_dir.path().to_path_buf();
         let _ = temp_dir.keep(); // Keep the directory, we'll clean up later
 
         let mut symlinks: Vec<(PathBuf, String)> = Vec::new();
+        let mut total_uncompressed_bytes = 0u64;
 
         for i in 0..archive.len() {
             let mut file = archive.by_index(i)?;
-            let file_path = match file.enclosed_name() {
-                Some(path) => path.to_owned(),
-                None => continue,
-            };
+            total_uncompressed_bytes = total_uncompressed_bytes
+                .checked_add(file.size())
+                .ok_or_else(|| anyhow!("Skill ZIP 解压大小异常"))?;
+            if total_uncompressed_bytes > MAX_SKILL_UNCOMPRESSED_BYTES {
+                return Err(anyhow!("Skill ZIP 解压后体积过大，已拒绝解压"));
+            }
+            let file_path = file
+                .enclosed_name()
+                .ok_or_else(|| anyhow!("Skill ZIP 包含不安全路径"))?
+                .to_owned();
 
             let outpath = temp_path.join(&file_path);
 
             if file.is_symlink() {
+                if file.size() > MAX_SKILL_SYMLINK_TARGET_BYTES {
+                    return Err(anyhow!("Skill ZIP 符号链接目标过大，已拒绝解压"));
+                }
                 let mut target = String::new();
                 std::io::Read::read_to_string(&mut file, &mut target)?;
                 symlinks.push((outpath, target.trim().to_string()));
