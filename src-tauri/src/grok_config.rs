@@ -205,22 +205,17 @@ pub fn extract_model_config(config_toml: &str) -> Option<GrokModelConfig> {
 
 pub fn extract_credentials(config_toml: &str) -> Option<(String, String)> {
     let config = extract_model_config(config_toml)?;
-    let api_key = config
-        .api_key
-        .or_else(|| {
-            config
-                .env_key
-                .as_deref()
-                .and_then(|key| std::env::var(key).ok())
-                .map(|value| value.trim().to_string())
-                .filter(|value| !value.is_empty())
-        })
-        .or_else(|| {
-            std::env::var("XAI_API_KEY")
-                .ok()
-                .map(|value| value.trim().to_string())
-                .filter(|value| !value.is_empty())
-        })?;
+    // 只使用配置明确声明的凭据来源：内嵌 api_key 或 env_key 指定的环境变量。
+    // 不得无条件回退到 XAI_API_KEY，否则可能把另一账号的密钥发送到配置指定的
+    // 第三方 base_url；声明的凭据缺失时应返回 None，让调用方显式报错。
+    let api_key = config.api_key.or_else(|| {
+        config
+            .env_key
+            .as_deref()
+            .and_then(|key| std::env::var(key).ok())
+            .map(|value| value.trim().to_string())
+            .filter(|value| !value.is_empty())
+    })?;
     Some((config.base_url, api_key))
 }
 
@@ -518,6 +513,27 @@ context_window = 500000
         assert_eq!(selected.profile, "grok-env");
         assert_eq!(selected.env_key.as_deref(), Some("GROK_TEST_API_KEY"));
         assert_eq!(selected.api_key.as_deref(), Some("PROXY_MANAGED"));
+    }
+
+    #[test]
+    #[serial]
+    fn does_not_fall_back_to_unrelated_xai_api_key() {
+        let original_xai = std::env::var_os("XAI_API_KEY");
+        let original_declared = std::env::var_os("GROK_TEST_UNSET_API_KEY");
+        std::env::set_var("XAI_API_KEY", "unrelated-secret");
+        std::env::remove_var("GROK_TEST_UNSET_API_KEY");
+
+        let config = valid_env_key_config().replace("GROK_TEST_API_KEY", "GROK_TEST_UNSET_API_KEY");
+        assert!(extract_credentials(&config).is_none());
+
+        match original_xai {
+            Some(value) => std::env::set_var("XAI_API_KEY", value),
+            None => std::env::remove_var("XAI_API_KEY"),
+        }
+        match original_declared {
+            Some(value) => std::env::set_var("GROK_TEST_UNSET_API_KEY", value),
+            None => std::env::remove_var("GROK_TEST_UNSET_API_KEY"),
+        }
     }
 
     #[test]
