@@ -300,13 +300,17 @@ impl Database {
         //
         // last_byte_offset：Claude 路径的字节游标（seek 增量读）；NULL 表示
         // 尚无字节游标（旧行号游标或非 Claude 路径行），此时回退全量读。
+        // last_tail_fingerprint：游标边界前尾部字节的指纹，用于识别文件被
+        // 外部重写（同尺寸/更大的替换无法靠 size 检测）；NULL 表示无指纹
+        // 可校验，按纯追加处理。
         conn.execute(
             "CREATE TABLE IF NOT EXISTS session_log_sync (
                 file_path TEXT PRIMARY KEY,
                 last_modified INTEGER NOT NULL,
                 last_line_offset INTEGER NOT NULL DEFAULT 0,
                 last_synced_at INTEGER NOT NULL,
-                last_byte_offset INTEGER
+                last_byte_offset INTEGER,
+                last_tail_fingerprint INTEGER
             )",
             [],
         )
@@ -1558,13 +1562,21 @@ impl Database {
         Ok(())
     }
 
-    /// v17 -> v18: Claude 会话日志的字节游标列。
+    /// v17 -> v18: Claude 会话日志的字节游标列与尾部指纹列。
     ///
     /// 独立成版，兼容已经执行过 v17 迁移的开发数据库。存量行保持 NULL，
-    /// 首轮扫描按旧行号转换为字节位置，之后使用字节偏移增量读取。
+    /// 首轮扫描按旧行号转换为字节位置，之后使用字节偏移增量读取，并记录
+    /// 游标边界指纹以识别外部重写。
+
     fn migrate_v17_to_v18(conn: &Connection) -> Result<(), AppError> {
         if Self::table_exists(conn, "session_log_sync")? {
             Self::add_column_if_missing(conn, "session_log_sync", "last_byte_offset", "INTEGER")?;
+            Self::add_column_if_missing(
+                conn,
+                "session_log_sync",
+                "last_tail_fingerprint",
+                "INTEGER",
+            )?;
         }
         Ok(())
     }
@@ -3204,12 +3216,19 @@ mod tests {
             "session_log_sync",
             "last_byte_offset"
         )?);
-        let byte_offset: Option<i64> = conn.query_row(
-            "SELECT last_byte_offset FROM session_log_sync WHERE file_path = '/tmp/a.jsonl'",
+        assert!(Database::has_column(
+            &conn,
+            "session_log_sync",
+            "last_tail_fingerprint"
+        )?);
+        let (byte_offset, fingerprint): (Option<i64>, Option<i64>) = conn.query_row(
+            "SELECT last_byte_offset, last_tail_fingerprint
+             FROM session_log_sync WHERE file_path = '/tmp/a.jsonl'",
             [],
-            |row| row.get(0),
+            |row| Ok((row.get(0)?, row.get(1)?)),
         )?;
         assert_eq!(byte_offset, None, "存量行的字节游标必须为 NULL");
+        assert_eq!(fingerprint, None, "存量行的尾部指纹必须为 NULL");
         Ok(())
     }
 }
