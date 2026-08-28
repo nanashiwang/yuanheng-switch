@@ -2562,7 +2562,15 @@
       "title": "批量导入 MCP Servers",
       "targetApps": "目标应用",
       "serverCount": "MCP Servers ({{count}} 个)",
-      "enabledWarning": "导入后将立即写入所有指定应用的配置文件"
+      "enabledWarning": "导入后将立即写入所有指定应用的配置文件",
+      "command": "启动命令与参数",
+      "endpoint": "服务端点",
+      "environment": "环境变量",
+      "enabledState": "启用状态",
+      "enabled": "已启用",
+      "disabled": "未启用",
+      "noServers": "未找到 MCP Server",
+      "reviewHint": "请完整检查命令、参数、环境变量和端点后再确认导入。"
     },
     "prompt": {
       "title": "导入系统提示词",
@@ -2589,7 +2597,12 @@
     "usageAutoInterval": "自动查询",
     "usageAutoIntervalValue": "每 {{minutes}} 分钟",
     "providerImportRemoved": "供应商导入已移除",
-    "providerImportRemovedDescription": "连接由元衡账号统一管理，不再在桌面端添加供应商。"
+    "providerImportRemovedDescription": "连接由元衡账号统一管理，不再在桌面端添加供应商。",
+    "risk": {
+      "envHijack": "环境变量可能改变进程加载或代理行为",
+      "privateEndpoint": "目标是本机或内网地址，请确认这是预期服务",
+      "shellCommand": "将通过 Shell 执行命令参数，请确认来源可信"
+    }
   },
   "iconPicker": {
     "search": "搜索图标",

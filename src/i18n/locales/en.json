@@ -2562,7 +2562,15 @@
       "title": "Batch Import MCP Servers",
       "targetApps": "Target Apps",
       "serverCount": "MCP Servers ({{count}})",
-      "enabledWarning": "After import, configurations will be written to all specified apps immediately"
+      "enabledWarning": "After import, configurations will be written to all specified apps immediately",
+      "command": "Command and arguments",
+      "endpoint": "Endpoint",
+      "environment": "Environment variables",
+      "enabledState": "Enabled state",
+      "enabled": "Enabled",
+      "disabled": "Disabled",
+      "noServers": "No MCP servers found",
+      "reviewHint": "Review the command, arguments, environment variables, and endpoint before importing."
     },
     "prompt": {
       "title": "Import System Prompt",
@@ -2589,7 +2597,12 @@
     "usageAutoInterval": "Auto Query",
     "usageAutoIntervalValue": "Every {{minutes}} minutes",
     "providerImportRemoved": "Provider import has been removed",
-    "providerImportRemovedDescription": "Connections are now managed through your YuanHeng account, so providers can no longer be added from the desktop app."
+    "providerImportRemovedDescription": "Connections are now managed through your YuanHeng account, so providers can no longer be added from the desktop app.",
+    "risk": {
+      "envHijack": "Environment may alter process loading or proxy behavior",
+      "privateEndpoint": "Target is a local or private endpoint; verify it is expected",
+      "shellCommand": "Arguments will be executed through a shell; verify the source"
+    }
   },
   "iconPicker": {
     "search": "Search Icons",
