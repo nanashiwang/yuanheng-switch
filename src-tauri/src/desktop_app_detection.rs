@@ -87,11 +87,43 @@ fn is_windows_apps_path(path: &Path) -> bool {
         .to_string_lossy()
         .replace('\\', "/")
         .to_ascii_lowercase();
-    normalized.contains("/program files/windowsapps/")
+    normalized
+        .split('/')
+        .any(|component| matches!(component, "windowsapps" | "modifiablewindowsapps"))
 }
 
 fn direct_desktop_launch_path_allowed(path: &Path) -> bool {
     !is_windows_apps_path(path)
+}
+
+/// Resolve an executable below a user-selected directory.
+///
+/// Electron installers commonly keep the current executable below an
+/// `app-*` version directory. A shallow bounded walk covers that layout
+/// without turning every refresh into a full-disk search.
+fn find_executable_in_directory(tool: &str, root: &Path, max_depth: usize) -> Option<PathBuf> {
+    let mut pending = vec![(root.to_path_buf(), 0usize)];
+    while let Some((directory, depth)) = pending.pop() {
+        let Ok(entries) = std::fs::read_dir(&directory) else {
+            continue;
+        };
+        let mut entries = entries.flatten().collect::<Vec<_>>();
+        entries.sort_by_key(|entry| entry.file_name());
+
+        for entry in entries {
+            let path = entry.path();
+            let Ok(file_type) = entry.file_type() else {
+                continue;
+            };
+            if file_type.is_file() && filename_matches(tool, &path) {
+                return Some(path);
+            }
+            if file_type.is_dir() && depth < max_depth {
+                pending.push((path, depth + 1));
+            }
+        }
+    }
+    None
 }
 
 fn resolve_file_candidate(tool: &str, path: &Path) -> Option<PathBuf> {
@@ -117,7 +149,7 @@ fn resolve_file_candidate(tool: &str, path: &Path) -> Option<PathBuf> {
             }
         }
     }
-    None
+    find_executable_in_directory(tool, path, 4)
 }
 
 pub(crate) fn validate_custom_desktop_app_path(
@@ -171,6 +203,29 @@ fn push_unique(paths: &mut Vec<PathBuf>, path: PathBuf) {
     }
 }
 
+#[cfg(target_os = "windows")]
+fn windows_desktop_directory_names(tool: &str) -> &'static [&'static str] {
+    match tool {
+        "chatgpt-desktop" => &[
+            "ChatGPT",
+            "ChatGPT Desktop",
+            "Codex",
+            "OpenAI",
+            "OpenAI ChatGPT",
+            "OpenAI Codex",
+        ],
+        "claude-desktop" => &[
+            "Claude",
+            "Claude Desktop",
+            "claude-desktop",
+            "Anthropic",
+            "AnthropicClaude",
+        ],
+        "workbuddy" => &["WorkBuddy", "CodeBuddy", "Tencent", "CodeBuddy Work"],
+        _ => &[],
+    }
+}
+
 #[cfg(any(target_os = "macos", target_os = "windows"))]
 fn classic_candidates(tool: &str) -> Vec<(PathBuf, &'static str)> {
     let mut candidates = Vec::new();
@@ -196,11 +251,15 @@ fn classic_candidates(tool: &str) -> Vec<(PathBuf, &'static str)> {
             "APPDATA",
             "ProgramFiles",
             "ProgramFiles(x86)",
+            "ProgramW6432",
+            "ProgramData",
+            "USERPROFILE",
         ] {
             if let Some(value) = std::env::var_os(key) {
                 push_unique(&mut roots, PathBuf::from(value));
             }
         }
+        let directory_names = windows_desktop_directory_names(tool);
         for root in roots {
             for name in executable_names(tool) {
                 let stem = name.trim_end_matches(".exe");
@@ -210,6 +269,20 @@ fn classic_candidates(tool: &str) -> Vec<(PathBuf, &'static str)> {
                     root.join("OpenAI").join(stem).join(name),
                 ] {
                     candidates.push((path, "automatic"));
+                }
+            }
+
+            // Cover per-user installers, custom install roots and Electron's
+            // app-* version directories without scanning the whole drive.
+            for base in [
+                root.clone(),
+                root.join("Programs"),
+                root.join("OpenAI"),
+                root.join("Anthropic"),
+                root.join("Tencent"),
+            ] {
+                for directory_name in directory_names {
+                    candidates.push((base.join(directory_name), "automatic"));
                 }
             }
         }
@@ -253,24 +326,43 @@ fn automatic_classic_resolution(tool: &str) -> Option<DesktopAppResolution> {
 
 #[cfg(target_os = "windows")]
 fn windows_registry_candidates(tool: &str) -> Vec<(PathBuf, &'static str)> {
-    use winreg::enums::{HKEY_CURRENT_USER, HKEY_LOCAL_MACHINE, KEY_READ};
+    use winreg::enums::{HKEY_CLASSES_ROOT, HKEY_CURRENT_USER, HKEY_LOCAL_MACHINE, KEY_READ};
     use winreg::RegKey;
 
-    fn clean_icon_path(raw: &str) -> PathBuf {
-        let value = raw.trim().trim_matches('"');
+    fn clean_executable_path(raw: &str) -> Option<PathBuf> {
+        let value = raw.trim();
+        if value.is_empty() {
+            return None;
+        }
+
+        let value = if value.starts_with('"') {
+            value
+                .get(1..)
+                .and_then(|value| value.find('"').map(|end| &value[..end]))
+                .unwrap_or(value)
+        } else {
+            let lower = value.to_ascii_lowercase();
+            lower
+                .find(".exe")
+                .map(|end| &value[..end + ".exe".len()])
+                .unwrap_or(value)
+        };
         let value = value
+            .trim()
+            .trim_matches('"')
             .rsplit_once(',')
             .filter(|(_, suffix)| suffix.trim().parse::<i32>().is_ok())
             .map(|(path, _)| path)
             .unwrap_or(value)
-            .trim_matches('"');
-        PathBuf::from(value)
+            .trim();
+        (!value.is_empty()).then(|| PathBuf::from(value))
     }
 
     fn display_name_matches(tool: &str, name: &str) -> bool {
         let name = name.to_ascii_lowercase();
         match tool {
             "chatgpt-desktop" => name.contains("chatgpt") || name == "codex",
+            "claude-desktop" => name.contains("claude"),
             "workbuddy" => name.contains("workbuddy"),
             _ => false,
         }
@@ -279,6 +371,7 @@ fn windows_registry_candidates(tool: &str) -> Vec<(PathBuf, &'static str)> {
     let roots = [
         RegKey::predef(HKEY_CURRENT_USER),
         RegKey::predef(HKEY_LOCAL_MACHINE),
+        RegKey::predef(HKEY_CLASSES_ROOT),
     ];
     let mut results = Vec::new();
     for root in roots {
@@ -289,7 +382,25 @@ fn windows_registry_candidates(tool: &str) -> Vec<(PathBuf, &'static str)> {
             ] {
                 if let Ok(key) = root.open_subkey_with_flags(key_path, KEY_READ) {
                     if let Ok(value) = key.get_value::<String, _>("") {
-                        results.push((clean_icon_path(&value), "registry"));
+                        if let Some(path) = clean_executable_path(&value) {
+                            results.push((path, "registry"));
+                        }
+                    }
+                }
+
+                // Some installers register only a shell verb rather than an
+                // App Paths entry. The merged HKCR view covers both user and
+                // machine registrations.
+                for command_key in [
+                    format!(r"Software\Classes\Applications\{name}\shell\open\command"),
+                    format!(r"Applications\{name}\shell\open\command"),
+                ] {
+                    if let Ok(key) = root.open_subkey_with_flags(command_key, KEY_READ) {
+                        if let Ok(value) = key.get_value::<String, _>("") {
+                            if let Some(path) = clean_executable_path(&value) {
+                                results.push((path, "registry"));
+                            }
+                        }
                     }
                 }
             }
@@ -313,10 +424,23 @@ fn windows_registry_candidates(tool: &str) -> Vec<(PathBuf, &'static str)> {
                     continue;
                 }
                 if let Ok(icon) = subkey.get_value::<String, _>("DisplayIcon") {
-                    results.push((clean_icon_path(&icon), "registry"));
+                    if let Some(path) = clean_executable_path(&icon) {
+                        results.push((path, "registry"));
+                    }
                 }
-                if let Ok(location) = subkey.get_value::<String, _>("InstallLocation") {
-                    results.push((PathBuf::from(location), "registry"));
+                for value_name in [
+                    "InstallLocation",
+                    "InstallSource",
+                    "AppPath",
+                    "ExecutablePath",
+                    "TargetPath",
+                ] {
+                    if let Ok(value) = subkey.get_value::<String, _>(value_name) {
+                        if let Some(path) = clean_executable_path(&value) {
+                            results.push((path, "registry"));
+                        }
+                        results.push((PathBuf::from(value), "registry"));
+                    }
                 }
             }
         }
@@ -334,7 +458,7 @@ struct StoreAppInfo {
 }
 
 #[cfg(target_os = "windows")]
-fn is_trusted_openai_store_aumid(value: &str) -> bool {
+fn is_trusted_store_aumid(tool: &str, value: &str) -> bool {
     let Some((package_family, app_id)) = value.trim().split_once('!') else {
         return false;
     };
@@ -343,12 +467,27 @@ fn is_trusted_openai_store_aumid(value: &str) -> bool {
     }
 
     let family = package_family.to_ascii_lowercase();
-    matches!(
-        family.as_str(),
-        "openai.codex_2p2nqsd0c76g0" | "openai.chatgpt-desktop_2p2nqsd0c76g0"
-    ) && app_id
+    let family_is_valid = family
         .chars()
-        .all(|character| character.is_ascii_alphanumeric() || matches!(character, '.' | '_' | '-'))
+        .all(|character| character.is_ascii_alphanumeric() || matches!(character, '.' | '_' | '-'));
+    let family_is_trusted = match tool {
+        "chatgpt-desktop" => {
+            family.starts_with("openai.")
+                && (family.contains("chatgpt") || family.contains("codex"))
+        }
+        "claude-desktop" => family.starts_with("anthropic.") && family.contains("claude"),
+        _ => false,
+    };
+    family_is_valid
+        && family_is_trusted
+        && app_id.chars().all(|character| {
+            character.is_ascii_alphanumeric() || matches!(character, '.' | '_' | '-')
+        })
+}
+
+#[cfg(target_os = "windows")]
+fn is_trusted_openai_store_aumid(value: &str) -> bool {
+    is_trusted_store_aumid("chatgpt-desktop", value)
 }
 
 #[cfg(target_os = "windows")]
@@ -365,21 +504,43 @@ fn powershell_encoded_command(script: &str) -> String {
 fn windows_store_resolution(tool: &str) -> Option<DesktopAppResolution> {
     use std::os::windows::process::CommandExt;
 
-    if tool != "chatgpt-desktop" {
-        return None;
-    }
+    let (package_pattern, publisher_pattern, start_name_pattern, start_family_pattern) = match tool
+    {
+        "chatgpt-desktop" => (
+            "(?i)(chatgpt|codex)",
+            "(?i)openai",
+            "(?i)^(chatgpt|codex)(\\s+desktop)?$",
+            "(?i)^openai\\.",
+        ),
+        "claude-desktop" => (
+            "(?i)claude",
+            "(?i)anthropic",
+            "(?i)^claude(\\s+desktop)?$",
+            "(?i)^anthropic\\.",
+        ),
+        _ => return None,
+    };
+
     const CREATE_NO_WINDOW: u32 = 0x08000000;
     let script = r#"
 $ErrorActionPreference = 'SilentlyContinue'
-$trustedFamilies = @(
-  'OpenAI.Codex_2p2nqsd0c76g0',
-  'OpenAI.ChatGPT-Desktop_2p2nqsd0c76g0'
-)
-$packages = Get-AppxPackage | Where-Object {
-  $_.PackageFamilyName -in $trustedFamilies
-} | Sort-Object `
-  @{ Expression = { if ($_.PackageFamilyName -eq 'OpenAI.Codex_2p2nqsd0c76g0') { 0 } else { 1 } }; Ascending = $true }, `
-  @{ Expression = { [version]$_.Version }; Descending = $true }
+$utf8NoBom = [System.Text.UTF8Encoding]::new($false)
+[Console]::OutputEncoding = $utf8NoBom
+$OutputEncoding = $utf8NoBom
+$packagePattern = '__PACKAGE_PATTERN__'
+$publisherPattern = '__PUBLISHER_PATTERN__'
+$startNamePattern = '__START_NAME_PATTERN__'
+$startFamilyPattern = '__START_FAMILY_PATTERN__'
+$packages = @(Get-AppxPackage -PackageTypeFilter Main -ErrorAction SilentlyContinue) |
+  Where-Object {
+    ($_.Name -match $packagePattern -or $_.PackageFamilyName -match $packagePattern) -and
+    ($_.Publisher -match $publisherPattern -or $_.PublisherDisplayName -match $publisherPattern)
+  } | Sort-Object @{ Expression = { [version]$_.Version }; Descending = $true }
+$startApps = @(Get-StartApps -ErrorAction SilentlyContinue) |
+  Where-Object {
+    $_.Name -match $startNamePattern -and
+    $_.AppID -match $startFamilyPattern
+  }
 
 foreach ($pkg in $packages) {
   $manifest = Get-AppxPackageManifest $pkg
@@ -390,7 +551,7 @@ foreach ($pkg in $packages) {
   )
   if ($appIds.Count -eq 0) { continue }
   $familyPrefix = "$($pkg.PackageFamilyName)!"
-  $registeredAumid = Get-StartApps | Where-Object {
+  $registeredAumid = $startApps | Where-Object {
     $candidateAumid = $_.AppID
     if (-not $candidateAumid.StartsWith(
       $familyPrefix,
@@ -412,9 +573,28 @@ foreach ($pkg in $packages) {
     installLocation = $pkg.InstallLocation
     version = $pkg.Version.ToString()
   } | ConvertTo-Json -Compress
-  break
+  exit 0
 }
-"#;
+
+# Get-AppxPackage may omit a package registered for the current user on some
+# Windows builds. A Start menu AUMID still launches it without touching the
+# protected WindowsApps directory; Rust validates its publisher family.
+foreach ($start in $startApps) {
+  if ($start.AppID -match '!') {
+    [PSCustomObject]@{
+      appUserModelId = $start.AppID
+      installLocation = $null
+      version = $null
+    } | ConvertTo-Json -Compress
+    break
+  }
+}
+"#
+    .replace("__PACKAGE_PATTERN__", package_pattern)
+    .replace("__PUBLISHER_PATTERN__", publisher_pattern)
+    .replace("__START_NAME_PATTERN__", start_name_pattern)
+    .replace("__START_FAMILY_PATTERN__", start_family_pattern);
+
     let output = std::process::Command::new("powershell.exe")
         .args([
             "-NoProfile",
@@ -422,7 +602,7 @@ foreach ($pkg in $packages) {
             "-ExecutionPolicy",
             "Bypass",
             "-EncodedCommand",
-            &powershell_encoded_command(script),
+            &powershell_encoded_command(&script),
         ])
         .creation_flags(CREATE_NO_WINDOW)
         .output()
@@ -432,7 +612,7 @@ foreach ($pkg in $packages) {
     }
     let info: StoreAppInfo = serde_json::from_slice(&output.stdout).ok()?;
     let aumid = info.app_user_model_id?.trim().to_string();
-    if !is_trusted_openai_store_aumid(&aumid) {
+    if !is_trusted_store_aumid(tool, &aumid) {
         return None;
     }
     let install_path = info
@@ -449,8 +629,159 @@ foreach ($pkg in $packages) {
     })
 }
 
+#[cfg(target_os = "windows")]
+#[derive(Debug, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct WindowsPathInfo {
+    target_path: Option<String>,
+}
+
+#[cfg(target_os = "windows")]
+fn path_resolution(
+    tool: &str,
+    raw_path: Option<String>,
+    source: &'static str,
+) -> Option<DesktopAppResolution> {
+    let raw_path = raw_path?.trim().to_string();
+    if raw_path.is_empty() {
+        return None;
+    }
+    let resolved = resolve_file_candidate(tool, Path::new(&raw_path))?;
+    let canonical = std::fs::canonicalize(&resolved).unwrap_or(resolved);
+    if !direct_desktop_launch_path_allowed(&canonical) {
+        return None;
+    }
+    let display = canonical.to_string_lossy().to_string();
+    Some(DesktopAppResolution {
+        install_path: Some(display),
+        version: None,
+        detection_source: source,
+        custom_path: None,
+        custom_path_valid: true,
+        launch_target: Some(DesktopLaunchTarget::Path(canonical)),
+    })
+}
+
+#[cfg(target_os = "windows")]
+fn windows_shortcut_resolution(tool: &str) -> Option<DesktopAppResolution> {
+    use std::os::windows::process::CommandExt;
+
+    let shortcut_pattern = match tool {
+        "chatgpt-desktop" => "(?i)chatgpt|codex",
+        "claude-desktop" => "(?i)claude",
+        "workbuddy" => "(?i)workbuddy|codebuddy",
+        _ => return None,
+    };
+    const CREATE_NO_WINDOW: u32 = 0x08000000;
+    let script = r#"
+$ErrorActionPreference = 'SilentlyContinue'
+$utf8NoBom = [System.Text.UTF8Encoding]::new($false)
+[Console]::OutputEncoding = $utf8NoBom
+$OutputEncoding = $utf8NoBom
+$shortcutPattern = '__SHORTCUT_PATTERN__'
+$roots = @(
+  "$env:APPDATA\Microsoft\Windows\Start Menu\Programs",
+  "$env:ProgramData\Microsoft\Windows\Start Menu\Programs",
+  "$env:USERPROFILE\Desktop"
+)
+$shell = New-Object -ComObject WScript.Shell
+foreach ($root in $roots) {
+  if (-not (Test-Path -LiteralPath $root)) { continue }
+  foreach ($item in @(Get-ChildItem -LiteralPath $root -Filter '*.lnk' -File -Recurse -ErrorAction SilentlyContinue)) {
+    if ($item.BaseName -notmatch $shortcutPattern) { continue }
+    $target = $shell.CreateShortcut($item.FullName).TargetPath
+    if ($target) {
+      [PSCustomObject]@{ targetPath = $target } | ConvertTo-Json -Compress
+      exit 0
+    }
+  }
+}
+"#
+    .replace("__SHORTCUT_PATTERN__", shortcut_pattern);
+    let output = std::process::Command::new("powershell.exe")
+        .args([
+            "-NoProfile",
+            "-NonInteractive",
+            "-ExecutionPolicy",
+            "Bypass",
+            "-EncodedCommand",
+            &powershell_encoded_command(&script),
+        ])
+        .creation_flags(CREATE_NO_WINDOW)
+        .output()
+        .ok()?;
+    if !output.status.success() {
+        return None;
+    }
+    let info: WindowsPathInfo = serde_json::from_slice(&output.stdout).ok()?;
+    path_resolution(tool, info.target_path, "shortcut")
+}
+
+#[cfg(target_os = "windows")]
+fn windows_running_resolution(tool: &str) -> Option<DesktopAppResolution> {
+    use std::os::windows::process::CommandExt;
+
+    let process_names = match tool {
+        "chatgpt-desktop" => "@('ChatGPT.exe', 'Codex.exe')",
+        "claude-desktop" => "@('Claude.exe')",
+        "workbuddy" => "@('WorkBuddy.exe')",
+        _ => return None,
+    };
+    const CREATE_NO_WINDOW: u32 = 0x08000000;
+    let script = format!(
+        r#"
+$ErrorActionPreference = 'SilentlyContinue'
+$utf8NoBom = [System.Text.UTF8Encoding]::new($false)
+[Console]::OutputEncoding = $utf8NoBom
+$OutputEncoding = $utf8NoBom
+$processNames = {process_names}
+foreach ($name in $processNames) {{
+  $process = Get-CimInstance Win32_Process -Filter "Name = '$name'" |
+    Select-Object -First 1 -ExpandProperty ExecutablePath
+  if ($process) {{
+    [PSCustomObject]@{{ targetPath = $process }} | ConvertTo-Json -Compress
+    exit 0
+  }}
+  $process = Get-Process -Name ([IO.Path]::GetFileNameWithoutExtension($name)) |
+    Select-Object -First 1 -ExpandProperty Path
+  if ($process) {{
+    [PSCustomObject]@{{ targetPath = $process }} | ConvertTo-Json -Compress
+    exit 0
+  }}
+}}
+"#
+    );
+    let output = std::process::Command::new("powershell.exe")
+        .args([
+            "-NoProfile",
+            "-NonInteractive",
+            "-ExecutionPolicy",
+            "Bypass",
+            "-EncodedCommand",
+            &powershell_encoded_command(&script),
+        ])
+        .creation_flags(CREATE_NO_WINDOW)
+        .output()
+        .ok()?;
+    if !output.status.success() {
+        return None;
+    }
+    let info: WindowsPathInfo = serde_json::from_slice(&output.stdout).ok()?;
+    path_resolution(tool, info.target_path, "running")
+}
+
 #[cfg(not(target_os = "windows"))]
 fn windows_store_resolution(_tool: &str) -> Option<DesktopAppResolution> {
+    None
+}
+
+#[cfg(not(target_os = "windows"))]
+fn windows_shortcut_resolution(_tool: &str) -> Option<DesktopAppResolution> {
+    None
+}
+
+#[cfg(not(target_os = "windows"))]
+fn windows_running_resolution(_tool: &str) -> Option<DesktopAppResolution> {
     None
 }
 
@@ -468,6 +799,16 @@ pub(crate) fn discover_desktop_app(tool: &str, custom_path: Option<&str>) -> Des
     // Resolve that identity before registry candidates, which can expose a
     // protected WindowsApps executable that exists but cannot be spawned.
     if let Some(mut found) = windows_store_resolution(tool) {
+        found.custom_path_valid = configured_custom.is_none();
+        found.custom_path = configured_custom;
+        return found;
+    }
+    if let Some(mut found) = windows_shortcut_resolution(tool) {
+        found.custom_path_valid = configured_custom.is_none();
+        found.custom_path = configured_custom;
+        return found;
+    }
+    if let Some(mut found) = windows_running_resolution(tool) {
         found.custom_path_valid = configured_custom.is_none();
         found.custom_path = configured_custom;
         return found;
@@ -504,6 +845,26 @@ mod tests {
             dir.path().to_string_lossy().as_ref(),
         )
         .expect("resolve custom app");
+        assert_eq!(resolved, std::fs::canonicalize(executable).unwrap());
+    }
+
+    #[cfg(not(target_os = "macos"))]
+    #[test]
+    fn custom_directory_resolves_executable_inside_version_directory() {
+        let dir = tempdir().expect("tempdir");
+        let executable = dir
+            .path()
+            .join("app-1.2.3")
+            .join("resources")
+            .join(executable_names("chatgpt-desktop")[0]);
+        std::fs::create_dir_all(executable.parent().unwrap()).expect("create app directory");
+        std::fs::write(&executable, b"test").expect("write executable");
+
+        let resolved = validate_custom_desktop_app_path(
+            "chatgpt-desktop",
+            dir.path().to_string_lossy().as_ref(),
+        )
+        .expect("resolve nested custom app");
         assert_eq!(resolved, std::fs::canonicalize(executable).unwrap());
     }
 
@@ -558,6 +919,14 @@ mod tests {
         ));
         assert!(!is_trusted_openai_store_aumid(
             "OpenAI.Codex_2p2nqsd0c76g0!../../evil"
+        ));
+        assert!(is_trusted_store_aumid(
+            "claude-desktop",
+            "Anthropic.Claude_1234567890abc!Claude"
+        ));
+        assert!(!is_trusted_store_aumid(
+            "claude-desktop",
+            "OpenAI.Claude_1234567890abc!Claude"
         ));
     }
 }

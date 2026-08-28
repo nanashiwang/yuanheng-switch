@@ -128,6 +128,8 @@ export interface ToolVersionInfo {
     | "automatic"
     | "registry"
     | "microsoft_store"
+    | "shortcut"
+    | "running"
     | "custom"
     | "not_found"
     | null;

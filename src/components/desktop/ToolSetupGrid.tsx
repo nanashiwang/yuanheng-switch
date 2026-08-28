@@ -691,7 +691,11 @@ export function ToolSetupGrid({
                   ? dt("注册表检测")
                   : version?.detection_source === "automatic"
                     ? dt("自动检测")
-                    : dt("未检测到");
+                    : version?.detection_source === "shortcut"
+                      ? dt("开始菜单检测")
+                      : version?.detection_source === "running"
+                        ? dt("运行中检测")
+                        : dt("未检测到");
           const modelChanged =
             Boolean(
               selectedModel &&

@@ -2928,11 +2928,6 @@ fn launch_claude_desktop(restart: bool) -> Result<(), String> {
     }
 }
 
-#[cfg(not(target_os = "macos"))]
-fn launch_claude_desktop(_restart: bool) -> Result<(), String> {
-    Err("当前平台暂不支持从元衡打开 Claude Desktop".to_string())
-}
-
 #[cfg(target_os = "macos")]
 fn launch_supported_desktop_app(
     _tool: &str,
@@ -3030,6 +3025,7 @@ fn launch_supported_desktop_app(
     if restart {
         let process_names: &[&str] = match tool {
             "chatgpt-desktop" => &["ChatGPT.exe", "Codex.exe"],
+            "claude-desktop" => &["Claude.exe"],
             "workbuddy" => &["WorkBuddy.exe"],
             _ => &[],
         };
@@ -3097,7 +3093,14 @@ pub async fn pick_desktop_app_path(app: AppHandle, tool: String) -> Result<Optio
     ensure_desktop_path_tool(&tool)?;
     let dialog_app = app.clone();
     let selected = tauri::async_runtime::spawn_blocking(move || {
-        dialog_app.dialog().file().blocking_pick_file()
+        #[cfg(target_os = "windows")]
+        {
+            dialog_app.dialog().file().blocking_pick_folder()
+        }
+        #[cfg(not(target_os = "windows"))]
+        {
+            dialog_app.dialog().file().blocking_pick_file()
+        }
     })
     .await
     .map_err(|e| format!("弹出应用选择器失败: {e}"))?;
@@ -3200,12 +3203,18 @@ pub async fn launch_tool(
     cwd: Option<String>,
 ) -> Result<bool, String> {
     if tool == "claude-desktop" {
-        tokio::task::spawn_blocking(move || launch_claude_desktop(restart.unwrap_or(false)))
-            .await
-            .map_err(|e| format!("Claude Desktop 启动任务执行失败: {e}"))??;
-        return Ok(true);
+        #[cfg(target_os = "macos")]
+        {
+            tokio::task::spawn_blocking(move || launch_claude_desktop(restart.unwrap_or(false)))
+                .await
+                .map_err(|e| format!("Claude Desktop 启动任务执行失败: {e}"))??;
+            return Ok(true);
+        }
     }
-    if matches!(tool.as_str(), "chatgpt-desktop" | "workbuddy") {
+    if matches!(
+        tool.as_str(),
+        "claude-desktop" | "chatgpt-desktop" | "workbuddy"
+    ) {
         let launch_tool = tool.clone();
         let custom_path = crate::app_store::get_desktop_app_path_from_store(&app, &tool);
         let resolution =

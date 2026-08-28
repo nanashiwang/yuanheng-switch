@@ -210,6 +210,8 @@ export const DESKTOP_EN: Record<string, string> = {
   自定义路径: "Custom Path",
   注册表检测: "Registry Detection",
   自动检测: "Automatic Detection",
+  开始菜单检测: "Start Menu Detection",
+  运行中检测: "Running Process Detection",
   尚未选择应用路径: "No application path selected",
   "原自定义路径已失效，当前继续使用自动检测结果。":
     "The custom path is no longer valid. The automatically detected app is still in use.",
