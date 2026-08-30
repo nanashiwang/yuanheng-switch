@@ -5,6 +5,7 @@ import type { CodexApiFormat } from "@/types";
 import { deepClone } from "@/utils/deepClone";
 import { normalizeTomlText } from "@/utils/textNormalization";
 import { parse as parseToml } from "smol-toml";
+import { getKnownModelContextWindow } from "@/utils/modelContextWindow";
 
 const isPlainObject = (value: unknown): value is Record<string, any> => {
   return Object.prototype.toString.call(value) === "[object Object]";
@@ -1650,4 +1651,37 @@ export const syncCodexGptContextWindow = (
   }
 
   return configText;
+};
+
+/**
+ * Synchronize the Codex top-level window for any known model family. This is
+ * intentionally separate from the legacy GPT helper so older user configs and
+ * their compatibility tests keep the historical GPT-only behavior.
+ */
+export const syncCodexModelContextWindow = (
+  configText: string,
+  modelName: string | undefined | null = extractCodexModelName(configText),
+): string => {
+  const current = extractCodexTopLevelInt(configText, "model_context_window");
+  const previousModel = extractCodexModelName(configText);
+  const previousKnownContext = getKnownModelContextWindow(previousModel);
+  const nextKnownContext = getKnownModelContextWindow(modelName);
+
+  if (nextKnownContext !== undefined) {
+    if (
+      current === undefined ||
+      current === LEGACY_CODEX_GPT_CONTEXT_WINDOW ||
+      current === CODEX_GPT_CONTEXT_WINDOW ||
+      current === previousKnownContext
+    ) {
+      return setCodexTopLevelInt(
+        configText,
+        "model_context_window",
+        nextKnownContext,
+      );
+    }
+    return configText;
+  }
+
+  return syncCodexGptContextWindow(configText, modelName);
 };

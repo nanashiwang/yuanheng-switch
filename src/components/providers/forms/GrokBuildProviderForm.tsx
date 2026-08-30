@@ -49,6 +49,7 @@ import {
   updateGrokBuildConfig,
   validateGrokBuildConfig,
 } from "@/utils/grokBuildConfig";
+import { resolveModelContextWindow } from "@/utils/modelContextWindow";
 import { resolveProviderIcon } from "@/utils/providerIcon";
 import { GROKBUILD_OFFICIAL_PROVIDER_ID } from "@/utils/providerCapabilities";
 
@@ -270,6 +271,10 @@ export function GrokBuildProviderForm({
         ? preset.auth.OPENAI_API_KEY
         : "";
     const presetApiBackend = grokApiBackendFromApiFormat(presetApiFormat);
+    const presetContextWindow =
+      resolveModelContextWindow(presetModel, {
+        fallback: 500000,
+      }) ?? 500000;
 
     form.setValue("name", presetName);
     form.setValue("websiteUrl", preset.websiteUrl ?? "");
@@ -283,6 +288,7 @@ export function GrokBuildProviderForm({
     setUpstreamModel(presetModel);
     setApiFormat(presetApiFormat);
     setApiBackend(presetApiBackend);
+    setContextWindow(String(presetContextWindow));
     setPresetEndpoints(preset.endpointCandidates ?? []);
     setRawConfig(
       buildGrokBuildConfig({
@@ -292,7 +298,7 @@ export function GrokBuildProviderForm({
         name: presetName,
         apiKey: presetApiKey,
         apiBackend: presetApiBackend,
-        contextWindow: Number.parseInt(contextWindow, 10),
+        contextWindow: presetContextWindow,
       }),
     );
   };

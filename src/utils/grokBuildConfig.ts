@@ -1,4 +1,5 @@
 import { parse as parseToml, stringify as stringifyToml } from "smol-toml";
+import { resolveModelContextWindow } from "@/utils/modelContextWindow";
 
 export const GROK_BUILD_DEFAULT_MODEL = "grok-4.5";
 export const GROK_BUILD_DEFAULT_API_BACKEND = "responses";
@@ -48,6 +49,9 @@ export function parseGrokBuildConfig(
     const modelTables = asRecord(root?.model);
     const selectedModel = asRecord(modelTables?.[defaultModel]);
     const rawContextWindow = selectedModel?.context_window;
+    const inferredContextWindow = resolveModelContextWindow(defaultModel, {
+      fallback: GROK_BUILD_DEFAULT_CONTEXT_WINDOW,
+    });
 
     return {
       model: defaultModel,
@@ -65,7 +69,7 @@ export function parseGrokBuildConfig(
         Number.isInteger(rawContextWindow) &&
         rawContextWindow > 0
           ? rawContextWindow
-          : GROK_BUILD_DEFAULT_CONTEXT_WINDOW,
+          : (inferredContextWindow ?? GROK_BUILD_DEFAULT_CONTEXT_WINDOW),
     };
   } catch {
     return fallback;

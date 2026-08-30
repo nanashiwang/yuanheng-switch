@@ -57,6 +57,11 @@ describe("Grok Build config", () => {
     expect(extractGrokBuildBaseUrl(config)).toBe("https://api.example.com");
   });
 
+  it("infers a known model window when the TOML omits it", () => {
+    const config = `[models]\ndefault = "deepseek-v4-pro"\n\n[model."deepseek-v4-pro"]\nmodel = "deepseek-v4-pro"\nbase_url = "https://api.example.com/v1"\nname = "DeepSeek"\napi_key = "key"\napi_backend = "responses"\n`;
+    expect(parseGrokBuildConfig(config).contextWindow).toBe(1_000_000);
+  });
+
   it("accepts env_key credentials without adding an empty api_key", () => {
     const config = `[models]
 default = "env-profile"

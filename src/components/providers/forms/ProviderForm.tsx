@@ -65,7 +65,13 @@ import {
   setCodexWireApi,
   extractCodexModelName,
   setCodexModelName as setCodexModelNameInConfig,
+  syncCodexModelContextWindow,
 } from "@/utils/providerConfigUtils";
+import {
+  applyAgentModelContextDefaults,
+  applyClaudeContextDefaults,
+  applyCodexCatalogContextDefaults,
+} from "@/utils/modelContextWindow";
 import { isNonNegativeDecimalString } from "@/types/usage";
 import { getCodexCustomTemplate } from "@/config/codexTemplates";
 import CodexConfigEditor from "./CodexConfigEditor";
@@ -1380,7 +1386,9 @@ function ProviderFormFull({
         // 留空归一化为 [] 即不写。后端只看 modelCatalog.models 是否非空。
         const normalizedCatalogModels =
           category !== "official"
-            ? normalizeCodexCatalogModelsForSave(codexCatalogModels)
+            ? applyCodexCatalogContextDefaults(
+                normalizeCodexCatalogModelsForSave(codexCatalogModels),
+              )
             : [];
         // The default-model field writes the top-level `model` into the TOML
         // as the user types; only when it was left empty fall back to the
@@ -1392,6 +1400,13 @@ function ProviderFormFull({
           normalizedCodexConfig = setCodexModelNameInConfig(
             normalizedCodexConfig,
             normalizedCatalogModels[0].model,
+          );
+        }
+        const selectedModel = extractCodexModelName(normalizedCodexConfig);
+        if (category !== "official" && selectedModel) {
+          normalizedCodexConfig = syncCodexModelContextWindow(
+            normalizedCodexConfig,
+            selectedModel,
           );
         }
         const configObj = {
@@ -1447,6 +1462,27 @@ function ProviderFormFull({
       settingsConfig = JSON.stringify(omoConfig);
     } else {
       settingsConfig = values.settingsConfig.trim();
+      if (
+        appId === "claude" ||
+        appId === "opencode" ||
+        appId === "openclaw" ||
+        appId === "hermes"
+      ) {
+        try {
+          const config = JSON.parse(settingsConfig || "{}") as Record<
+            string,
+            any
+          >;
+          const normalized =
+            appId === "claude"
+              ? applyClaudeContextDefaults(config)
+              : applyAgentModelContextDefaults(appId, config);
+          settingsConfig = JSON.stringify(normalized, null, 2);
+        } catch {
+          // Preserve the editor value; existing form validation handles JSON
+          // syntax errors and prevents malformed settings from being applied.
+        }
+      }
     }
 
     const payload: ProviderFormValues = {
@@ -1921,6 +1957,9 @@ function ProviderFormFull({
       preset.settingsConfig,
       preset.templateValues,
     );
+    if (appId === "claude") {
+      applyClaudeContextDefaults(config as Record<string, any>);
+    }
 
     if (preset.apiFormat) {
       setLocalApiFormat(preset.apiFormat);
