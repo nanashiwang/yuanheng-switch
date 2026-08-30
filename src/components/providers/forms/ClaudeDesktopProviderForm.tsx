@@ -71,6 +71,7 @@ import {
 import { resolveManagedAccountId } from "@/lib/authBinding";
 import { useCopilotAuth, useCodexOauth, useXaiOauth } from "./hooks";
 import { isOAuthProviderType } from "@/config/constants";
+import { modelSupportsOneMillionContext } from "@/utils/modelContextWindow";
 
 export type ClaudeDesktopProviderFormValues = ProviderFormData & {
   presetId?: string;
@@ -195,7 +196,8 @@ function initialRouteRows(
       labelOverride:
         value.labelOverride ??
         (!isClaudeSafeRoute(route) ? value.model || route : ""),
-      supports1m: value.supports1m ?? false,
+      supports1m:
+        value.supports1m ?? modelSupportsOneMillionContext(value.model),
     });
   });
 }
@@ -485,6 +487,12 @@ export function ClaudeDesktopProviderForm({
   };
 
   const updateRoute = (index: number, patch: Partial<RouteRowValues>) => {
+    if (typeof patch.model === "string" && patch.supports1m === undefined) {
+      patch = {
+        ...patch,
+        supports1m: modelSupportsOneMillionContext(patch.model),
+      };
+    }
     setRoutes((current) =>
       current.map((row, i) => (i === index ? { ...row, ...patch } : row)),
     );
