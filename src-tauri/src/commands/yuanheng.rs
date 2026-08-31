@@ -212,6 +212,23 @@ fn response_message(value: &Value) -> Option<String> {
         .map(str::to_string)
 }
 
+fn is_yuanheng_session_auth_error(error: &str) -> bool {
+    let normalized = error.trim().to_ascii_lowercase();
+    normalized.contains("未登录")
+        || normalized.contains("登录状态已失效")
+        || normalized.contains("登录会话已过期")
+        || normalized.contains("access token 无效")
+        || normalized.contains("session expired")
+        || normalized.contains("not logged in")
+}
+
+fn invalidate_yuanheng_session(state: &AppState) -> Result<(), String> {
+    for key in [TOKEN_KEY, SESSION_COOKIE_KEY, PENDING_SESSION_COOKIE_KEY] {
+        state.db.set_setting(key, "").map_err(|e| e.to_string())?;
+    }
+    Ok(())
+}
+
 fn quota_to_usd(value: Option<&Value>) -> f64 {
     value.and_then(Value::as_f64).unwrap_or_default() / 500_000.0
 }
@@ -3372,7 +3389,15 @@ pub async fn refresh_yuanheng_connection(
         .filter(|value| !value.is_empty())
         .ok_or_else(|| "元衡用户 ID 缺失".to_string())?;
     let client = yuanheng_client()?;
-    finish_authenticated_session(&state, &client, &session_cookie, &user_id).await
+    match finish_authenticated_session(&state, &client, &session_cookie, &user_id).await {
+        Ok(status) => Ok(status),
+        Err(error) if is_yuanheng_session_auth_error(&error) => {
+            log::warn!("元衡登录会话已失效，清理本机会话缓存: {error}");
+            invalidate_yuanheng_session(&state)?;
+            Err("元衡登录会话已过期，请重新登录后再同步".to_string())
+        }
+        Err(error) => Err(error),
+    }
 }
 
 #[tauri::command]
@@ -3640,6 +3665,57 @@ mod tests {
         assert!(session_cookie_for_webview("").is_err());
         assert!(session_cookie_for_webview("token=abc123").is_err());
         assert!(session_cookie_for_webview("session=").is_err());
+    }
+
+    #[test]
+    fn recognizes_expired_yuanheng_session_errors_without_matching_network_failures() {
+        assert!(is_yuanheng_session_auth_error(
+            "无权进行此操作，未登录且未提供 access token"
+        ));
+        assert!(is_yuanheng_session_auth_error("登录状态已失效"));
+        assert!(!is_yuanheng_session_auth_error(
+            "连接元衡失败: request timed out"
+        ));
+        assert!(!is_yuanheng_session_auth_error("读取账号模型失败"));
+    }
+
+    #[test]
+    #[serial]
+    fn invalidating_yuanheng_session_preserves_device_api_token() {
+        let (_home, state) = isolated_state();
+        state.db.set_setting(TOKEN_KEY, "legacy-token").unwrap();
+        state
+            .db
+            .set_setting(SESSION_COOKIE_KEY, "session=expired")
+            .unwrap();
+        state
+            .db
+            .set_setting(PENDING_SESSION_COOKIE_KEY, "session=pending")
+            .unwrap();
+        state.db.set_setting(API_TOKEN_KEY, "sk-device").unwrap();
+
+        invalidate_yuanheng_session(&state).unwrap();
+
+        assert_eq!(
+            state.db.get_setting(TOKEN_KEY).unwrap().as_deref(),
+            Some("")
+        );
+        assert_eq!(
+            state.db.get_setting(SESSION_COOKIE_KEY).unwrap().as_deref(),
+            Some("")
+        );
+        assert_eq!(
+            state
+                .db
+                .get_setting(PENDING_SESSION_COOKIE_KEY)
+                .unwrap()
+                .as_deref(),
+            Some("")
+        );
+        assert_eq!(
+            state.db.get_setting(API_TOKEN_KEY).unwrap().as_deref(),
+            Some("sk-device")
+        );
     }
 
     #[test]

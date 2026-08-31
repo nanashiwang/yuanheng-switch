@@ -92,6 +92,10 @@ export function useRefreshYuanheng() {
       queryClient.invalidateQueries({ queryKey: yuanhengKeys.tools });
       queryClient.invalidateQueries({ queryKey: yuanhengKeys.diagnostics });
     },
+    onError: () => {
+      // 后端会在会话过期时清理本机会话，重新读取连接状态以退出过期缓存。
+      void queryClient.invalidateQueries({ queryKey: yuanhengKeys.connection });
+    },
   });
 }
 
