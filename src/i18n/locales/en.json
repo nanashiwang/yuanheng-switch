@@ -1589,7 +1589,6 @@
       "imported": "Imported {{count}} records from session logs",
       "upToDate": "Session logs are up to date",
       "failed": "Session sync failed"
-
     },
     "rebuildCodex": {
       "title": "Codex Usage Maintenance",

@@ -1589,7 +1589,6 @@
       "imported": "从会话日志导入了 {{count}} 条记录",
       "upToDate": "会话日志已是最新",
       "failed": "会话同步失败"
-
     },
     "rebuildCodex": {
       "title": "Codex 用量维护",

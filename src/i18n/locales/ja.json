@@ -1589,7 +1589,6 @@
       "imported": "セッションログから {{count}} 件のレコードをインポートしました",
       "upToDate": "セッションログは最新です",
       "failed": "セッション同期に失敗しました"
-
     },
     "rebuildCodex": {
       "title": "Codex 使用量メンテナンス",

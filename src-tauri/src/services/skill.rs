@@ -1370,7 +1370,9 @@ impl SkillService {
         if let Some(hash) = cached_hash {
             return Some((hash.to_string(), false));
         }
-        Self::compute_dir_hash(&local_dir).ok().map(|hash| (hash, true))
+        Self::compute_dir_hash(&local_dir)
+            .ok()
+            .map(|hash| (hash, true))
     }
 
     /// 检查所有已安装 Skill 的更新

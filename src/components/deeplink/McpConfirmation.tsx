@@ -35,7 +35,11 @@ export function McpConfirmation({
     }
   }, [request.config]);
 
-  const targetApps = request.apps?.split(",").map((app) => app.trim()).filter(Boolean) || [];
+  const targetApps =
+    request.apps
+      ?.split(",")
+      .map((app) => app.trim())
+      .filter(Boolean) || [];
   const serverCount = Object.keys(mcpServers).length;
 
   const getRisks = (spec: Record<string, unknown>): RiskKind[] => {
@@ -46,7 +50,9 @@ export function McpConfirmation({
         ? Object.keys(spec.env as Record<string, unknown>).map(classifyEnvKey)
         : []),
     ];
-    return [...new Set(risks.filter((risk): risk is RiskKind => risk !== null))];
+    return [
+      ...new Set(risks.filter((risk): risk is RiskKind => risk !== null)),
+    ];
   };
 
   return (
@@ -78,10 +84,14 @@ export function McpConfirmation({
             const spec = rawSpec && typeof rawSpec === "object" ? rawSpec : {};
             const risks = getRisks(spec);
             const args = Array.isArray(spec.args)
-              ? spec.args.filter((arg): arg is string => typeof arg === "string")
+              ? spec.args.filter(
+                  (arg): arg is string => typeof arg === "string",
+                )
               : [];
             const env =
-              spec.env && typeof spec.env === "object" && !Array.isArray(spec.env)
+              spec.env &&
+              typeof spec.env === "object" &&
+              !Array.isArray(spec.env)
                 ? (spec.env as Record<string, unknown>)
                 : {};
 
@@ -98,7 +108,9 @@ export function McpConfirmation({
 
                 {typeof spec.command === "string" && (
                   <div className="mt-2 text-xs">
-                    <div className="font-medium text-muted-foreground">{t("deeplink.mcp.command")}</div>
+                    <div className="font-medium text-muted-foreground">
+                      {t("deeplink.mcp.command")}
+                    </div>
                     <code className="mt-1 block break-all whitespace-pre-wrap rounded bg-muted/50 p-1">
                       {[spec.command, ...args].join(" ")}
                     </code>
@@ -107,14 +119,20 @@ export function McpConfirmation({
 
                 {typeof spec.url === "string" && (
                   <div className="mt-2 text-xs">
-                    <div className="font-medium text-muted-foreground">{t("deeplink.mcp.endpoint")}</div>
-                    <code className="mt-1 block break-all rounded bg-muted/50 p-1">{spec.url}</code>
+                    <div className="font-medium text-muted-foreground">
+                      {t("deeplink.mcp.endpoint")}
+                    </div>
+                    <code className="mt-1 block break-all rounded bg-muted/50 p-1">
+                      {spec.url}
+                    </code>
                   </div>
                 )}
 
                 {Object.keys(env).length > 0 && (
                   <div className="mt-2 text-xs">
-                    <div className="font-medium text-muted-foreground">{t("deeplink.mcp.environment")}</div>
+                    <div className="font-medium text-muted-foreground">
+                      {t("deeplink.mcp.environment")}
+                    </div>
                     <div className="mt-1 space-y-1 rounded bg-muted/50 p-1 font-mono">
                       {Object.entries(env).map(([key, value]) => (
                         <div className="break-all" key={key}>
@@ -127,19 +145,26 @@ export function McpConfirmation({
 
                 {typeof spec.enabled === "boolean" && (
                   <div className="mt-2 text-xs text-muted-foreground">
-                    {t("deeplink.mcp.enabledState")}: {spec.enabled ? t("deeplink.mcp.enabled") : t("deeplink.mcp.disabled")}
+                    {t("deeplink.mcp.enabledState")}:{" "}
+                    {spec.enabled
+                      ? t("deeplink.mcp.enabled")
+                      : t("deeplink.mcp.disabled")}
                   </div>
                 )}
               </div>
             );
           })}
           {serverCount === 0 && (
-            <div className="p-2 text-sm text-muted-foreground">{t("deeplink.mcp.noServers")}</div>
+            <div className="p-2 text-sm text-muted-foreground">
+              {t("deeplink.mcp.noServers")}
+            </div>
           )}
         </div>
       </div>
 
-      <div className="text-sm text-muted-foreground">{t("deeplink.mcp.reviewHint")}</div>
+      <div className="text-sm text-muted-foreground">
+        {t("deeplink.mcp.reviewHint")}
+      </div>
 
       {request.enabled && (
         <div className="flex items-center gap-2 text-sm text-yellow-600 dark:text-yellow-500">

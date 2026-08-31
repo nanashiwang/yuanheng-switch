@@ -1591,7 +1591,6 @@
       "imported": "從工作階段日誌匯入了 {{count}} 筆紀錄",
       "upToDate": "工作階段日誌已是最新",
       "failed": "工作階段同步失敗"
-
     },
     "rebuildCodex": {
       "title": "Codex 用量維護",
