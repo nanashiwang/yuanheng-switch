@@ -13,22 +13,16 @@ import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import type { YuanhengAuthResult, YuanhengToolId } from "@/lib/api/yuanheng";
-import { APP_ICON_MAP } from "@/config/appConfig";
+import type { YuanhengAuthResult } from "@/lib/api/yuanheng";
 import {
-  useDisconnectYuanheng,
   useLoginYuanheng,
   useRefreshYuanheng,
   useRegisterYuanheng,
+  useSignOutYuanheng,
   useVerifyYuanhengTwoFactor,
   useYuanhengConnection,
 } from "@/lib/query/yuanheng";
 
-const toolLabel = (app: YuanhengToolId) => {
-  if (app === "chatgpt-desktop") return "ChatGPT Desktop";
-  if (app === "workbuddy") return "WorkBuddy";
-  return APP_ICON_MAP[app].label;
-};
 import { extractErrorMessage } from "@/utils/errorUtils";
 import { cn } from "@/lib/utils";
 import { dt } from "./desktopI18n";
@@ -50,7 +44,7 @@ export function YuanhengConnectionPanel({
   const register = useRegisterYuanheng();
   const verifyTwoFactor = useVerifyYuanhengTwoFactor();
   const refresh = useRefreshYuanheng();
-  const disconnect = useDisconnectYuanheng();
+  const signOut = useSignOutYuanheng();
   const [authMode, setAuthMode] = useState<"login" | "register">("login");
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
@@ -144,24 +138,12 @@ export function YuanhengConnectionPanel({
     }
   };
 
-  const handleDisconnect = async () => {
+  const handleSignOut = async () => {
     try {
-      const result = await disconnect.mutateAsync();
-      if (result.retainedTools.length > 0) {
-        const tools = result.retainedTools.map(toolLabel).join("、");
-        toast.warning(
-          dt("账号已断开；{{v0}} 缺少原配置，元衡配置仍保留", { v0: tools }),
-        );
-      } else if (
-        result.restoredTools.length > 0 ||
-        result.removedTools.length > 0
-      ) {
-        toast.success(dt("已断开元衡账号，并恢复工具原配置"));
-      } else {
-        toast.success(dt("已断开元衡账号"));
-      }
+      await signOut.mutateAsync();
+      toast.success(dt("已退出元衡账号，本机工具配置保持不变"));
     } catch (error) {
-      toast.error(extractErrorMessage(error) || dt("断开失败"));
+      toast.error(extractErrorMessage(error) || dt("退出登录失败"));
     }
   };
 
@@ -446,8 +428,9 @@ export function YuanhengConnectionPanel({
           <Button
             variant="ghost"
             size="sm"
-            onClick={() => void handleDisconnect()}
-            disabled={disconnect.isPending}
+            type="button"
+            onClick={() => void handleSignOut()}
+            disabled={signOut.isPending}
           >
             <LogOut className="h-3.5 w-3.5" />
             {dt("退出登录")}

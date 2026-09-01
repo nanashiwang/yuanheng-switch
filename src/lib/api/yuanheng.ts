@@ -196,6 +196,10 @@ export const yuanhengApi = {
     return invoke("rotate_yuanheng_device_token");
   },
 
+  signOut(): Promise<boolean> {
+    return invoke("sign_out_yuanheng");
+  },
+
   disconnect(): Promise<YuanhengDisconnectResult> {
     return invoke("disconnect_yuanheng");
   },

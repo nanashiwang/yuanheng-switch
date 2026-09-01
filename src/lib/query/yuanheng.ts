@@ -99,12 +99,26 @@ export function useRefreshYuanheng() {
   });
 }
 
-export function useDisconnectYuanheng() {
+export function useSignOutYuanheng() {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: () => yuanhengApi.disconnect(),
+    mutationFn: () => yuanhengApi.signOut(),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: yuanhengKeys.connection });
+      queryClient.setQueryData(yuanhengKeys.connection, {
+        connected: false,
+        baseUrl: "https://cn.meta-api.vip",
+        userId: null,
+        account: null,
+        models: [],
+        terminalModels: [],
+        imageGenerationModels: [],
+        groups: [],
+        modelGroups: {},
+        reasoningLevels: {},
+        reasoningDefaults: {},
+        announcement: null,
+        lastSyncedAt: null,
+      });
       queryClient.invalidateQueries({ queryKey: yuanhengKeys.tools });
       queryClient.invalidateQueries({ queryKey: yuanhengKeys.diagnostics });
     },

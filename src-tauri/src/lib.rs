@@ -1610,6 +1610,7 @@ pub fn run() {
             commands::verify_yuanheng_two_factor,
             commands::refresh_yuanheng_connection,
             commands::rotate_yuanheng_device_token,
+            commands::sign_out_yuanheng,
             commands::disconnect_yuanheng,
             commands::rollback_yuanheng_tools,
             commands::open_yuanheng_topup,

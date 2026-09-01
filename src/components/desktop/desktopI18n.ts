@@ -295,6 +295,9 @@ export const DESKTOP_EN: Record<string, string> = {
   两步验证失败: "Two-factor authentication failed",
   元衡数据已同步: "YuanHeng data synced",
   同步失败: "Sync failed",
+  "已退出元衡账号，本机工具配置保持不变":
+    "Signed out of YuanHeng. Local tool settings were preserved.",
+  退出登录失败: "Sign out failed",
   "账号已断开；{{tools}} 缺少原配置，元衡配置仍保留":
     "Account disconnected. Original settings are missing for {{tools}}, so YuanHeng settings were preserved.",
   "已断开元衡账号，并恢复工具原配置":

@@ -223,7 +223,13 @@ fn is_yuanheng_session_auth_error(error: &str) -> bool {
 }
 
 fn invalidate_yuanheng_session(state: &AppState) -> Result<(), String> {
-    for key in [TOKEN_KEY, SESSION_COOKIE_KEY, PENDING_SESSION_COOKIE_KEY] {
+    for key in [
+        TOKEN_KEY,
+        USER_ID_KEY,
+        SESSION_COOKIE_KEY,
+        PENDING_SESSION_COOKIE_KEY,
+        CACHE_KEY,
+    ] {
         state.db.set_setting(key, "").map_err(|e| e.to_string())?;
     }
     Ok(())
@@ -3614,6 +3620,12 @@ pub async fn open_yuanheng_topup(
 }
 
 #[tauri::command]
+pub fn sign_out_yuanheng(state: State<'_, AppState>) -> Result<bool, String> {
+    invalidate_yuanheng_session(&state)?;
+    Ok(true)
+}
+
+#[tauri::command]
 pub fn disconnect_yuanheng(
     app: AppHandle,
     state: State<'_, AppState>,
@@ -3684,6 +3696,7 @@ mod tests {
     fn invalidating_yuanheng_session_preserves_device_api_token() {
         let (_home, state) = isolated_state();
         state.db.set_setting(TOKEN_KEY, "legacy-token").unwrap();
+        state.db.set_setting(USER_ID_KEY, "42").unwrap();
         state
             .db
             .set_setting(SESSION_COOKIE_KEY, "session=expired")
@@ -3693,6 +3706,9 @@ mod tests {
             .set_setting(PENDING_SESSION_COOKIE_KEY, "session=pending")
             .unwrap();
         state.db.set_setting(API_TOKEN_KEY, "sk-device").unwrap();
+        state.db.set_setting(API_TOKEN_ID_KEY, "123").unwrap();
+        state.db.set_setting(API_TOKEN_GROUP_KEY, "vip").unwrap();
+        state.db.set_setting(CACHE_KEY, "cached-status").unwrap();
 
         invalidate_yuanheng_session(&state).unwrap();
 
@@ -3716,6 +3732,21 @@ mod tests {
             state.db.get_setting(API_TOKEN_KEY).unwrap().as_deref(),
             Some("sk-device")
         );
+        assert_eq!(
+            state.db.get_setting(API_TOKEN_ID_KEY).unwrap().as_deref(),
+            Some("123")
+        );
+        assert_eq!(
+            state
+                .db
+                .get_setting(API_TOKEN_GROUP_KEY)
+                .unwrap()
+                .as_deref(),
+            Some("vip")
+        );
+        for key in [USER_ID_KEY, CACHE_KEY] {
+            assert_eq!(state.db.get_setting(key).unwrap().as_deref(), Some(""));
+        }
     }
 
     #[test]

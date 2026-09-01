@@ -1,7 +1,9 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { describe, expect, it } from "vitest";
+import { http, HttpResponse } from "msw";
 import { YuanhengConnectionPanel } from "@/components/desktop/YuanhengConnectionPanel";
+import { server } from "../msw/server";
 
 const renderPanel = () => {
   const queryClient = new QueryClient({
@@ -83,5 +85,35 @@ describe("YuanhengConnectionPanel", () => {
         screen.getByText("元衡账号已登录 · 本机工具凭据已就绪"),
       ).toBeInTheDocument(),
     );
+  });
+
+  it("退出登录只清理账号会话，不调用解除工具接管", async () => {
+    let signOutCalls = 0;
+    let disconnectCalls = 0;
+    server.use(
+      http.post("http://tauri.local/sign_out_yuanheng", () => {
+        signOutCalls += 1;
+        return HttpResponse.json(true);
+      }),
+      http.post("http://tauri.local/disconnect_yuanheng", () => {
+        disconnectCalls += 1;
+        return HttpResponse.json({ disconnected: true });
+      }),
+    );
+    renderPanel();
+
+    fireEvent.change(await screen.findByLabelText("用户名"), {
+      target: { value: "signed-in-user" },
+    });
+    fireEvent.change(screen.getByLabelText("密码"), {
+      target: { value: "password123" },
+    });
+    const loginButtons = screen.getAllByRole("button", { name: "登录" });
+    fireEvent.click(loginButtons[loginButtons.length - 1]);
+    fireEvent.click(await screen.findByRole("button", { name: "退出登录" }));
+
+    await waitFor(() => expect(signOutCalls).toBe(1));
+    expect(disconnectCalls).toBe(0);
+    expect(await screen.findByLabelText("用户名")).toBeInTheDocument();
   });
 });
