@@ -486,11 +486,6 @@ fn is_trusted_store_aumid(tool: &str, value: &str) -> bool {
 }
 
 #[cfg(target_os = "windows")]
-fn is_trusted_openai_store_aumid(value: &str) -> bool {
-    is_trusted_store_aumid("chatgpt-desktop", value)
-}
-
-#[cfg(target_os = "windows")]
 fn powershell_encoded_command(script: &str) -> String {
     use base64::{engine::general_purpose::STANDARD, Engine as _};
     let mut bytes = Vec::with_capacity(script.len() * 2);
@@ -904,20 +899,25 @@ mod tests {
     #[cfg(target_os = "windows")]
     #[test]
     fn trusted_store_aumid_rejects_same_name_shortcuts_and_paths() {
-        assert!(is_trusted_openai_store_aumid(
+        assert!(is_trusted_store_aumid(
+            "chatgpt-desktop",
             "OpenAI.Codex_2p2nqsd0c76g0!App"
         ));
-        assert!(is_trusted_openai_store_aumid(
+        assert!(is_trusted_store_aumid(
+            "chatgpt-desktop",
             "OpenAI.ChatGPT-Desktop_2p2nqsd0c76g0!App"
         ));
-        assert!(!is_trusted_openai_store_aumid(
+        assert!(!is_trusted_store_aumid(
+            "chatgpt-desktop",
             r"C:\Users\Alice\Documents\Codex With Monitor.cmd"
         ));
-        assert!(!is_trusted_openai_store_aumid("Codex"));
-        assert!(!is_trusted_openai_store_aumid(
+        assert!(!is_trusted_store_aumid("chatgpt-desktop", "Codex"));
+        assert!(!is_trusted_store_aumid(
+            "chatgpt-desktop",
             "SomeoneElse.Codex_2p2nqsd0c76g0!App"
         ));
-        assert!(!is_trusted_openai_store_aumid(
+        assert!(!is_trusted_store_aumid(
+            "chatgpt-desktop",
             "OpenAI.Codex_2p2nqsd0c76g0!../../evil"
         ));
         assert!(is_trusted_store_aumid(
