@@ -43,6 +43,7 @@ tauri-plugin-process = "2"
 tauri-plugin-updater = { version = "2", default-features = false, features = ["native-tls", "zip"] }
 tauri-plugin-dialog = "2"
 tauri-plugin-store = "2"
+keyring = { version = "3.6.3", default-features = false, features = ["apple-native", "windows-native", "linux-native-sync-persistent", "crypto-rust"] }
 tauri-plugin-deep-link = "2"
 tauri-plugin-window-state = "2"
 dirs = "5.0"

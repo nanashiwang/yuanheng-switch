@@ -33,6 +33,7 @@ mod prompt_files;
 mod provider;
 mod provider_defaults;
 mod proxy;
+mod secure_storage;
 mod services;
 mod session_manager;
 mod settings;
@@ -633,6 +634,12 @@ pub fn run() {
             }
 
             let app_state = AppState::new_desktop(db);
+
+            // 将旧版本保存在 SQLite settings 中的元衡认证凭据迁移到系统凭据库。
+            // 迁移失败时保留旧值，后续读取会继续 fail-closed 并重试迁移。
+            if let Err(error) = crate::commands::migrate_legacy_yuanheng_secrets(&app_state) {
+                log::warn!("元衡认证凭据迁移失败，将暂停使用认证状态并在下次读取时重试: {error}");
+            }
 
             // 设置 AppHandle 用于代理故障转移时的 UI 更新
             app_state.proxy_service.set_app_handle(app.handle().clone());

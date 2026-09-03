@@ -224,16 +224,104 @@ fn is_yuanheng_session_auth_error(error: &str) -> bool {
         || normalized.contains("not logged in")
 }
 
+const YUANHENG_SECURE_KEYS: [&str; 5] = [
+    TOKEN_KEY,
+    USER_ID_KEY,
+    SESSION_COOKIE_KEY,
+    PENDING_SESSION_COOKIE_KEY,
+    API_TOKEN_KEY,
+];
+
+/// 将旧版本写入 SQLite 的认证凭据迁移到系统凭据库。
+///
+/// 迁移顺序是“先写入并回读系统凭据，再删除 SQLite 旧值”，这样在系统凭据库
+/// 暂时不可用时不会丢失凭据；调用方也会收到错误并停止继续使用认证状态。
+fn migrate_legacy_yuanheng_secret(state: &AppState, key: &str) -> Result<(), String> {
+    let legacy = state
+        .db
+        .get_setting(key)
+        .map_err(|error| error.to_string())?;
+    let Some(legacy) = legacy else {
+        return Ok(());
+    };
+
+    if legacy.is_empty() {
+        state
+            .db
+            .delete_setting(key)
+            .map_err(|error| error.to_string())?;
+        return Ok(());
+    }
+
+    match crate::secure_storage::get_secret(key)? {
+        Some(existing) if existing != legacy => {
+            return Err(format!("系统凭据与 SQLite 旧凭据冲突: {key}"));
+        }
+        Some(_) => {}
+        None => {
+            crate::secure_storage::set_secret(key, &legacy)?;
+            let verified = crate::secure_storage::get_secret(key)?;
+            if verified.as_deref() != Some(legacy.as_str()) {
+                return Err(format!("系统凭据写入校验失败: {key}"));
+            }
+        }
+    }
+
+    state
+        .db
+        .delete_setting(key)
+        .map_err(|error| error.to_string())?;
+    Ok(())
+}
+
+pub(crate) fn migrate_legacy_yuanheng_secrets(state: &AppState) -> Result<(), String> {
+    for key in YUANHENG_SECURE_KEYS {
+        migrate_legacy_yuanheng_secret(state, key)?;
+    }
+    Ok(())
+}
+
+/// 读取认证凭据，并兼容尚未执行启动迁移的旧安装。
+fn get_yuanheng_secret(state: &AppState, key: &str) -> Result<Option<String>, String> {
+    migrate_legacy_yuanheng_secret(state, key)?;
+    crate::secure_storage::get_secret(key)
+}
+
+fn set_yuanheng_secret(key: &str, value: &str) -> Result<(), String> {
+    if value.is_empty() {
+        crate::secure_storage::delete_secret(key)
+    } else {
+        crate::secure_storage::set_secret(key, value)
+    }
+}
+
+fn delete_yuanheng_secret(state: &AppState, key: &str) -> Result<(), String> {
+    crate::secure_storage::delete_secret(key)?;
+    state
+        .db
+        .delete_setting(key)
+        .map_err(|error| error.to_string())?;
+    Ok(())
+}
+
 fn invalidate_yuanheng_session(state: &AppState) -> Result<(), String> {
     for key in [
         TOKEN_KEY,
         USER_ID_KEY,
         SESSION_COOKIE_KEY,
         PENDING_SESSION_COOKIE_KEY,
-        CACHE_KEY,
     ] {
-        state.db.set_setting(key, "").map_err(|e| e.to_string())?;
+        delete_yuanheng_secret(state, key)?;
     }
+    // 设备 API Token 在会话失效时仍可保留，但绝不能继续残留在 SQLite。
+    state
+        .db
+        .delete_setting(API_TOKEN_KEY)
+        .map_err(|error| error.to_string())?;
+    state
+        .db
+        .delete_setting(CACHE_KEY)
+        .map_err(|error| error.to_string())?;
     Ok(())
 }
 
@@ -996,26 +1084,30 @@ fn persist_connection(
         (SESSION_COOKIE_KEY, session_cookie),
         (USER_ID_KEY, user_id),
         (API_TOKEN_KEY, api_token),
-        (API_TOKEN_GROUP_KEY, api_token_group),
     ] {
+        set_yuanheng_secret(key, value)?;
         state
             .db
-            .set_setting(key, value)
-            .map_err(|e| e.to_string())?;
+            .delete_setting(key)
+            .map_err(|error| error.to_string())?;
     }
     state
         .db
+        .set_setting(API_TOKEN_GROUP_KEY, api_token_group)
+        .map_err(|error| error.to_string())?;
+    state
+        .db
         .set_setting(API_TOKEN_ID_KEY, &api_token_id.to_string())
-        .map_err(|e| e.to_string())?;
+        .map_err(|error| error.to_string())?;
     state
         .db
         .set_setting(
             CACHE_KEY,
-            &serde_json::to_string(status).map_err(|e| e.to_string())?,
+            &serde_json::to_string(status).map_err(|error| error.to_string())?,
         )
-        .map_err(|e| e.to_string())?;
+        .map_err(|error| error.to_string())?;
     for key in [TOKEN_KEY, PENDING_SESSION_COOKIE_KEY] {
-        state.db.set_setting(key, "").map_err(|e| e.to_string())?;
+        delete_yuanheng_secret(state, key)?;
     }
     Ok(())
 }
@@ -1065,10 +1157,11 @@ async fn login_with_credentials(
     let session_cookie = extract_cookie(&headers, "session")
         .ok_or_else(|| "元衡登录成功，但未返回有效会话".to_string())?;
     if requires_two_factor {
+        set_yuanheng_secret(PENDING_SESSION_COOKIE_KEY, &session_cookie)?;
         state
             .db
-            .set_setting(PENDING_SESSION_COOKIE_KEY, &session_cookie)
-            .map_err(|e| e.to_string())?;
+            .delete_setting(PENDING_SESSION_COOKIE_KEY)
+            .map_err(|error| error.to_string())?;
         return Ok(YuanhengAuthResult {
             requires_two_factor: true,
             connection: None,
@@ -1083,18 +1176,9 @@ async fn login_with_credentials(
 }
 
 fn read_cached_status(state: &AppState) -> Result<YuanhengConnectionStatus, String> {
-    let session = state
-        .db
-        .get_setting(SESSION_COOKIE_KEY)
-        .map_err(|e| e.to_string())?;
-    let token = state
-        .db
-        .get_setting(API_TOKEN_KEY)
-        .map_err(|e| e.to_string())?;
-    let user_id = state
-        .db
-        .get_setting(USER_ID_KEY)
-        .map_err(|e| e.to_string())?;
+    let session = get_yuanheng_secret(state, SESSION_COOKIE_KEY)?;
+    let token = get_yuanheng_secret(state, API_TOKEN_KEY)?;
+    let user_id = get_yuanheng_secret(state, USER_ID_KEY)?;
     if [session.as_deref(), token.as_deref(), user_id.as_deref()]
         .into_iter()
         .any(|value| value.unwrap_or_default().is_empty())
@@ -2640,17 +2724,14 @@ fn restore_managed_tools_inner(state: &AppState) -> Result<YuanhengDisconnectRes
 fn disconnect_yuanheng_inner(state: &AppState) -> Result<YuanhengDisconnectResult, String> {
     let mut result = restore_managed_tools_inner(state)?;
     result.disconnected = true;
-    for key in [
-        TOKEN_KEY,
-        USER_ID_KEY,
-        SESSION_COOKIE_KEY,
-        PENDING_SESSION_COOKIE_KEY,
-        API_TOKEN_KEY,
-        API_TOKEN_ID_KEY,
-        API_TOKEN_GROUP_KEY,
-        CACHE_KEY,
-    ] {
-        state.db.set_setting(key, "").map_err(|e| e.to_string())?;
+    for key in YUANHENG_SECURE_KEYS {
+        delete_yuanheng_secret(state, key)?;
+    }
+    for key in [API_TOKEN_ID_KEY, API_TOKEN_GROUP_KEY, CACHE_KEY] {
+        state
+            .db
+            .delete_setting(key)
+            .map_err(|error| error.to_string())?;
     }
     Ok(result)
 }
@@ -2859,21 +2940,9 @@ async fn diagnose_yuanheng_inner(state: &AppState) -> Result<YuanhengDiagnosticR
         });
     }
 
-    let session_cookie = state
-        .db
-        .get_setting(SESSION_COOKIE_KEY)
-        .map_err(|e| e.to_string())?
-        .unwrap_or_default();
-    let user_id = state
-        .db
-        .get_setting(USER_ID_KEY)
-        .map_err(|e| e.to_string())?
-        .unwrap_or_default();
-    let api_token = state
-        .db
-        .get_setting(API_TOKEN_KEY)
-        .map_err(|e| e.to_string())?
-        .unwrap_or_default();
+    let session_cookie = get_yuanheng_secret(state, SESSION_COOKIE_KEY)?.unwrap_or_default();
+    let user_id = get_yuanheng_secret(state, USER_ID_KEY)?.unwrap_or_default();
+    let api_token = get_yuanheng_secret(state, API_TOKEN_KEY)?.unwrap_or_default();
     let client = yuanheng_client()?;
 
     if session_cookie.is_empty() || user_id.is_empty() {
@@ -3084,26 +3153,17 @@ pub async fn configure_yuanheng_tools(
     if apps.is_empty() || apps.len() > 10 {
         return Err("请选择 1 到 10 个 AI 工具".to_string());
     }
-    let control_token = state
-        .db
-        .get_setting(API_TOKEN_KEY)
-        .map_err(|e| e.to_string())?
+    let control_token = get_yuanheng_secret(&state, API_TOKEN_KEY)?
         .filter(|value| !value.is_empty())
         .ok_or_else(|| "请先连接元衡账号".to_string())?;
     let control_token_group = state
         .db
         .get_setting(API_TOKEN_GROUP_KEY)
         .map_err(|e| e.to_string())?;
-    let session_cookie = state
-        .db
-        .get_setting(SESSION_COOKIE_KEY)
-        .map_err(|e| e.to_string())?
+    let session_cookie = get_yuanheng_secret(&state, SESSION_COOKIE_KEY)?
         .filter(|value| !value.is_empty())
         .ok_or_else(|| "元衡登录状态缺失，请重新登录".to_string())?;
-    let user_id = state
-        .db
-        .get_setting(USER_ID_KEY)
-        .map_err(|e| e.to_string())?
+    let user_id = get_yuanheng_secret(&state, USER_ID_KEY)?
         .filter(|value| !value.is_empty())
         .ok_or_else(|| "元衡用户 ID 缺失".to_string())?;
     let client = yuanheng_client()?;
@@ -3351,10 +3411,7 @@ pub async fn verify_yuanheng_two_factor(
     if code.is_empty() || code.len() > 64 || code.contains(['\n', '\r']) {
         return Err("请输入有效的两步验证码或备用码".to_string());
     }
-    let pending_cookie = state
-        .db
-        .get_setting(PENDING_SESSION_COOKIE_KEY)
-        .map_err(|e| e.to_string())?
+    let pending_cookie = get_yuanheng_secret(&state, PENDING_SESSION_COOKIE_KEY)?
         .filter(|value| !value.is_empty())
         .ok_or_else(|| "两步验证会话已过期，请重新登录".to_string())?;
     let client = yuanheng_client()?;
@@ -3384,16 +3441,10 @@ pub async fn verify_yuanheng_two_factor(
 pub async fn refresh_yuanheng_connection(
     state: State<'_, AppState>,
 ) -> Result<YuanhengConnectionStatus, String> {
-    let session_cookie = state
-        .db
-        .get_setting(SESSION_COOKIE_KEY)
-        .map_err(|e| e.to_string())?
+    let session_cookie = get_yuanheng_secret(&state, SESSION_COOKIE_KEY)?
         .filter(|value| !value.is_empty())
         .ok_or_else(|| "元衡尚未连接".to_string())?;
-    let user_id = state
-        .db
-        .get_setting(USER_ID_KEY)
-        .map_err(|e| e.to_string())?
+    let user_id = get_yuanheng_secret(&state, USER_ID_KEY)?
         .filter(|value| !value.is_empty())
         .ok_or_else(|| "元衡用户 ID 缺失".to_string())?;
     let client = yuanheng_client()?;
@@ -3412,16 +3463,10 @@ pub async fn refresh_yuanheng_connection(
 pub async fn rotate_yuanheng_device_token(
     state: State<'_, AppState>,
 ) -> Result<YuanhengConnectionStatus, String> {
-    let session_cookie = state
-        .db
-        .get_setting(SESSION_COOKIE_KEY)
-        .map_err(|e| e.to_string())?
+    let session_cookie = get_yuanheng_secret(&state, SESSION_COOKIE_KEY)?
         .filter(|value| !value.is_empty())
         .ok_or_else(|| "元衡尚未连接".to_string())?;
-    let user_id = state
-        .db
-        .get_setting(USER_ID_KEY)
-        .map_err(|e| e.to_string())?
+    let user_id = get_yuanheng_secret(&state, USER_ID_KEY)?
         .filter(|value| !value.is_empty())
         .ok_or_else(|| "元衡用户 ID 缺失".to_string())?;
     let previous_token_id = state
@@ -3524,16 +3569,8 @@ async fn open_yuanheng_authenticated_webview(
         return Err("请先登录元衡账号".to_string());
     }
 
-    let session_cookie = state
-        .db
-        .get_setting(SESSION_COOKIE_KEY)
-        .map_err(|e| e.to_string())?
-        .unwrap_or_default();
-    let user_id = state
-        .db
-        .get_setting(USER_ID_KEY)
-        .map_err(|e| e.to_string())?
-        .unwrap_or_default();
+    let session_cookie = get_yuanheng_secret(&state, SESSION_COOKIE_KEY)?.unwrap_or_default();
+    let user_id = get_yuanheng_secret(&state, USER_ID_KEY)?.unwrap_or_default();
     if session_cookie.is_empty() || user_id.is_empty() {
         return Err("元衡登录状态不完整，请重新登录".to_string());
     }
@@ -3750,45 +3787,75 @@ mod tests {
 
     #[test]
     #[serial]
-    fn invalidating_yuanheng_session_preserves_device_api_token() {
+    fn migrates_yuanheng_credentials_out_of_sqlite() {
+        crate::secure_storage::clear_for_tests();
         let (_home, state) = isolated_state();
-        state.db.set_setting(TOKEN_KEY, "legacy-token").unwrap();
-        state.db.set_setting(USER_ID_KEY, "42").unwrap();
-        state
-            .db
-            .set_setting(SESSION_COOKIE_KEY, "session=expired")
-            .unwrap();
-        state
-            .db
-            .set_setting(PENDING_SESSION_COOKIE_KEY, "session=pending")
-            .unwrap();
-        state.db.set_setting(API_TOKEN_KEY, "sk-device").unwrap();
+        for (key, value) in [
+            (TOKEN_KEY, "legacy-token"),
+            (USER_ID_KEY, "42"),
+            (SESSION_COOKIE_KEY, "session=legacy"),
+            (PENDING_SESSION_COOKIE_KEY, "session=pending"),
+            (API_TOKEN_KEY, "sk-device"),
+        ] {
+            state.db.set_setting(key, value).unwrap();
+        }
+
+        migrate_legacy_yuanheng_secrets(&state).unwrap();
+
+        for (key, value) in [
+            (TOKEN_KEY, "legacy-token"),
+            (USER_ID_KEY, "42"),
+            (SESSION_COOKIE_KEY, "session=legacy"),
+            (PENDING_SESSION_COOKIE_KEY, "session=pending"),
+            (API_TOKEN_KEY, "sk-device"),
+        ] {
+            assert_eq!(
+                crate::secure_storage::get_secret(key).unwrap().as_deref(),
+                Some(value)
+            );
+            assert!(state.db.get_setting(key).unwrap().is_none());
+        }
+        crate::secure_storage::clear_for_tests();
+    }
+
+    #[test]
+    #[serial]
+    fn invalidating_yuanheng_session_preserves_device_api_token() {
+        crate::secure_storage::clear_for_tests();
+        let (_home, state) = isolated_state();
+        for (key, value) in [
+            (TOKEN_KEY, "legacy-token"),
+            (USER_ID_KEY, "42"),
+            (SESSION_COOKIE_KEY, "session=expired"),
+            (PENDING_SESSION_COOKIE_KEY, "session=pending"),
+            (API_TOKEN_KEY, "sk-device"),
+        ] {
+            crate::secure_storage::set_secret(key, value).unwrap();
+            // 模拟旧版本还残留的 SQLite 值，退出时必须一并删除。
+            state.db.set_setting(key, value).unwrap();
+        }
         state.db.set_setting(API_TOKEN_ID_KEY, "123").unwrap();
         state.db.set_setting(API_TOKEN_GROUP_KEY, "vip").unwrap();
         state.db.set_setting(CACHE_KEY, "cached-status").unwrap();
 
         invalidate_yuanheng_session(&state).unwrap();
 
+        for key in [
+            TOKEN_KEY,
+            USER_ID_KEY,
+            SESSION_COOKIE_KEY,
+            PENDING_SESSION_COOKIE_KEY,
+        ] {
+            assert!(crate::secure_storage::get_secret(key).unwrap().is_none());
+            assert!(state.db.get_setting(key).unwrap().is_none());
+        }
         assert_eq!(
-            state.db.get_setting(TOKEN_KEY).unwrap().as_deref(),
-            Some("")
-        );
-        assert_eq!(
-            state.db.get_setting(SESSION_COOKIE_KEY).unwrap().as_deref(),
-            Some("")
-        );
-        assert_eq!(
-            state
-                .db
-                .get_setting(PENDING_SESSION_COOKIE_KEY)
+            crate::secure_storage::get_secret(API_TOKEN_KEY)
                 .unwrap()
                 .as_deref(),
-            Some("")
-        );
-        assert_eq!(
-            state.db.get_setting(API_TOKEN_KEY).unwrap().as_deref(),
             Some("sk-device")
         );
+        assert!(state.db.get_setting(API_TOKEN_KEY).unwrap().is_none());
         assert_eq!(
             state.db.get_setting(API_TOKEN_ID_KEY).unwrap().as_deref(),
             Some("123")
@@ -3801,9 +3868,8 @@ mod tests {
                 .as_deref(),
             Some("vip")
         );
-        for key in [USER_ID_KEY, CACHE_KEY] {
-            assert_eq!(state.db.get_setting(key).unwrap().as_deref(), Some(""));
-        }
+        assert!(state.db.get_setting(CACHE_KEY).unwrap().is_none());
+        crate::secure_storage::clear_for_tests();
     }
 
     #[test]
