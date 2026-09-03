@@ -26,7 +26,9 @@ use crate::store::AppState;
 const BASE_URL: &str = "https://cn.meta-api.vip";
 const OPENAI_BASE_URL: &str = "https://cn.meta-api.vip/v1";
 const TOPUP_URL: &str = "https://cn.meta-api.vip/console/topup";
+const PULSE_URL: &str = "https://cn.meta-api.vip/console/pulse";
 const TOPUP_WINDOW_LABEL: &str = "yuanheng-topup";
+const PULSE_WINDOW_LABEL: &str = "yuanheng-pulse";
 const TOPUP_CLOSED_EVENT: &str = "yuanheng-topup-closed";
 pub(crate) const MANAGED_PROVIDER_ID: &str = "yuanheng-managed";
 const MANAGED_PROVIDER_DISPLAY_NAME: &str = "YuanHeng";
@@ -3509,12 +3511,15 @@ pub async fn rotate_yuanheng_device_token(
     Ok(status)
 }
 
-#[tauri::command]
-pub async fn open_yuanheng_topup(
-    app: AppHandle,
-    state: State<'_, AppState>,
+async fn open_yuanheng_authenticated_webview(
+    app: &AppHandle,
+    state: &AppState,
+    page_url: &str,
+    window_label: &str,
+    window_title: &str,
+    operation_name: &str,
 ) -> Result<bool, String> {
-    let connection = read_cached_status(&state)?;
+    let connection = read_cached_status(state)?;
     if !connection.connected {
         return Err("请先登录元衡账号".to_string());
     }
@@ -3533,9 +3538,11 @@ pub async fn open_yuanheng_topup(
         return Err("元衡登录状态不完整，请重新登录".to_string());
     }
 
-    // 打开钱包前先验证会话，并只把页面启动所需的最小用户信息写入隔离 WebView。
+    // All embedded pages stay on new-api. The session cookie is injected only
+    // into this isolated WebView; Pulse never receives it or a client secret.
+    let client = yuanheng_client()?;
     let user_value = fetch_json(
-        &yuanheng_client()?,
+        &client,
         &format!("{BASE_URL}/api/user/self"),
         Some(&session_cookie),
         Some(&user_id),
@@ -3556,21 +3563,24 @@ pub async fn open_yuanheng_topup(
     });
     let user_seed_json = serde_json::to_string(&user_seed).map_err(|e| e.to_string())?;
     let user_seed_literal = serde_json::to_string(&user_seed_json).map_err(|e| e.to_string())?;
+    let origin_literal = serde_json::to_string(BASE_URL).map_err(|e| e.to_string())?;
     let init_script = format!(
-        r#"if (window.location.origin === {base_origin}) {{
+        r#"if (window.location.origin === {origin}) {{
           window.localStorage.setItem("user", {user_seed});
         }}"#,
-        base_origin = serde_json::to_string(BASE_URL).map_err(|e| e.to_string())?,
+        origin = origin_literal,
         user_seed = user_seed_literal,
     );
     let cookie = session_cookie_for_webview(&session_cookie)?;
-    let topup_url = TOPUP_URL
+    let target_url = page_url
         .parse()
-        .map_err(|e| format!("充值地址无效: {e}"))?;
+        .map_err(|e| format!("{operation_name}地址无效: {e}"))?;
 
-    if let Some(window) = app.get_webview_window(TOPUP_WINDOW_LABEL) {
+    if let Some(window) = app.get_webview_window(window_label) {
         window.set_cookie(cookie).map_err(|e| e.to_string())?;
-        window.navigate(topup_url).map_err(|e| e.to_string())?;
+        window
+            .navigate(target_url)
+            .map_err(|e| format!("打开{operation_name}失败: {e}"))?;
         window.show().map_err(|e| e.to_string())?;
         window.set_focus().map_err(|e| e.to_string())?;
         return Ok(true);
@@ -3578,15 +3588,15 @@ pub async fn open_yuanheng_topup(
 
     let opener_app = app.clone();
     let window = WebviewWindowBuilder::new(
-        &app,
-        TOPUP_WINDOW_LABEL,
+        app,
+        window_label,
         WebviewUrl::External(
             "about:blank"
                 .parse()
-                .map_err(|e| format!("初始化充值窗口失败: {e}"))?,
+                .map_err(|e| format!("初始化{operation_name}窗口失败: {e}"))?,
         ),
     )
-    .title("元衡充值")
+    .title(window_title)
     .inner_size(1080.0, 760.0)
     .min_inner_size(860.0, 620.0)
     .center()
@@ -3597,30 +3607,75 @@ pub async fn open_yuanheng_topup(
     .on_new_window(move |url, _| {
         if matches!(url.scheme(), "http" | "https") {
             if let Err(error) = opener_app.opener().open_url(url.as_str(), None::<String>) {
-                log::error!("打开支付页面失败: {error}");
+                log::error!("打开外部页面失败: {error}");
             }
         }
         NewWindowResponse::Deny
     })
     .build()
-    .map_err(|e| format!("创建充值窗口失败: {e}"))?;
+    .map_err(|e| format!("创建{operation_name}窗口失败: {e}"))?;
 
     window.set_cookie(cookie).map_err(|e| e.to_string())?;
-    window.navigate(topup_url).map_err(|e| e.to_string())?;
-
-    let event_app = app.clone();
-    window.on_window_event(move |event| {
-        if matches!(event, WindowEvent::Destroyed) {
-            let _ = event_app.emit(TOPUP_CLOSED_EVENT, ());
-        }
-    });
+    window
+        .navigate(target_url)
+        .map_err(|e| format!("打开{operation_name}失败: {e}"))?;
     window.show().map_err(|e| e.to_string())?;
     window.set_focus().map_err(|e| e.to_string())?;
     Ok(true)
 }
 
 #[tauri::command]
-pub fn sign_out_yuanheng(state: State<'_, AppState>) -> Result<bool, String> {
+pub async fn open_yuanheng_topup(
+    app: AppHandle,
+    state: State<'_, AppState>,
+) -> Result<bool, String> {
+    let already_open = app.get_webview_window(TOPUP_WINDOW_LABEL).is_some();
+    let opened = open_yuanheng_authenticated_webview(
+        &app,
+        &state,
+        TOPUP_URL,
+        TOPUP_WINDOW_LABEL,
+        "元衡充值",
+        "充值",
+    )
+    .await?;
+
+    if !already_open {
+        if let Some(window) = app.get_webview_window(TOPUP_WINDOW_LABEL) {
+            let event_app = app.clone();
+            window.on_window_event(move |event| {
+                if matches!(event, WindowEvent::Destroyed) {
+                    let _ = event_app.emit(TOPUP_CLOSED_EVENT, ());
+                }
+            });
+        }
+    }
+    Ok(opened)
+}
+
+#[tauri::command]
+pub async fn open_yuanheng_pulse(
+    app: AppHandle,
+    state: State<'_, AppState>,
+) -> Result<bool, String> {
+    open_yuanheng_authenticated_webview(
+        &app,
+        &state,
+        PULSE_URL,
+        PULSE_WINDOW_LABEL,
+        "元衡脉冲",
+        "脉冲控制台",
+    )
+    .await
+}
+
+#[tauri::command]
+pub fn sign_out_yuanheng(app: AppHandle, state: State<'_, AppState>) -> Result<bool, String> {
+    for label in [TOPUP_WINDOW_LABEL, PULSE_WINDOW_LABEL] {
+        if let Some(window) = app.get_webview_window(label) {
+            let _ = window.close();
+        }
+    }
     invalidate_yuanheng_session(&state)?;
     Ok(true)
 }
@@ -3630,8 +3685,10 @@ pub fn disconnect_yuanheng(
     app: AppHandle,
     state: State<'_, AppState>,
 ) -> Result<YuanhengDisconnectResult, String> {
-    if let Some(window) = app.get_webview_window(TOPUP_WINDOW_LABEL) {
-        let _ = window.close();
+    for label in [TOPUP_WINDOW_LABEL, PULSE_WINDOW_LABEL] {
+        if let Some(window) = app.get_webview_window(label) {
+            let _ = window.close();
+        }
     }
     disconnect_yuanheng_inner(&state)
 }

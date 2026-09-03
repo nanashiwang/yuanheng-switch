@@ -1,5 +1,12 @@
-import { ArrowRight, CreditCard, LoaderCircle, Wallet } from "lucide-react";
+import {
+  ArrowRight,
+  CreditCard,
+  LoaderCircle,
+  Sparkles,
+  Wallet,
+} from "lucide-react";
 import { useYuanhengTopup } from "@/hooks/useYuanhengTopup";
+import { useYuanhengPulse } from "@/hooks/useYuanhengPulse";
 import { useYuanhengConnection } from "@/lib/query/yuanheng";
 import { dt } from "./desktopI18n";
 
@@ -10,6 +17,7 @@ interface AccountUsageCardProps {
 export function AccountUsageCard({ onOpenUsage }: AccountUsageCardProps) {
   const { data: connection } = useYuanhengConnection();
   const { isOpening, openTopup } = useYuanhengTopup();
+  const { isOpening: isOpeningPulse, openPulse } = useYuanhengPulse();
   const account = connection?.account;
   if (!connection?.connected || !account) return null;
 
@@ -43,19 +51,34 @@ export function AccountUsageCard({ onOpenUsage }: AccountUsageCardProps) {
             })}
           </p>
         </div>
-        <button
-          type="button"
-          onClick={() => void openTopup()}
-          disabled={isOpening}
-          className="inline-flex h-8 shrink-0 items-center gap-1.5 rounded-lg bg-primary px-3 text-[11px] font-semibold text-primary-foreground shadow-sm transition-all hover:bg-primary/90 disabled:cursor-wait disabled:opacity-70"
-        >
-          {isOpening ? (
-            <LoaderCircle className="h-3.5 w-3.5 animate-spin" />
-          ) : (
-            <CreditCard className="h-3.5 w-3.5" />
-          )}
-          {isOpening ? dt("打开中") : dt("充值")}
-        </button>
+        <div className="flex shrink-0 items-center gap-1.5">
+          <button
+            type="button"
+            onClick={() => void openPulse()}
+            disabled={isOpeningPulse}
+            className="inline-flex h-8 items-center gap-1 rounded-lg border border-primary/25 bg-primary/5 px-2.5 text-[11px] font-semibold text-primary transition-all hover:bg-primary/10 disabled:cursor-wait disabled:opacity-70"
+          >
+            {isOpeningPulse ? (
+              <LoaderCircle className="h-3.5 w-3.5 animate-spin" />
+            ) : (
+              <Sparkles className="h-3.5 w-3.5" />
+            )}
+            {dt("脉冲")}
+          </button>
+          <button
+            type="button"
+            onClick={() => void openTopup()}
+            disabled={isOpening}
+            className="inline-flex h-8 items-center gap-1.5 rounded-lg bg-primary px-3 text-[11px] font-semibold text-primary-foreground shadow-sm transition-all hover:bg-primary/90 disabled:cursor-wait disabled:opacity-70"
+          >
+            {isOpening ? (
+              <LoaderCircle className="h-3.5 w-3.5 animate-spin" />
+            ) : (
+              <CreditCard className="h-3.5 w-3.5" />
+            )}
+            {isOpening ? dt("打开中") : dt("充值")}
+          </button>
+        </div>
       </div>
       <div className="mt-3 h-1.5 overflow-hidden rounded-full bg-primary/10">
         <div

@@ -212,6 +212,10 @@ export const yuanhengApi = {
     return invoke("open_yuanheng_topup");
   },
 
+  openPulse(): Promise<boolean> {
+    return invoke("open_yuanheng_pulse");
+  },
+
   getToolStatuses(): Promise<YuanhengToolStatus[]> {
     return invoke("get_yuanheng_tool_statuses");
   },

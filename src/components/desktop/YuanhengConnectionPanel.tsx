@@ -7,6 +7,7 @@ import {
   LogOut,
   RefreshCw,
   ShieldCheck,
+  Sparkles,
   UserPlus,
 } from "lucide-react";
 import { toast } from "sonner";
@@ -26,6 +27,7 @@ import {
 import { extractErrorMessage } from "@/utils/errorUtils";
 import { cn } from "@/lib/utils";
 import { dt } from "./desktopI18n";
+import { useYuanhengPulse } from "@/hooks/useYuanhengPulse";
 
 const MAX_LOGIN_USERNAME_LENGTH = 254;
 const MAX_REGISTER_USERNAME_LENGTH = 20;
@@ -45,6 +47,7 @@ export function YuanhengConnectionPanel({
   const verifyTwoFactor = useVerifyYuanhengTwoFactor();
   const refresh = useRefreshYuanheng();
   const signOut = useSignOutYuanheng();
+  const { isOpening: isOpeningPulse, openPulse } = useYuanhengPulse();
   const [authMode, setAuthMode] = useState<"login" | "register">("login");
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
@@ -423,6 +426,18 @@ export function YuanhengConnectionPanel({
             className={cn("h-3.5 w-3.5", refresh.isPending && "animate-spin")}
           />
           {dt("同步")}
+        </Button>
+        <Button
+          variant="secondary"
+          size="sm"
+          onClick={() => void openPulse()}
+          disabled={isOpeningPulse}
+          title={dt("在隔离窗口打开元衡脉冲")}
+        >
+          <Sparkles
+            className={cn("h-3.5 w-3.5", isOpeningPulse && "animate-pulse")}
+          />
+          {dt("脉冲控制台")}
         </Button>
         {!compact && (
           <Button

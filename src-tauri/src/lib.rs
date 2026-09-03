@@ -1614,6 +1614,7 @@ pub fn run() {
             commands::disconnect_yuanheng,
             commands::rollback_yuanheng_tools,
             commands::open_yuanheng_topup,
+            commands::open_yuanheng_pulse,
             // Universal Provider management
             commands::get_universal_providers,
             commands::get_universal_provider,
