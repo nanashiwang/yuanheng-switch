@@ -40,6 +40,10 @@ function createSwitcher(
     launchDirectories: {},
     launchDirectoryPendingApps: new Set(),
     statusMap: new Map(),
+    activationMap: new Map(),
+    activationRefreshing: false,
+    preflightResults: {},
+    preflightPending: false,
     codexBridge: {} as ModelSwitchCenterState["codexBridge"],
     codexAccountMode: {
       data: {

@@ -1609,6 +1609,8 @@ pub fn run() {
             commands::get_yuanheng_announcement,
             commands::get_yuanheng_announcements,
             commands::get_yuanheng_tool_statuses,
+            commands::get_yuanheng_tool_activation_statuses,
+            commands::preflight_yuanheng_tool,
             commands::get_codex_account_mode,
             commands::switch_codex_account_mode,
             commands::get_yuanheng_diagnostics,

@@ -1,3 +1,5 @@
+import { useEffect } from "react";
+import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { yuanhengApi } from "@/lib/api";
 import type {
@@ -13,6 +15,7 @@ export const yuanhengKeys = {
   diagnostics: ["yuanheng", "diagnostics"] as const,
   codexBridge: ["yuanheng", "codex-bridge"] as const,
   codexAccountMode: ["yuanheng", "codex-account-mode"] as const,
+  activation: ["yuanheng", "activation"] as const,
 };
 
 export function useYuanhengConnection() {
@@ -146,6 +149,48 @@ export function useYuanhengToolStatuses() {
   });
 }
 
+export function useYuanhengToolActivationStatuses() {
+  const queryClient = useQueryClient();
+  const query = useQuery({
+    queryKey: yuanhengKeys.activation,
+    queryFn: () => yuanhengApi.getToolActivationStatuses(),
+    retry: false,
+    refetchInterval: 10_000,
+    refetchOnWindowFocus: true,
+  });
+  useEffect(() => {
+    let unlisten: UnlistenFn | undefined;
+    let disposed = false;
+    void listen("usage-log-recorded", () => {
+      queryClient.invalidateQueries({ queryKey: yuanhengKeys.activation });
+    }).then((off) => {
+      if (disposed) off();
+      else unlisten = off;
+    });
+    return () => {
+      disposed = true;
+      unlisten?.();
+    };
+  }, [queryClient]);
+  return query;
+}
+
+export function usePreflightYuanhengTool() {
+  return useMutation({
+    mutationFn: ({
+      app,
+      model,
+      group,
+      reasoning,
+    }: {
+      app: YuanhengToolId;
+      model: string;
+      group?: string;
+      reasoning?: YuanhengReasoningLevel;
+    }) => yuanhengApi.preflightTool(app, model, group, reasoning),
+  });
+}
+
 export function useCodexSessionBridgeStatus() {
   return useQuery({
     queryKey: yuanhengKeys.codexBridge,
@@ -183,6 +228,7 @@ export function useSwitchCodexAccountMode() {
         queryKey: yuanhengKeys.codexAccountMode,
       });
       queryClient.invalidateQueries({ queryKey: yuanhengKeys.codexBridge });
+      queryClient.invalidateQueries({ queryKey: yuanhengKeys.activation });
       queryClient.invalidateQueries({ queryKey: ["providers", "codex"] });
       queryClient.invalidateQueries({
         queryKey: ["desktop", "tool-connections"],
@@ -257,6 +303,7 @@ export function useRollbackYuanhengTools() {
       queryClient.invalidateQueries({
         queryKey: yuanhengKeys.codexAccountMode,
       });
+      queryClient.invalidateQueries({ queryKey: yuanhengKeys.activation });
       queryClient.invalidateQueries({
         queryKey: ["desktop", "tool-connections"],
       });
@@ -284,6 +331,7 @@ export function useConfigureYuanhengTools() {
       queryClient.invalidateQueries({
         queryKey: yuanhengKeys.codexAccountMode,
       });
+      queryClient.invalidateQueries({ queryKey: yuanhengKeys.activation });
       queryClient.invalidateQueries({
         queryKey: ["desktop", "tool-connections"],
       });

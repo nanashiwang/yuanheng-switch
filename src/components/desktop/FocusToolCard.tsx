@@ -20,6 +20,7 @@ import {
 import { groupModelsByVendor, modelVendorOf } from "./modelVendors";
 import { dt } from "./desktopI18n";
 import { launchDirectoryLabel } from "./useToolLaunchDirectories";
+import { ToolActivationProgress } from "./ToolActivationProgress";
 
 interface FocusToolCardProps {
   switcher: ModelSwitchCenterState;
@@ -157,6 +158,8 @@ export function FocusToolCard({
     launchDirectories,
     launchDirectoryPendingApps,
     statusMap,
+    activationMap,
+    preflightResults,
     codexAccountMode,
     codexModePending,
     refreshModels,
@@ -382,6 +385,15 @@ export function FocusToolCard({
           </div>
         </div>
       )}
+
+      <div className="relative mt-3">
+        <ToolActivationProgress
+          activation={activationMap.get(app)}
+          preflight={preflightResults[app]}
+          restartRequired={restartRequired}
+          dark
+        />
+      </div>
 
       <div className="relative mt-4 rounded-xl border border-white/10 bg-black/10 p-3">
         <div className="mb-2.5 flex items-center justify-between gap-3">

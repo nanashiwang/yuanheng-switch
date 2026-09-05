@@ -47,6 +47,7 @@ const PREVIOUS_HERMES_MODEL_KEY: &str = "yuanheng_previous_hermes_model";
 const PREVIOUS_WORKBUDDY_CONFIG_KEY: &str = "yuanheng_previous_workbuddy_config";
 const WORKBUDDY_MODEL_KEY: &str = "yuanheng_workbuddy_model";
 const WORKBUDDY_GROUP_KEY: &str = "yuanheng_workbuddy_group";
+const TOOL_CONFIGURED_AT_KEY_PREFIX: &str = "yuanheng_tool_configured_at_";
 const CHATGPT_DESKTOP_NAMESPACE: &str = "chatgpt-desktop";
 const LOCAL_PROXY_TOKEN: &str = "PROXY_MANAGED";
 const NO_PREVIOUS_VALUE: &str = "__none__";
@@ -172,6 +173,48 @@ pub struct CodexAccountModeStatus {
     pub yuanheng_available: bool,
     pub restart_required: bool,
     pub message: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct YuanhengPreflightCheck {
+    pub id: String,
+    pub status: String,
+    pub title: String,
+    pub message: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct YuanhengToolPreflight {
+    pub app: String,
+    pub model: String,
+    pub group: String,
+    pub status: String,
+    pub source_protocol: String,
+    pub target_protocol: String,
+    pub streaming_supported: bool,
+    pub tool_call: String,
+    pub reasoning_supported: bool,
+    pub image_input: String,
+    pub checks: Vec<YuanhengPreflightCheck>,
+    pub message: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct YuanhengToolActivationStatus {
+    pub app: String,
+    pub configured_at: Option<i64>,
+    pub config_written: bool,
+    pub route_required: bool,
+    pub route_ready: bool,
+    pub request_received: bool,
+    pub request_succeeded: bool,
+    pub last_request_at: Option<i64>,
+    pub last_status_code: Option<u16>,
+    pub last_model: Option<String>,
+    pub message: String,
 }
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq, Eq)]
@@ -1840,6 +1883,8 @@ fn switch_codex_account_mode_at_origin(
     }
 
     let mut status = codex_account_mode_status_inner(state)?;
+    remember_tool_configured_at(state, AppType::Codex.as_str());
+    remember_tool_configured_at(state, CHATGPT_DESKTOP_NAMESPACE);
     status.restart_required = true;
     status.message = Some(if target_mode == "official" {
         "已切换到 OpenAI 官方账号，请重启 Codex CLI 与 Codex App".to_string()
@@ -2707,6 +2752,125 @@ fn all_tool_statuses(
     statuses
 }
 
+fn tool_configured_at_key(app: &str) -> String {
+    format!("{TOOL_CONFIGURED_AT_KEY_PREFIX}{app}")
+}
+
+fn remember_tool_configured_at(state: &AppState, app: &str) {
+    if let Err(error) = state.db.set_setting(
+        &tool_configured_at_key(app),
+        &chrono::Utc::now().timestamp().to_string(),
+    ) {
+        log::warn!("记录 {app} 配置生效时间失败: {error}");
+    }
+}
+
+fn read_tool_configured_at(state: &AppState, app: &str) -> Option<i64> {
+    state
+        .db
+        .get_setting(&tool_configured_at_key(app))
+        .ok()
+        .flatten()
+        .and_then(|value| value.parse::<i64>().ok())
+}
+
+async fn yuanheng_tool_activation_statuses_inner(
+    state: &AppState,
+) -> Result<Vec<YuanhengToolActivationStatus>, String> {
+    let connection = read_cached_status(state)?;
+    let statuses = all_tool_statuses(state, &connection);
+    let status_map = statuses
+        .iter()
+        .map(|status| (status.app.as_str(), status))
+        .collect::<HashMap<_, _>>();
+    let codex_mode = codex_account_mode_status_inner(state)
+        .ok()
+        .map(|status| status.mode)
+        .unwrap_or_else(|| "unknown".to_string());
+    let proxy_running = state.proxy_service.is_running().await;
+    let apps = [
+        "claude",
+        "claude-desktop",
+        "codex",
+        CHATGPT_DESKTOP_NAMESPACE,
+        "gemini",
+        "grokbuild",
+        "opencode",
+        "openclaw",
+        "hermes",
+        "workbuddy",
+    ];
+    let mut results = Vec::with_capacity(apps.len());
+
+    for app in apps {
+        let configured_at = read_tool_configured_at(state, app);
+        let official_codex =
+            matches!(app, "codex" | CHATGPT_DESKTOP_NAMESPACE) && codex_mode == "official";
+        let config_written =
+            official_codex || status_map.get(app).is_some_and(|status| status.configured);
+        let route_required = matches!(app, "claude-desktop" | "codex" | CHATGPT_DESKTOP_NAMESPACE);
+        let owned_route = match app {
+            "codex" if official_codex => managed_codex_routes_require_core(state.db.as_ref()),
+            "codex" => {
+                managed_codex_surface_route_active(state.db.as_ref(), CodexSurface::Terminal)
+            }
+            CHATGPT_DESKTOP_NAMESPACE => managed_chatgpt_desktop_route_active(state.db.as_ref()),
+            "claude-desktop" => config_written,
+            _ => true,
+        };
+        let route_ready = config_written && (!route_required || (proxy_running && owned_route));
+
+        let latest_log = if route_required {
+            configured_at
+                .map(|start_date| state.db.get_latest_proxy_request_for_app(app, start_date))
+                .transpose()
+                .map_err(|error| error.to_string())?
+                .flatten()
+        } else {
+            None
+        };
+        let request_received = latest_log.is_some();
+        let request_succeeded = latest_log
+            .as_ref()
+            .is_some_and(|log| (200..400).contains(&log.status_code));
+        let message = if !config_written {
+            "尚未写入有效配置".to_string()
+        } else if configured_at.is_none() {
+            "配置已存在；重新应用一次后可追踪完整生效过程".to_string()
+        } else if !route_ready && request_succeeded {
+            "此前已确认模型调用成功，但当前本地路由未运行".to_string()
+        } else if !route_ready {
+            "配置已写入，正在等待本地路由就绪".to_string()
+        } else if !route_required {
+            "配置已写入；该工具不经过本地路由，无法确认首次模型调用".to_string()
+        } else if !request_received {
+            "配置与路由已就绪，等待工具发出第一条请求".to_string()
+        } else if request_succeeded {
+            "已收到请求并确认模型调用成功".to_string()
+        } else {
+            let status = latest_log
+                .as_ref()
+                .map(|log| log.status_code.to_string())
+                .unwrap_or_else(|| "未知".to_string());
+            format!("已收到请求，但最近一次调用失败（HTTP {status}）")
+        };
+        results.push(YuanhengToolActivationStatus {
+            app: app.to_string(),
+            configured_at,
+            config_written,
+            route_required,
+            route_ready,
+            request_received,
+            request_succeeded,
+            last_request_at: latest_log.as_ref().map(|log| log.created_at),
+            last_status_code: latest_log.as_ref().map(|log| log.status_code),
+            last_model: latest_log.map(|log| log.model),
+            message,
+        });
+    }
+    Ok(results)
+}
+
 fn previous_provider_key(app: &AppType) -> String {
     format!("{PREVIOUS_PROVIDER_KEY_PREFIX}{}", app.as_str())
 }
@@ -3157,6 +3321,296 @@ fn resolve_reasoning_level(
     }
 }
 
+fn preflight_target_protocol(app_name: &str) -> &'static str {
+    match app_name {
+        "claude" | "claude-desktop" => "anthropic_messages",
+        "codex" | CHATGPT_DESKTOP_NAMESPACE | "grokbuild" => "openai_responses",
+        "gemini" => "gemini_native",
+        "opencode" | "openclaw" | "hermes" | "workbuddy" => "openai_chat",
+        _ => "unknown",
+    }
+}
+
+fn preflight_image_input(model: &str) -> &'static str {
+    if crate::model_capabilities::is_confirmed_text_only_model(model) {
+        "unsupported"
+    } else {
+        "unknown"
+    }
+}
+
+fn push_preflight_check(
+    checks: &mut Vec<YuanhengPreflightCheck>,
+    id: &str,
+    status: &str,
+    title: &str,
+    message: impl Into<String>,
+) {
+    checks.push(YuanhengPreflightCheck {
+        id: id.to_string(),
+        status: status.to_string(),
+        title: title.to_string(),
+        message: message.into(),
+    });
+}
+
+async fn preflight_yuanheng_tool_inner(
+    state: &AppState,
+    app_name: &str,
+    model: &str,
+    requested_group: Option<&str>,
+    requested_reasoning: Option<&str>,
+) -> Result<YuanhengToolPreflight, String> {
+    let app_name = app_name.trim();
+    let is_workbuddy = app_name == "workbuddy";
+    let app = match app_name {
+        CHATGPT_DESKTOP_NAMESPACE => AppType::Codex,
+        "workbuddy" => AppType::OpenCode,
+        _ => app_name.parse::<AppType>().map_err(|e| e.to_string())?,
+    };
+    let connection = read_cached_status(state)?;
+    if !connection.connected {
+        return Err("请先连接元衡账号".to_string());
+    }
+    let model = model.trim();
+    if model.is_empty() {
+        return Err("请选择模型".to_string());
+    }
+
+    let mut checks = Vec::new();
+    let mut has_error = false;
+    let mut has_warning = false;
+
+    if is_image_generation_only_model(model) {
+        has_error = true;
+        push_preflight_check(
+            &mut checks,
+            "model",
+            "error",
+            "模型类型不兼容",
+            "该模型只支持图像生成或编辑，不能作为 Agent 对话模型",
+        );
+    } else if connection.terminal_models.iter().any(|item| item == model) {
+        push_preflight_check(
+            &mut checks,
+            "model",
+            "ok",
+            "模型目录有效",
+            format!("已在当前账号目录中找到 {model}"),
+        );
+    } else {
+        has_error = true;
+        push_preflight_check(
+            &mut checks,
+            "model",
+            "error",
+            "模型已经失效",
+            "当前账号目录中不存在该模型，请刷新模型列表",
+        );
+    }
+
+    let group = preferred_group_for_model(&connection, model, requested_group)?;
+    let session_cookie = state
+        .db
+        .get_setting(SESSION_COOKIE_KEY)
+        .map_err(|e| e.to_string())?
+        .filter(|value| !value.is_empty())
+        .ok_or_else(|| "元衡登录状态缺失，请重新登录".to_string())?;
+    let user_id = state
+        .db
+        .get_setting(USER_ID_KEY)
+        .map_err(|e| e.to_string())?
+        .filter(|value| !value.is_empty())
+        .ok_or_else(|| "元衡用户 ID 缺失".to_string())?;
+    let client = yuanheng_client()?;
+    match fetch_user_models(&client, &session_cookie, &user_id, Some(&group)).await {
+        Ok(models) if models.iter().any(|item| item == model) => push_preflight_check(
+            &mut checks,
+            "account",
+            "ok",
+            "账号与分组有效",
+            format!("登录有效，{group} 分组实时支持该模型"),
+        ),
+        Ok(_) => {
+            has_error = true;
+            push_preflight_check(
+                &mut checks,
+                "account",
+                "error",
+                "分组模型已变化",
+                format!("{model} 已不在 {group} 分组的实时目录中"),
+            );
+        }
+        Err(error) => {
+            has_error = true;
+            push_preflight_check(&mut checks, "account", "error", "账号或平台连接失败", error);
+        }
+    }
+
+    let source_protocol = yuanheng_model_api_format(model).to_string();
+    let target_protocol = preflight_target_protocol(app_name).to_string();
+    if target_protocol == "unknown" {
+        has_error = true;
+        push_preflight_check(
+            &mut checks,
+            "protocol",
+            "error",
+            "工具协议未知",
+            "当前工具没有受支持的协议适配器",
+        );
+    } else {
+        let adapted = source_protocol != target_protocol;
+        push_preflight_check(
+            &mut checks,
+            "protocol",
+            "ok",
+            "协议兼容",
+            if adapted {
+                format!("将由兼容层把 {target_protocol} 转换为 {source_protocol}")
+            } else {
+                format!("模型与工具均使用 {target_protocol}")
+            },
+        );
+    }
+
+    let reasoning =
+        resolve_reasoning_level(requested_reasoning, model, &connection.reasoning_levels);
+    match reasoning {
+        Ok(_) => push_preflight_check(
+            &mut checks,
+            "reasoning",
+            "ok",
+            "推理等级兼容",
+            "当前推理设置可用于该模型",
+        ),
+        Err(error) => {
+            has_error = true;
+            push_preflight_check(&mut checks, "reasoning", "error", "推理等级不兼容", error);
+        }
+    }
+
+    let stored_token_group = state
+        .db
+        .get_setting(API_TOKEN_GROUP_KEY)
+        .map_err(|e| e.to_string())?;
+    let stored_token = state
+        .db
+        .get_setting(API_TOKEN_KEY)
+        .map_err(|e| e.to_string())?
+        .filter(|value| !value.is_empty());
+    if stored_token_group.as_deref() == Some(group.as_str()) {
+        match stored_token {
+            Some(token) => match fetch_api_models(&client, &token).await {
+                Ok(models) if models.iter().any(|item| item == model) => push_preflight_check(
+                    &mut checks,
+                    "credential",
+                    "ok",
+                    "API 凭据有效",
+                    "模型接口已通过轻量鉴权检查，未发送生成请求",
+                ),
+                Ok(_) => {
+                    has_error = true;
+                    push_preflight_check(
+                        &mut checks,
+                        "credential",
+                        "error",
+                        "API 模型不可用",
+                        "API 凭据有效，但接口没有返回所选模型",
+                    );
+                }
+                Err(error) => {
+                    has_error = true;
+                    push_preflight_check(
+                        &mut checks,
+                        "credential",
+                        "error",
+                        "API 凭据不可用",
+                        error,
+                    );
+                }
+            },
+            None => {
+                has_error = true;
+                push_preflight_check(
+                    &mut checks,
+                    "credential",
+                    "error",
+                    "API 凭据缺失",
+                    "请重新连接元衡账号",
+                );
+            }
+        }
+    } else {
+        has_warning = true;
+        push_preflight_check(
+            &mut checks,
+            "credential",
+            "warning",
+            "分组凭据将在配置时创建",
+            format!("当前本机凭据不属于 {group} 分组，配置时会安全创建或复用对应凭据"),
+        );
+    }
+
+    let route_required = matches!(app, AppType::ClaudeDesktop | AppType::Codex) && !is_workbuddy;
+    if route_required {
+        if state.proxy_service.is_running().await {
+            push_preflight_check(
+                &mut checks,
+                "route",
+                "ok",
+                "本地路由已就绪",
+                "协议转换与请求记录服务正在运行",
+            );
+        } else {
+            has_warning = true;
+            push_preflight_check(
+                &mut checks,
+                "route",
+                "warning",
+                "本地路由将在配置时启动",
+                "当前尚未运行，配置过程中会自动启动",
+            );
+        }
+    } else {
+        push_preflight_check(
+            &mut checks,
+            "route",
+            "ok",
+            "无需本地协议路由",
+            "该工具会使用已验证的元衡接口配置",
+        );
+    }
+
+    let status = if has_error {
+        "error"
+    } else if has_warning {
+        "warning"
+    } else {
+        "ok"
+    };
+    Ok(YuanhengToolPreflight {
+        app: app_name.to_string(),
+        model: model.to_string(),
+        group,
+        status: status.to_string(),
+        source_protocol,
+        target_protocol,
+        streaming_supported: true,
+        tool_call: "unknown".to_string(),
+        reasoning_supported: connection
+            .reasoning_levels
+            .get(model)
+            .is_some_and(|levels| !levels.is_empty()),
+        image_input: preflight_image_input(model).to_string(),
+        checks,
+        message: match status {
+            "ok" => "兼容性预检通过，可以安全配置".to_string(),
+            "warning" => "兼容性预检通过，配置时还需完成一项自动准备".to_string(),
+            _ => "兼容性预检未通过，已阻止写入配置".to_string(),
+        },
+    })
+}
+
 fn configure_tool_with_models(
     state: &AppState,
     app: AppType,
@@ -3225,6 +3679,25 @@ pub fn get_yuanheng_tool_statuses(
 ) -> Result<Vec<YuanhengToolStatus>, String> {
     let connection = read_cached_status(&state)?;
     Ok(all_tool_statuses(&state, &connection))
+}
+
+#[tauri::command]
+pub async fn get_yuanheng_tool_activation_statuses(
+    state: State<'_, AppState>,
+) -> Result<Vec<YuanhengToolActivationStatus>, String> {
+    yuanheng_tool_activation_statuses_inner(&state).await
+}
+
+#[tauri::command]
+pub async fn preflight_yuanheng_tool(
+    state: State<'_, AppState>,
+    app: String,
+    model: String,
+    group: Option<String>,
+    reasoning: Option<String>,
+) -> Result<YuanhengToolPreflight, String> {
+    preflight_yuanheng_tool_inner(&state, &app, &model, group.as_deref(), reasoning.as_deref())
+        .await
 }
 
 #[tauri::command]
@@ -3716,6 +4189,7 @@ pub async fn configure_yuanheng_tools(
         match configured {
             Ok(mut result) => {
                 result.app = app_name.clone();
+                remember_tool_configured_at(&state, &app_name);
                 if let Some(warning) = group_models_warning {
                     result.warnings.push(warning);
                 }
@@ -5034,6 +5508,19 @@ mod tests {
     }
 
     #[test]
+    fn preflight_describes_tool_protocols_without_guessing_image_support() {
+        assert_eq!(preflight_target_protocol("codex"), "openai_responses");
+        assert_eq!(
+            preflight_target_protocol(CHATGPT_DESKTOP_NAMESPACE),
+            "openai_responses"
+        );
+        assert_eq!(preflight_target_protocol("claude"), "anthropic_messages");
+        assert_eq!(preflight_target_protocol("workbuddy"), "openai_chat");
+        assert_eq!(preflight_image_input("deepseek-v4-pro"), "unsupported");
+        assert_eq!(preflight_image_input("future-vision-model"), "unknown");
+    }
+
+    #[test]
     #[serial]
     fn codex_surfaces_keep_independent_models_and_routes() {
         let (_home, state) = isolated_state();
@@ -5273,6 +5760,61 @@ mod tests {
             std::fs::read_to_string(codex_terminal_profile_path()).unwrap(),
             "model_provider = \"user-custom\"\n"
         );
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn activation_loop_uses_exact_codex_surface_and_only_new_requests() {
+        let (_home, state) = isolated_state();
+        prepare_managed_codex_mode(&state, true);
+        remember_tool_configured_at(&state, "codex");
+        remember_tool_configured_at(&state, CHATGPT_DESKTOP_NAMESPACE);
+
+        let request =
+            |request_id: &str, app_type: &str, status_code: u16| crate::proxy::usage::RequestLog {
+                request_id: request_id.to_string(),
+                provider_id: MANAGED_PROVIDER_ID.to_string(),
+                app_type: app_type.to_string(),
+                model: "gpt-5.6-sol".to_string(),
+                request_model: "gpt-5.6-sol".to_string(),
+                pricing_model: "gpt-5.6-sol".to_string(),
+                usage: crate::proxy::usage::TokenUsage {
+                    input_tokens: 10,
+                    output_tokens: 2,
+                    ..Default::default()
+                },
+                cost: None,
+                latency_ms: 20,
+                first_token_ms: Some(5),
+                status_code,
+                error_message: (status_code >= 400).then(|| "test error".to_string()),
+                session_id: None,
+                provider_type: Some("codex".to_string()),
+                is_streaming: true,
+                cost_multiplier: "1".to_string(),
+            };
+        let logger = crate::proxy::usage::UsageLogger::new(state.db.as_ref());
+        logger
+            .log_request(&request("cli-ok", "codex", 200))
+            .unwrap();
+        logger
+            .log_request(&request("desktop-failed", CHATGPT_DESKTOP_NAMESPACE, 503))
+            .unwrap();
+
+        let statuses = yuanheng_tool_activation_statuses_inner(&state)
+            .await
+            .unwrap();
+        let cli = statuses.iter().find(|item| item.app == "codex").unwrap();
+        let desktop = statuses
+            .iter()
+            .find(|item| item.app == CHATGPT_DESKTOP_NAMESPACE)
+            .unwrap();
+        assert!(cli.request_received);
+        assert!(cli.request_succeeded);
+        assert_eq!(cli.last_status_code, Some(200));
+        assert!(desktop.request_received);
+        assert!(!desktop.request_succeeded);
+        assert_eq!(desktop.last_status_code, Some(503));
     }
 
     #[test]

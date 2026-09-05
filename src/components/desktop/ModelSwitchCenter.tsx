@@ -26,6 +26,7 @@ import {
   type ModelSwitchCenterState,
 } from "./useModelSwitchCenter";
 import { dt } from "./desktopI18n";
+import { ToolActivationProgress } from "./ToolActivationProgress";
 
 const controlsReasoning = (app: YuanhengToolId) =>
   app === "claude-desktop" || app === "codex" || app === "chatgpt-desktop";
@@ -55,6 +56,8 @@ export function ModelSwitchCenter({
     installingApps,
     restartRequiredApps,
     statusMap,
+    activationMap,
+    preflightResults,
     codexBridge,
     codexAccountMode,
     codexModePending,
@@ -386,6 +389,17 @@ export function ModelSwitchCenter({
                         );
                       })}
                     </div>
+                  </div>
+                )}
+
+                {(configured || preflightResults[app]) && (
+                  <div className="mt-2.5">
+                    <ToolActivationProgress
+                      activation={activationMap.get(app)}
+                      preflight={preflightResults[app]}
+                      restartRequired={restartRequired}
+                      compact
+                    />
                   </div>
                 )}
 

@@ -5,6 +5,7 @@ import {
   type CodexAccountMode,
   isYuanhengCliTool,
   type YuanhengReasoningLevel,
+  type YuanhengToolPreflight,
   type YuanhengToolId,
   yuanhengTerminalModels,
 } from "@/lib/api";
@@ -13,9 +14,11 @@ import {
   useConfigureYuanhengTools,
   useCodexAccountMode,
   useCodexSessionBridgeStatus,
+  usePreflightYuanhengTool,
   useRefreshYuanheng,
   useYuanhengConnection,
   useYuanhengToolStatuses,
+  useYuanhengToolActivationStatuses,
   useSwitchCodexAccountMode,
 } from "@/lib/query/yuanheng";
 import { extractErrorMessage } from "@/utils/errorUtils";
@@ -67,6 +70,8 @@ export function useModelSwitchCenter() {
   const refreshConnection = useRefreshYuanheng();
   const statuses = useYuanhengToolStatuses();
   const configure = useConfigureYuanhengTools();
+  const preflight = usePreflightYuanhengTool();
+  const activationStatuses = useYuanhengToolActivationStatuses();
   const codexAccountMode = useCodexAccountMode();
   const switchCodexAccountMode = useSwitchCodexAccountMode();
   const codexBridge = useCodexSessionBridgeStatus();
@@ -108,6 +113,12 @@ export function useModelSwitchCenter() {
   );
   const operationIds = useRef<Partial<Record<YuanhengToolId, number>>>({});
   const operationSequence = useRef(0);
+  const preflightCache = useRef(
+    new Map<string, { checkedAt: number; result: YuanhengToolPreflight }>(),
+  );
+  const [preflightResults, setPreflightResults] = useState<
+    Partial<Record<YuanhengToolId, YuanhengToolPreflight>>
+  >({});
 
   const versionMap = useMemo(
     () => new Map((inventory.data ?? []).map((item) => [item.name, item])),
@@ -116,6 +127,11 @@ export function useModelSwitchCenter() {
   const statusMap = useMemo(
     () => new Map((statuses.data ?? []).map((item) => [item.app, item])),
     [statuses.data],
+  );
+  const activationMap = useMemo(
+    () =>
+      new Map((activationStatuses.data ?? []).map((item) => [item.app, item])),
+    [activationStatuses.data],
   );
   const terminalModels = useMemo(
     () => yuanhengTerminalModels(connection),
@@ -135,6 +151,11 @@ export function useModelSwitchCenter() {
       ),
     [connection?.modelGroups, connection?.reasoningLevels, terminalModels],
   );
+
+  useEffect(() => {
+    preflightCache.current.clear();
+    setPreflightResults({});
+  }, [connection?.lastSyncedAt]);
 
   useEffect(
     () =>
@@ -257,6 +278,7 @@ export function useModelSwitchCenter() {
       inventory.refetch(),
       statuses.refetch(),
       codexAccountMode.refetch(),
+      activationStatuses.refetch(),
     ]);
   };
 
@@ -265,6 +287,47 @@ export function useModelSwitchCenter() {
     void refreshConnection.mutateAsync().catch(() => {
       toast.error(dt("网站模型同步失败，已保留上次可用列表"));
     });
+  };
+
+  const runPreflight = async (
+    app: YuanhengToolId,
+    model: string,
+    group?: string,
+    selectedReasoning?: YuanhengReasoningLevel,
+  ) => {
+    const cacheKey = [
+      app,
+      model,
+      group ?? "",
+      selectedReasoning ?? "auto",
+    ].join("\u0000");
+    const cached = preflightCache.current.get(cacheKey);
+    if (cached && Date.now() - cached.checkedAt < 60_000) {
+      setPreflightResults((current) => ({
+        ...current,
+        [app]: cached.result,
+      }));
+      if (cached.result.status === "error") {
+        throw new Error(cached.result.message);
+      }
+      return cached.result;
+    }
+    const result = await preflight.mutateAsync({
+      app,
+      model,
+      group,
+      reasoning: selectedReasoning,
+    });
+    preflightCache.current.set(cacheKey, {
+      checkedAt: Date.now(),
+      result,
+    });
+    setPreflightResults((current) => ({ ...current, [app]: result }));
+    if (result.status === "error") {
+      const failed = result.checks.find((check) => check.status === "error");
+      throw new Error(failed?.message || result.message);
+    }
+    return result;
   };
 
   const install = async (app: YuanhengToolId) => {
@@ -313,6 +376,7 @@ export function useModelSwitchCenter() {
             supportedReasoning.includes(selectedReasoning)
               ? selectedReasoning
               : "auto";
+          await runPreflight(app, selectedModel, group, normalizedReasoning);
           const configured = await configure.mutateAsync({
             apps: [app],
             models: { [app]: selectedModel },
@@ -425,19 +489,29 @@ export function useModelSwitchCenter() {
         ? requestedReasoning
         : "auto";
 
-    setModels((current) => ({ ...current, [app]: model }));
-    setGroups((current) => {
-      const next = { ...current };
-      if (group) next[app] = group;
-      else delete next[app];
-      return next;
-    });
-    setReasoning((current) => ({
-      ...current,
-      [app]: selectedReasoning,
-    }));
     const operationId = beginOperation(app);
     try {
+      const preflightResult = await runPreflight(
+        app,
+        model,
+        group,
+        selectedReasoning,
+      );
+      if (!isCurrentOperation(app, operationId)) return;
+      if (preflightResult.status === "warning") {
+        toast.info(preflightResult.message);
+      }
+      setModels((current) => ({ ...current, [app]: model }));
+      setGroups((current) => {
+        const next = { ...current };
+        if (group) next[app] = group;
+        else delete next[app];
+        return next;
+      });
+      setReasoning((current) => ({
+        ...current,
+        [app]: selectedReasoning,
+      }));
       const results = await configure.mutateAsync({
         apps: [app],
         models: { [app]: model },
@@ -482,6 +556,7 @@ export function useModelSwitchCenter() {
         );
       }
       await queryClient.invalidateQueries({ queryKey: ["yuanheng"] });
+      await activationStatuses.refetch();
     } catch (error) {
       if (isCurrentOperation(app, operationId)) {
         setModels((current) => {
@@ -603,6 +678,7 @@ export function useModelSwitchCenter() {
             normalizedReasoning !== (status.reasoning ?? "auto"),
         );
       if (dirty && model) {
+        await runPreflight(app, model, group, normalizedReasoning);
         const results = await configure.mutateAsync({
           apps: [app],
           models: { [app]: model },
@@ -633,6 +709,7 @@ export function useModelSwitchCenter() {
       if (!isCurrentOperation(app, operationId)) return;
       toast.success(dt("{{v0}} 已启动", { v0: toolLabel(app) }));
       await queryClient.invalidateQueries({ queryKey: ["yuanheng"] });
+      await activationStatuses.refetch();
     } catch (error) {
       if (isCurrentOperation(app, operationId)) {
         toast.error(extractErrorMessage(error) || dt("启动失败"));
@@ -661,6 +738,10 @@ export function useModelSwitchCenter() {
     launchDirectories: launchDirectoryState.directories,
     launchDirectoryPendingApps: launchDirectoryState.pendingApps,
     statusMap,
+    activationMap,
+    activationRefreshing: activationStatuses.isFetching,
+    preflightResults,
+    preflightPending: preflight.isPending,
     codexBridge,
     codexAccountMode,
     codexModePending: switchCodexAccountMode.isPending,
