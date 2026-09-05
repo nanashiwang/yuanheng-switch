@@ -4411,8 +4411,8 @@ async fn open_yuanheng_authenticated_webview(
         return Err("请先登录元衡账号".to_string());
     }
 
-    let session_cookie = get_yuanheng_secret(&state, SESSION_COOKIE_KEY)?.unwrap_or_default();
-    let user_id = get_yuanheng_secret(&state, USER_ID_KEY)?.unwrap_or_default();
+    let session_cookie = get_yuanheng_secret(state, SESSION_COOKIE_KEY)?.unwrap_or_default();
+    let user_id = get_yuanheng_secret(state, USER_ID_KEY)?.unwrap_or_default();
     if session_cookie.is_empty() || user_id.is_empty() {
         return Err("元衡登录状态不完整，请重新登录".to_string());
     }
