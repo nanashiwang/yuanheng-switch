@@ -88,6 +88,43 @@ describe("useModelSwitchCenter", () => {
         if (command === "get_yuanheng_tool_statuses") {
           return Promise.resolve(statuses);
         }
+        if (command === "get_yuanheng_tool_activation_statuses") {
+          return Promise.resolve(
+            statuses.map((status) => ({
+              app: status.app,
+              configuredAt: 1,
+              configWritten: status.configured,
+              routeRequired: [
+                "claude-desktop",
+                "codex",
+                "chatgpt-desktop",
+              ].includes(status.app),
+              routeReady: status.configured,
+              requestReceived: false,
+              requestSucceeded: false,
+              lastRequestAt: null,
+              lastStatusCode: null,
+              lastModel: null,
+              message: "等待第一条请求",
+            })),
+          );
+        }
+        if (command === "preflight_yuanheng_tool") {
+          return Promise.resolve({
+            app: payload.app,
+            model: payload.model,
+            group: payload.group ?? "default",
+            status: "ok",
+            sourceProtocol: "openai_chat",
+            targetProtocol: "openai_responses",
+            streamingSupported: true,
+            toolCall: "unknown",
+            reasoningSupported: true,
+            imageInput: "unknown",
+            checks: [],
+            message: "兼容性预检通过，可以安全配置",
+          });
+        }
         if (command === "get_installed_tool_versions") {
           const tools = (payload.tools as string[] | undefined) ?? [];
           return Promise.resolve(
@@ -111,6 +148,24 @@ describe("useModelSwitchCenter", () => {
             pendingTerminals: 0,
             model: null,
             reasoningEffort: null,
+          });
+        }
+        if (command === "get_codex_account_mode") {
+          return Promise.resolve({
+            mode: "yuanheng",
+            officialLoginAvailable: true,
+            yuanhengAvailable: true,
+            restartRequired: false,
+            message: null,
+          });
+        }
+        if (command === "switch_codex_account_mode") {
+          return Promise.resolve({
+            mode: payload.mode,
+            officialLoginAvailable: true,
+            yuanhengAvailable: true,
+            restartRequired: true,
+            message: "已切换",
           });
         }
         if (command === "get_tool_launch_cwd") {
@@ -322,6 +377,49 @@ describe("useModelSwitchCenter", () => {
     expect(result.current.pendingApps.size).toBe(0);
   });
 
+  it("blocks configuration when the compatibility preflight fails", async () => {
+    const defaultImplementation = invokeMock.getMockImplementation();
+    invokeMock.mockImplementation(
+      (command: string, payload: Record<string, unknown> = {}) => {
+        if (command === "preflight_yuanheng_tool") {
+          return Promise.resolve({
+            app: payload.app,
+            model: payload.model,
+            group: payload.group ?? "default",
+            status: "error",
+            sourceProtocol: "openai_chat",
+            targetProtocol: "openai_responses",
+            streamingSupported: true,
+            toolCall: "unknown",
+            reasoningSupported: false,
+            imageInput: "unsupported",
+            checks: [
+              {
+                id: "model",
+                status: "error",
+                title: "模型已经失效",
+                message: "当前账号目录中不存在该模型",
+              },
+            ],
+            message: "兼容性预检未通过，已阻止写入配置",
+          });
+        }
+        return defaultImplementation?.(command, payload);
+      },
+    );
+    const { wrapper } = createWrapper();
+    const { result } = renderHook(() => useModelSwitchCenter(), { wrapper });
+
+    await waitFor(() => expect(result.current.models.codex).toBe("model-a"));
+    await act(async () => {
+      await result.current.applyModel("codex", "model-b");
+    });
+
+    expect(result.current.models.codex).toBe("model-a");
+    expect(result.current.preflightResults.codex?.status).toBe("error");
+    expect(configureResolvers.has("codex")).toBe(false);
+  });
+
   it("restarts Codex App after its model catalog configuration changes", async () => {
     const { wrapper } = createWrapper();
     const { result } = renderHook(() => useModelSwitchCenter(), { wrapper });
@@ -416,6 +514,44 @@ describe("useModelSwitchCenter", () => {
       tool: "claude",
       restart: false,
       cwd: "/tmp/codex project",
+    });
+  });
+
+  it("switches Codex to official mode without reapplying Yuanheng on launch", async () => {
+    const { wrapper } = createWrapper();
+    const { result } = renderHook(() => useModelSwitchCenter(), { wrapper });
+
+    await waitFor(() => {
+      expect(result.current.codexAccountMode.data?.mode).toBe("yuanheng");
+    });
+
+    await act(async () => {
+      await result.current.switchCodexMode("official");
+    });
+
+    expect(invokeMock).toHaveBeenCalledWith("switch_codex_account_mode", {
+      mode: "official",
+      expectedMode: "yuanheng",
+    });
+    await waitFor(() => {
+      expect(result.current.restartRequiredApps.has("codex")).toBe(false);
+      expect(result.current.restartRequiredApps.has("chatgpt-desktop")).toBe(
+        true,
+      );
+    });
+
+    invokeMock.mockClear();
+    await act(async () => {
+      await result.current.launch("codex");
+    });
+
+    expect(invokeMock).not.toHaveBeenCalledWith(
+      "configure_yuanheng_tools",
+      expect.anything(),
+    );
+    expect(invokeMock).toHaveBeenCalledWith("launch_tool", {
+      tool: "codex",
+      restart: false,
     });
   });
 });

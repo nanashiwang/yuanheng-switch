@@ -1598,6 +1598,49 @@ impl Database {
         })
     }
 
+    /// 返回某个真实代理入口在指定时间后的最近一条请求。
+    ///
+    /// 与 Dashboard 的 `get_request_logs` 不同，这里故意不折叠
+    /// `claude-desktop -> claude`，用于配置生效闭环时证明究竟是哪一个
+    /// 客户端入口发出了请求，避免把 Claude CLI 的请求误归给桌面端。
+    pub fn get_latest_proxy_request_for_app(
+        &self,
+        app_type: &str,
+        start_date: i64,
+    ) -> Result<Option<RequestLogDetail>, AppError> {
+        let conn = lock_conn!(self.conn);
+        let provider_name = provider_name_coalesce("l", "p");
+        let sql = format!(
+            "SELECT l.request_id, l.provider_id, {provider_name} as provider_name, l.app_type, l.model,
+                    l.request_model, l.cost_multiplier,
+                    l.input_tokens, l.output_tokens, l.cache_read_tokens, l.cache_creation_tokens,
+                    l.input_cost_usd, l.output_cost_usd, l.cache_read_cost_usd, l.cache_creation_cost_usd, l.total_cost_usd,
+                    l.is_streaming, l.latency_ms, l.first_token_ms, l.duration_ms,
+                    l.status_code, l.error_message, l.created_at, l.data_source, l.pricing_model,
+                    l.input_token_semantics
+             FROM proxy_request_logs l
+             LEFT JOIN providers p ON l.provider_id = p.id AND l.app_type = p.app_type
+             WHERE {} AND l.app_type = ?1 AND l.created_at >= ?2
+             ORDER BY l.created_at DESC
+             LIMIT 1",
+            effective_usage_log_filter("l")
+        );
+        let result = conn.query_row(
+            &sql,
+            params![app_type, start_date],
+            row_to_request_log_detail,
+        );
+        match result {
+            Ok(mut detail) => {
+                let mut pricing_cache = HashMap::new();
+                Self::maybe_backfill_log_costs(&conn, &mut detail, &mut pricing_cache)?;
+                Ok(Some(detail))
+            }
+            Err(rusqlite::Error::QueryReturnedNoRows) => Ok(None),
+            Err(error) => Err(AppError::Database(error.to_string())),
+        }
+    }
+
     /// 获取单个请求详情
     pub fn get_request_detail(
         &self,

@@ -124,6 +124,52 @@ export interface CodexSessionBridgeStatus {
   reasoningEffort: string | null;
 }
 
+export type CodexAccountMode = "yuanheng" | "official" | "unknown";
+
+export interface CodexAccountModeStatus {
+  mode: CodexAccountMode;
+  officialLoginAvailable: boolean;
+  yuanhengAvailable: boolean;
+  restartRequired: boolean;
+  message: string | null;
+}
+
+export interface YuanhengPreflightCheck {
+  id: string;
+  status: "ok" | "warning" | "error";
+  title: string;
+  message: string;
+}
+
+export interface YuanhengToolPreflight {
+  app: YuanhengToolId;
+  model: string;
+  group: string;
+  status: "ok" | "warning" | "error";
+  sourceProtocol: string;
+  targetProtocol: string;
+  streamingSupported: boolean;
+  toolCall: "supported" | "unsupported" | "unknown";
+  reasoningSupported: boolean;
+  imageInput: "supported" | "unsupported" | "unknown";
+  checks: YuanhengPreflightCheck[];
+  message: string;
+}
+
+export interface YuanhengToolActivationStatus {
+  app: YuanhengToolId;
+  configuredAt: number | null;
+  configWritten: boolean;
+  routeRequired: boolean;
+  routeReady: boolean;
+  requestReceived: boolean;
+  requestSucceeded: boolean;
+  lastRequestAt: number | null;
+  lastStatusCode: number | null;
+  lastModel: string | null;
+  message: string;
+}
+
 export interface YuanhengToolConfigureResult {
   app: YuanhengToolId;
   configured: boolean;
@@ -220,8 +266,37 @@ export const yuanhengApi = {
     return invoke("get_yuanheng_tool_statuses");
   },
 
+  getToolActivationStatuses(): Promise<YuanhengToolActivationStatus[]> {
+    return invoke("get_yuanheng_tool_activation_statuses");
+  },
+
+  preflightTool(
+    app: YuanhengToolId,
+    model: string,
+    group?: string,
+    reasoning?: YuanhengReasoningLevel,
+  ): Promise<YuanhengToolPreflight> {
+    return invoke("preflight_yuanheng_tool", {
+      app,
+      model,
+      group,
+      reasoning,
+    });
+  },
+
   getCodexSessionBridgeStatus(): Promise<CodexSessionBridgeStatus> {
     return invoke("get_codex_session_bridge_status");
+  },
+
+  getCodexAccountMode(): Promise<CodexAccountModeStatus> {
+    return invoke("get_codex_account_mode");
+  },
+
+  switchCodexAccountMode(
+    mode: Exclude<CodexAccountMode, "unknown">,
+    expectedMode?: CodexAccountMode,
+  ): Promise<CodexAccountModeStatus> {
+    return invoke("switch_codex_account_mode", { mode, expectedMode });
   },
 
   getDiagnostics(): Promise<YuanhengDiagnosticReport> {

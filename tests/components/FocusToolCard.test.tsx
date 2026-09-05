@@ -40,13 +40,28 @@ function createSwitcher(
     launchDirectories: {},
     launchDirectoryPendingApps: new Set(),
     statusMap: new Map(),
+    activationMap: new Map(),
+    activationRefreshing: false,
+    preflightResults: {},
+    preflightPending: false,
     codexBridge: {} as ModelSwitchCenterState["codexBridge"],
+    codexAccountMode: {
+      data: {
+        mode: "unknown",
+        officialLoginAvailable: false,
+        yuanhengAvailable: false,
+        restartRequired: false,
+        message: null,
+      },
+    } as ModelSwitchCenterState["codexAccountMode"],
+    codexModePending: false,
     refreshModels: vi.fn(),
     install: vi.fn(),
     chooseDesktopPath: vi.fn(),
     applyModel: vi.fn(),
     applyGroup: vi.fn(),
     applyReasoning: vi.fn(),
+    switchCodexMode: vi.fn(),
     chooseLaunchDirectory: vi.fn(),
     launch: vi.fn(),
   };
@@ -122,5 +137,33 @@ describe("FocusToolCard", () => {
     expect(directoryButton).toHaveTextContent("claude-project");
     fireEvent.click(directoryButton);
     expect(switcher.chooseLaunchDirectory).toHaveBeenCalledWith("claude");
+  });
+
+  it("官方模式隐藏元衡模型控件并允许切回中转", () => {
+    const switcher = createSwitcher("ready");
+    switcher.rows = ["codex"];
+    switcher.runnableRows = ["codex"];
+    switcher.installedApps = new Set(["codex"]);
+    switcher.codexAccountMode = {
+      data: {
+        mode: "official",
+        officialLoginAvailable: true,
+        yuanhengAvailable: true,
+        restartRequired: false,
+        message: null,
+      },
+    } as ModelSwitchCenterState["codexAccountMode"];
+
+    render(<FocusToolCard switcher={switcher} onOpenTools={vi.fn()} />);
+
+    expect(screen.getByText("OpenAI 官方账号")).toBeInTheDocument();
+    expect(
+      screen.getByText(
+        "模型与推理等级由 Codex 官方账号管理；切回元衡后会恢复上次选择。",
+      ),
+    ).toBeInTheDocument();
+    expect(screen.queryByText("1 · 模型供应商")).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "元衡中转" }));
+    expect(switcher.switchCodexMode).toHaveBeenCalledWith("yuanheng");
   });
 });

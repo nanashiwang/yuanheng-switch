@@ -91,6 +91,28 @@ export const handlers = [
       reasoningEffort: null,
     }),
   ),
+  http.post(`${TAURI_ENDPOINT}/get_codex_account_mode`, () =>
+    success({
+      mode: "yuanheng",
+      officialLoginAvailable: true,
+      yuanhengAvailable: true,
+      restartRequired: false,
+      message: null,
+    }),
+  ),
+  http.post(
+    `${TAURI_ENDPOINT}/switch_codex_account_mode`,
+    async ({ request }) => {
+      const body = (await request.json()) as { mode?: string };
+      return success({
+        mode: body.mode ?? "unknown",
+        officialLoginAvailable: true,
+        yuanhengAvailable: true,
+        restartRequired: true,
+        message: null,
+      });
+    },
+  ),
   http.post(`${TAURI_ENDPOINT}/get_usage_summary`, () =>
     success({
       totalRequests: 128,
@@ -145,6 +167,51 @@ export const handlers = [
   http.post(`${TAURI_ENDPOINT}/open_yuanheng_topup`, () => success(true)),
   http.post(`${TAURI_ENDPOINT}/get_yuanheng_tool_statuses`, () =>
     success(getYuanhengToolStatuses()),
+  ),
+  http.post(`${TAURI_ENDPOINT}/get_yuanheng_tool_activation_statuses`, () =>
+    success(
+      getYuanhengToolStatuses().map((status) => ({
+        app: status.app,
+        configuredAt: status.configured ? 1_700_000_000 : null,
+        configWritten: status.configured,
+        routeRequired: ["claude-desktop", "codex", "chatgpt-desktop"].includes(
+          status.app,
+        ),
+        routeReady: status.configured,
+        requestReceived: false,
+        requestSucceeded: false,
+        lastRequestAt: null,
+        lastStatusCode: null,
+        lastModel: null,
+        message: status.configured
+          ? "配置与路由已就绪，等待工具发出第一条请求"
+          : "尚未写入有效配置",
+      })),
+    ),
+  ),
+  http.post(
+    `${TAURI_ENDPOINT}/preflight_yuanheng_tool`,
+    async ({ request }) => {
+      const body = (await request.json()) as {
+        app: string;
+        model: string;
+        group?: string;
+      };
+      return success({
+        app: body.app,
+        model: body.model,
+        group: body.group ?? "default",
+        status: "ok",
+        sourceProtocol: "openai_responses",
+        targetProtocol: "openai_responses",
+        streamingSupported: true,
+        toolCall: "unknown",
+        reasoningSupported: true,
+        imageInput: "unknown",
+        checks: [],
+        message: "兼容性预检通过，可以安全配置",
+      });
+    },
   ),
   http.post(`${TAURI_ENDPOINT}/get_yuanheng_diagnostics`, () => {
     const connection = getYuanhengConnection();

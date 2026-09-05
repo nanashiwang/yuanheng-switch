@@ -27,6 +27,7 @@ import {
 } from "@/lib/api";
 import {
   useConfigureYuanhengTools,
+  usePreflightYuanhengTool,
   useRefreshYuanheng,
   useYuanhengConnection,
   useYuanhengToolStatuses,
@@ -162,6 +163,7 @@ export function ToolSetupGrid({
   const refreshConnection = useRefreshYuanheng();
   const statuses = useYuanhengToolStatuses();
   const configure = useConfigureYuanhengTools();
+  const preflight = usePreflightYuanhengTool();
   const desktopInstall = useDesktopInstallFlow();
   const launchDirectoryState = useToolLaunchDirectories();
   const versions = useQuery({
@@ -287,8 +289,34 @@ export function ToolSetupGrid({
       : "auto";
   };
 
+  const preflightApps = async (apps: YuanhengToolId[]) => {
+    const checked = new Set<string>();
+    for (const app of apps) {
+      const model = models[app] ?? statusMap.get(app)?.recommendedModel;
+      if (!model)
+        throw new Error(dt("{{v0}} 没有可用模型", { v0: toolLabel(app) }));
+      const group = preferredGroup(model, groups[app]);
+      const selectedReasoning = selectedReasoningFor(app, model);
+      const key = [model, group ?? "", selectedReasoning].join("\u0000");
+      if (checked.has(key)) continue;
+      checked.add(key);
+      const result = await preflight.mutateAsync({
+        app,
+        model,
+        group,
+        reasoning: selectedReasoning,
+      });
+      if (result.status === "error") {
+        const failed = result.checks.find((check) => check.status === "error");
+        throw new Error(failed?.message || result.message);
+      }
+      if (result.status === "warning") toast.info(result.message);
+    }
+  };
+
   const configureApps = async (apps: YuanhengToolId[]) => {
     try {
+      await preflightApps(apps);
       const selectedModels = Object.fromEntries(
         apps
           .map((app) => [app, models[app]])
@@ -357,6 +385,7 @@ export function ToolSetupGrid({
       return next;
     });
     try {
+      await preflightApps(["codex"]);
       const results = await configure.mutateAsync({
         apps: ["codex"],
         models: { codex: model },
@@ -492,6 +521,7 @@ export function ToolSetupGrid({
             selectedReasoning !== (status.reasoning ?? "auto")),
       );
       if (needsApply) {
+        await preflightApps([app]);
         const results = await configure.mutateAsync({
           apps: [app],
           models: selectedModel ? { [app]: selectedModel } : undefined,

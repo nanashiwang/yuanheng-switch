@@ -2,18 +2,24 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import {
+  type CodexAccountMode,
   isYuanhengCliTool,
   type YuanhengReasoningLevel,
+  type YuanhengToolPreflight,
   type YuanhengToolId,
   yuanhengTerminalModels,
 } from "@/lib/api";
 import { settingsApi, yuanhengApi } from "@/lib/api";
 import {
   useConfigureYuanhengTools,
+  useCodexAccountMode,
   useCodexSessionBridgeStatus,
+  usePreflightYuanhengTool,
   useRefreshYuanheng,
   useYuanhengConnection,
   useYuanhengToolStatuses,
+  useYuanhengToolActivationStatuses,
+  useSwitchCodexAccountMode,
 } from "@/lib/query/yuanheng";
 import { extractErrorMessage } from "@/utils/errorUtils";
 import {
@@ -64,6 +70,10 @@ export function useModelSwitchCenter() {
   const refreshConnection = useRefreshYuanheng();
   const statuses = useYuanhengToolStatuses();
   const configure = useConfigureYuanhengTools();
+  const preflight = usePreflightYuanhengTool();
+  const activationStatuses = useYuanhengToolActivationStatuses();
+  const codexAccountMode = useCodexAccountMode();
+  const switchCodexAccountMode = useSwitchCodexAccountMode();
   const codexBridge = useCodexSessionBridgeStatus();
   const desktopInstall = useDesktopInstallFlow();
   const cachedInventory = useMemo(
@@ -103,6 +113,12 @@ export function useModelSwitchCenter() {
   );
   const operationIds = useRef<Partial<Record<YuanhengToolId, number>>>({});
   const operationSequence = useRef(0);
+  const preflightCache = useRef(
+    new Map<string, { checkedAt: number; result: YuanhengToolPreflight }>(),
+  );
+  const [preflightResults, setPreflightResults] = useState<
+    Partial<Record<YuanhengToolId, YuanhengToolPreflight>>
+  >({});
 
   const versionMap = useMemo(
     () => new Map((inventory.data ?? []).map((item) => [item.name, item])),
@@ -111,6 +127,11 @@ export function useModelSwitchCenter() {
   const statusMap = useMemo(
     () => new Map((statuses.data ?? []).map((item) => [item.app, item])),
     [statuses.data],
+  );
+  const activationMap = useMemo(
+    () =>
+      new Map((activationStatuses.data ?? []).map((item) => [item.app, item])),
+    [activationStatuses.data],
   );
   const terminalModels = useMemo(
     () => yuanhengTerminalModels(connection),
@@ -130,6 +151,11 @@ export function useModelSwitchCenter() {
       ),
     [connection?.modelGroups, connection?.reasoningLevels, terminalModels],
   );
+
+  useEffect(() => {
+    preflightCache.current.clear();
+    setPreflightResults({});
+  }, [connection?.lastSyncedAt]);
 
   useEffect(
     () =>
@@ -190,19 +216,36 @@ export function useModelSwitchCenter() {
   const runnableRows = useMemo(
     () =>
       DESKTOP_TOOLS.filter(
-        (app) => isInstalled(app) && statusMap.get(app)?.supported,
+        (app) =>
+          isInstalled(app) &&
+          ((app === "codex" || app === "chatgpt-desktop") &&
+          codexAccountMode.data?.mode === "official"
+            ? true
+            : statusMap.get(app)?.supported),
       ).sort((left, right) => {
-        const leftConfigured = statusMap.get(left)?.configured ? 0 : 1;
-        const rightConfigured = statusMap.get(right)?.configured ? 0 : 1;
+        const configuredRank = (app: YuanhengToolId) =>
+          ((app === "codex" || app === "chatgpt-desktop") &&
+            codexAccountMode.data?.mode === "official") ||
+          statusMap.get(app)?.configured
+            ? 0
+            : 1;
+        const leftConfigured = configuredRank(left);
+        const rightConfigured = configuredRank(right);
         return leftConfigured - rightConfigured;
       }),
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [statusMap, versionMap],
+    [codexAccountMode.data?.mode, statusMap, versionMap],
   );
   const rows = useMemo(
     () =>
       [...DESKTOP_TOOLS].sort((left, right) => {
         const rank = (app: YuanhengToolId) => {
+          if (
+            (app === "codex" || app === "chatgpt-desktop") &&
+            codexAccountMode.data?.mode === "official" &&
+            isInstalled(app)
+          )
+            return 0;
           if (statusMap.get(app)?.configured && isInstalled(app)) return 0;
           if (isInstalled(app) && statusMap.get(app)?.supported) return 1;
           if (isInstalled(app)) return 2;
@@ -211,7 +254,7 @@ export function useModelSwitchCenter() {
         return rank(left) - rank(right);
       }),
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [statusMap, versionMap],
+    [codexAccountMode.data?.mode, statusMap, versionMap],
   );
   const launchDirectoryState = useToolLaunchDirectories(
     Boolean(connection?.connected),
@@ -231,7 +274,12 @@ export function useModelSwitchCenter() {
 
   const retryBootstrap = async () => {
     clearToolInventoryCache();
-    await Promise.all([inventory.refetch(), statuses.refetch()]);
+    await Promise.all([
+      inventory.refetch(),
+      statuses.refetch(),
+      codexAccountMode.refetch(),
+      activationStatuses.refetch(),
+    ]);
   };
 
   const refreshModels = () => {
@@ -239,6 +287,47 @@ export function useModelSwitchCenter() {
     void refreshConnection.mutateAsync().catch(() => {
       toast.error(dt("网站模型同步失败，已保留上次可用列表"));
     });
+  };
+
+  const runPreflight = async (
+    app: YuanhengToolId,
+    model: string,
+    group?: string,
+    selectedReasoning?: YuanhengReasoningLevel,
+  ) => {
+    const cacheKey = [
+      app,
+      model,
+      group ?? "",
+      selectedReasoning ?? "auto",
+    ].join("\u0000");
+    const cached = preflightCache.current.get(cacheKey);
+    if (cached && Date.now() - cached.checkedAt < 60_000) {
+      setPreflightResults((current) => ({
+        ...current,
+        [app]: cached.result,
+      }));
+      if (cached.result.status === "error") {
+        throw new Error(cached.result.message);
+      }
+      return cached.result;
+    }
+    const result = await preflight.mutateAsync({
+      app,
+      model,
+      group,
+      reasoning: selectedReasoning,
+    });
+    preflightCache.current.set(cacheKey, {
+      checkedAt: Date.now(),
+      result,
+    });
+    setPreflightResults((current) => ({ ...current, [app]: result }));
+    if (result.status === "error") {
+      const failed = result.checks.find((check) => check.status === "error");
+      throw new Error(failed?.message || result.message);
+    }
+    return result;
   };
 
   const install = async (app: YuanhengToolId) => {
@@ -287,6 +376,7 @@ export function useModelSwitchCenter() {
             supportedReasoning.includes(selectedReasoning)
               ? selectedReasoning
               : "auto";
+          await runPreflight(app, selectedModel, group, normalizedReasoning);
           const configured = await configure.mutateAsync({
             apps: [app],
             models: { [app]: selectedModel },
@@ -365,6 +455,13 @@ export function useModelSwitchCenter() {
     },
     successMessage: (model: string, group?: string) => string,
   ) => {
+    if (
+      (app === "codex" || app === "chatgpt-desktop") &&
+      codexAccountMode.data?.mode === "official"
+    ) {
+      toast.info(dt("当前使用 OpenAI 官方账号，模型由 Codex 管理"));
+      return;
+    }
     const status = statusMap.get(app);
     const previous = {
       model: models[app],
@@ -392,19 +489,29 @@ export function useModelSwitchCenter() {
         ? requestedReasoning
         : "auto";
 
-    setModels((current) => ({ ...current, [app]: model }));
-    setGroups((current) => {
-      const next = { ...current };
-      if (group) next[app] = group;
-      else delete next[app];
-      return next;
-    });
-    setReasoning((current) => ({
-      ...current,
-      [app]: selectedReasoning,
-    }));
     const operationId = beginOperation(app);
     try {
+      const preflightResult = await runPreflight(
+        app,
+        model,
+        group,
+        selectedReasoning,
+      );
+      if (!isCurrentOperation(app, operationId)) return;
+      if (preflightResult.status === "warning") {
+        toast.info(preflightResult.message);
+      }
+      setModels((current) => ({ ...current, [app]: model }));
+      setGroups((current) => {
+        const next = { ...current };
+        if (group) next[app] = group;
+        else delete next[app];
+        return next;
+      });
+      setReasoning((current) => ({
+        ...current,
+        [app]: selectedReasoning,
+      }));
       const results = await configure.mutateAsync({
         apps: [app],
         models: { [app]: model },
@@ -449,6 +556,7 @@ export function useModelSwitchCenter() {
         );
       }
       await queryClient.invalidateQueries({ queryKey: ["yuanheng"] });
+      await activationStatuses.refetch();
     } catch (error) {
       if (isCurrentOperation(app, operationId)) {
         setModels((current) => {
@@ -496,6 +604,30 @@ export function useModelSwitchCenter() {
       dt("{{v0}} 推理等级已更新 · {{v1}}", { v0: toolLabel(app), v1: model }),
     );
 
+  const switchCodexMode = async (
+    mode: Exclude<CodexAccountMode, "unknown">,
+  ) => {
+    const expectedMode = codexAccountMode.data?.mode;
+    if (expectedMode === mode || switchCodexAccountMode.isPending) return;
+    try {
+      const result = await switchCodexAccountMode.mutateAsync({
+        mode,
+        expectedMode,
+      });
+      markRestartRequired("codex");
+      markRestartRequired("chatgpt-desktop");
+      toast.success(
+        result.message ??
+          (mode === "official"
+            ? dt("已切换到 OpenAI 官方账号")
+            : dt("已切换到元衡中转")),
+      );
+    } catch (error) {
+      await codexAccountMode.refetch();
+      toast.error(extractErrorMessage(error) || dt("Codex 使用方式切换失败"));
+    }
+  };
+
   const chooseLaunchDirectory = async (app: YuanhengToolId) => {
     try {
       const saved = await launchDirectoryState.chooseDirectory(app);
@@ -515,6 +647,9 @@ export function useModelSwitchCenter() {
     const operationId = beginOperation(app);
     try {
       const status = statusMap.get(app);
+      const usesOfficialCodexAccount =
+        (app === "codex" || app === "chatgpt-desktop") &&
+        codexAccountMode.data?.mode === "official";
       const model = models[app] ?? status?.recommendedModel ?? status?.model;
       const group = model
         ? pickPreferredGroup(
@@ -534,6 +669,7 @@ export function useModelSwitchCenter() {
           : "auto";
       const restartPending = getRestartRequiredApps().has(app);
       const dirty =
+        !usesOfficialCodexAccount &&
         !restartPending &&
         Boolean(
           !status?.configured ||
@@ -542,6 +678,7 @@ export function useModelSwitchCenter() {
             normalizedReasoning !== (status.reasoning ?? "auto"),
         );
       if (dirty && model) {
+        await runPreflight(app, model, group, normalizedReasoning);
         const results = await configure.mutateAsync({
           apps: [app],
           models: { [app]: model },
@@ -572,6 +709,7 @@ export function useModelSwitchCenter() {
       if (!isCurrentOperation(app, operationId)) return;
       toast.success(dt("{{v0}} 已启动", { v0: toolLabel(app) }));
       await queryClient.invalidateQueries({ queryKey: ["yuanheng"] });
+      await activationStatuses.refetch();
     } catch (error) {
       if (isCurrentOperation(app, operationId)) {
         toast.error(extractErrorMessage(error) || dt("启动失败"));
@@ -600,13 +738,20 @@ export function useModelSwitchCenter() {
     launchDirectories: launchDirectoryState.directories,
     launchDirectoryPendingApps: launchDirectoryState.pendingApps,
     statusMap,
+    activationMap,
+    activationRefreshing: activationStatuses.isFetching,
+    preflightResults,
+    preflightPending: preflight.isPending,
     codexBridge,
+    codexAccountMode,
+    codexModePending: switchCodexAccountMode.isPending,
     refreshModels,
     install,
     chooseDesktopPath,
     applyModel,
     applyGroup,
     applyReasoning,
+    switchCodexMode,
     chooseLaunchDirectory,
     launch,
   };
