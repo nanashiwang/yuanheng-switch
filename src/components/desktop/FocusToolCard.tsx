@@ -157,9 +157,12 @@ export function FocusToolCard({
     launchDirectories,
     launchDirectoryPendingApps,
     statusMap,
+    codexAccountMode,
+    codexModePending,
     refreshModels,
     applyModel,
     applyGroup,
+    switchCodexMode,
     chooseLaunchDirectory,
     launch,
   } = switcher;
@@ -182,7 +185,10 @@ export function FocusToolCard({
     Partial<Record<YuanhengToolId, string>>
   >({});
 
-  if (bootstrapPhase === "loading" || !connection?.connected) {
+  if (
+    bootstrapPhase === "loading" ||
+    (!connection?.connected && codexAccountMode.data?.mode !== "official")
+  ) {
     return <FocusToolLoadingCard />;
   }
   if (bootstrapPhase === "error") {
@@ -201,9 +207,12 @@ export function FocusToolCard({
   }
 
   const pending = pendingApps.has(app);
+  const isCodexSurface = app === "codex" || app === "chatgpt-desktop";
+  const usesOfficialCodexAccount =
+    isCodexSurface && codexAccountMode.data?.mode === "official";
   const launchDirectory = launchDirectories[app];
   const launchDirectoryPending = launchDirectoryPendingApps.has(app);
-  const configured = Boolean(status?.configured);
+  const configured = usesOfficialCodexAccount || Boolean(status?.configured);
   const restartRequired = restartRequiredApps.has(app);
   const selectedVendor =
     vendorGroups.find((vendor) => vendor.id === selectedVendors[app]) ??
@@ -217,7 +226,7 @@ export function FocusToolCard({
       ? status.recommendedModel
       : undefined;
   const availableGroups = current
-    ? (connection.modelGroups[current] ?? [])
+    ? (connection?.modelGroups[current] ?? [])
     : [];
   const selectedGroup = current
     ? pickPreferredGroup(
@@ -226,7 +235,9 @@ export function FocusToolCard({
         groups[app] ?? status?.group ?? undefined,
       )
     : undefined;
-  const groupMap = new Map(connection.groups.map((group) => [group.id, group]));
+  const groupMap = new Map(
+    (connection?.groups ?? []).map((group) => [group.id, group]),
+  );
   const vendorOptions = vendorGroups.map((vendor) => ({
     value: vendor.id,
     label: `${vendor.label} · ${vendor.models.length}`,
@@ -293,14 +304,16 @@ export function FocusToolCard({
       <div className="relative mt-4 flex flex-wrap items-baseline gap-x-3 gap-y-1">
         <span className="text-[11px] text-white/55">{dt("当前模型")}</span>
         <span className="font-display text-2xl font-semibold tabular-nums tracking-tight">
-          {current ?? dt("未选择")}
+          {usesOfficialCodexAccount
+            ? dt("OpenAI 官方账号")
+            : (current ?? dt("未选择"))}
         </span>
-        {currentGroup && (
+        {!usesOfficialCodexAccount && currentGroup && (
           <span className="rounded-full bg-white/10 px-2 py-0.5 text-[10px] text-white/75">
             {currentGroup} {dt("分组")}
           </span>
         )}
-        {currentReasoning !== "auto" && (
+        {!usesOfficialCodexAccount && currentReasoning !== "auto" && (
           <span className="rounded-full bg-white/10 px-2 py-0.5 text-[10px] text-white/75">
             {currentReasoning} {dt("推理")}
           </span>
@@ -329,6 +342,47 @@ export function FocusToolCard({
         )}
       </div>
 
+      {isCodexSurface && (
+        <div className="relative mt-3 flex items-center justify-between gap-3 rounded-xl border border-white/10 bg-white/[0.05] px-3 py-2">
+          <div>
+            <p className="text-[10px] font-semibold text-white/75">
+              {dt("使用方式")}
+            </p>
+            <p className="mt-0.5 text-[9px] text-white/45">
+              {usesOfficialCodexAccount
+                ? dt("使用 Codex 中已登录的 OpenAI 官方账号")
+                : dt("使用元衡模型、分组与本地安全路由")}
+            </p>
+          </div>
+          <div className="flex shrink-0 rounded-lg border border-white/10 bg-black/15 p-0.5">
+            {(["yuanheng", "official"] as const).map((mode) => {
+              const active = codexAccountMode.data?.mode === mode;
+              return (
+                <button
+                  key={mode}
+                  type="button"
+                  disabled={codexModePending || pending}
+                  onClick={() => void switchCodexMode(mode)}
+                  className={`h-7 rounded-md px-2.5 text-[10px] font-semibold transition-colors disabled:opacity-50 ${
+                    active
+                      ? "bg-[#e9b67c] text-[#163a36]"
+                      : "text-white/60 hover:bg-white/10 hover:text-white"
+                  }`}
+                >
+                  {codexModePending && !active ? (
+                    <Loader2 className="mx-auto h-3 w-3 animate-spin" />
+                  ) : mode === "yuanheng" ? (
+                    dt("元衡中转")
+                  ) : (
+                    dt("OpenAI 官方")
+                  )}
+                </button>
+              );
+            })}
+          </div>
+        </div>
+      )}
+
       <div className="relative mt-4 rounded-xl border border-white/10 bg-black/10 p-3">
         <div className="mb-2.5 flex items-center justify-between gap-3">
           <p className="text-[10px] font-semibold text-white/75">
@@ -338,68 +392,76 @@ export function FocusToolCard({
             {dt("先选供应商，再选模型；修改后立即生效")}
           </p>
         </div>
-        <div className="grid gap-2 sm:grid-cols-[minmax(116px,.8fr)_minmax(0,1.35fr)_minmax(108px,.8fr)]">
-          <label className="min-w-0">
-            <span className="mb-1 block text-[9px] font-medium text-white/50">
-              {dt("1 · 模型供应商")}
-            </span>
-            <CompactSelectPicker
-              label={dt("{{v0}} 模型供应商", { v0: toolLabel(app) })}
-              value={selectedVendor?.id ?? ""}
-              options={vendorOptions}
-              disabled={pending || vendorGroups.length === 0}
-              triggerClassName="border-white/15 bg-white/[0.08] px-2.5 text-[10.5px] text-white transition-colors hover:bg-white/[0.12] focus:border-[#e9b67c]/70"
-              onChange={(vendor) =>
-                setSelectedVendors((currentSelections) => ({
-                  ...currentSelections,
-                  [app]: vendor,
-                }))
-              }
-            />
-          </label>
+        {usesOfficialCodexAccount ? (
+          <div className="rounded-lg border border-emerald-300/15 bg-emerald-300/[0.06] px-3 py-2 text-[10px] leading-4 text-emerald-100/80">
+            {dt(
+              "模型与推理等级由 Codex 官方账号管理；切回元衡后会恢复上次选择。",
+            )}
+          </div>
+        ) : (
+          <div className="grid gap-2 sm:grid-cols-[minmax(116px,.8fr)_minmax(0,1.35fr)_minmax(108px,.8fr)]">
+            <label className="min-w-0">
+              <span className="mb-1 block text-[9px] font-medium text-white/50">
+                {dt("1 · 模型供应商")}
+              </span>
+              <CompactSelectPicker
+                label={dt("{{v0}} 模型供应商", { v0: toolLabel(app) })}
+                value={selectedVendor?.id ?? ""}
+                options={vendorOptions}
+                disabled={pending || vendorGroups.length === 0}
+                triggerClassName="border-white/15 bg-white/[0.08] px-2.5 text-[10.5px] text-white transition-colors hover:bg-white/[0.12] focus:border-[#e9b67c]/70"
+                onChange={(vendor) =>
+                  setSelectedVendors((currentSelections) => ({
+                    ...currentSelections,
+                    [app]: vendor,
+                  }))
+                }
+              />
+            </label>
 
-          <label className="min-w-0">
-            <span className="mb-1 block text-[9px] font-medium text-white/50">
-              {dt("2 · 细分模型")}
-            </span>
-            <ModelPicker
-              models={selectedVendor?.models ?? []}
-              value={visibleModel}
-              recommended={recommendedModel}
-              modelMeta={modelMeta}
-              label={dt("{{v0}} {{v1}}模型", {
-                v0: toolLabel(app),
-                v1: selectedVendor?.label ?? "",
-              })}
-              disabled={pending || !selectedVendor}
-              triggerLabel={
-                visibleModel ??
-                dt("选择 {{v0}}模型", {
-                  v0: selectedVendor?.label ?? dt("供应商"),
-                })
-              }
-              className="mt-0 h-8 border-white/15 bg-white/[0.08] text-[10.5px] text-white shadow-sm hover:bg-white/[0.12]"
-              onRefresh={refreshModels}
-              onChange={(model) => void applyModel(app, model)}
-            />
-          </label>
+            <label className="min-w-0">
+              <span className="mb-1 block text-[9px] font-medium text-white/50">
+                {dt("2 · 细分模型")}
+              </span>
+              <ModelPicker
+                models={selectedVendor?.models ?? []}
+                value={visibleModel}
+                recommended={recommendedModel}
+                modelMeta={modelMeta}
+                label={dt("{{v0}} {{v1}}模型", {
+                  v0: toolLabel(app),
+                  v1: selectedVendor?.label ?? "",
+                })}
+                disabled={pending || !selectedVendor}
+                triggerLabel={
+                  visibleModel ??
+                  dt("选择 {{v0}}模型", {
+                    v0: selectedVendor?.label ?? dt("供应商"),
+                  })
+                }
+                className="mt-0 h-8 border-white/15 bg-white/[0.08] text-[10.5px] text-white shadow-sm hover:bg-white/[0.12]"
+                onRefresh={refreshModels}
+                onChange={(model) => void applyModel(app, model)}
+              />
+            </label>
 
-          <label className="min-w-0">
-            <span className="mb-1 block text-[9px] font-medium text-white/50">
-              {dt("3 · 令牌分组")}
-            </span>
-            <CompactSelectPicker
-              label={dt("{{v0}} 当前工具令牌分组", {
-                v0: toolLabel(app),
-              })}
-              value={selectedGroup ?? ""}
-              options={groupOptions}
-              disabled={pending || availableGroups.length <= 1}
-              triggerClassName="border-white/15 bg-white/[0.08] px-2.5 text-[10.5px] text-white transition-colors hover:bg-white/[0.12] focus:border-[#e9b67c]/70"
-              onChange={(group) => void applyGroup(app, group)}
-            />
-          </label>
-        </div>
+            <label className="min-w-0">
+              <span className="mb-1 block text-[9px] font-medium text-white/50">
+                {dt("3 · 令牌分组")}
+              </span>
+              <CompactSelectPicker
+                label={dt("{{v0}} 当前工具令牌分组", {
+                  v0: toolLabel(app),
+                })}
+                value={selectedGroup ?? ""}
+                options={groupOptions}
+                disabled={pending || availableGroups.length <= 1}
+                triggerClassName="border-white/15 bg-white/[0.08] px-2.5 text-[10.5px] text-white transition-colors hover:bg-white/[0.12] focus:border-[#e9b67c]/70"
+                onChange={(group) => void applyGroup(app, group)}
+              />
+            </label>
+          </div>
+        )}
       </div>
     </section>
   );

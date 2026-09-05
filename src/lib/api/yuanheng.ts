@@ -124,6 +124,16 @@ export interface CodexSessionBridgeStatus {
   reasoningEffort: string | null;
 }
 
+export type CodexAccountMode = "yuanheng" | "official" | "unknown";
+
+export interface CodexAccountModeStatus {
+  mode: CodexAccountMode;
+  officialLoginAvailable: boolean;
+  yuanhengAvailable: boolean;
+  restartRequired: boolean;
+  message: string | null;
+}
+
 export interface YuanhengToolConfigureResult {
   app: YuanhengToolId;
   configured: boolean;
@@ -222,6 +232,17 @@ export const yuanhengApi = {
 
   getCodexSessionBridgeStatus(): Promise<CodexSessionBridgeStatus> {
     return invoke("get_codex_session_bridge_status");
+  },
+
+  getCodexAccountMode(): Promise<CodexAccountModeStatus> {
+    return invoke("get_codex_account_mode");
+  },
+
+  switchCodexAccountMode(
+    mode: Exclude<CodexAccountMode, "unknown">,
+    expectedMode?: CodexAccountMode,
+  ): Promise<CodexAccountModeStatus> {
+    return invoke("switch_codex_account_mode", { mode, expectedMode });
   },
 
   getDiagnostics(): Promise<YuanhengDiagnosticReport> {

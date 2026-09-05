@@ -113,6 +113,24 @@ describe("useModelSwitchCenter", () => {
             reasoningEffort: null,
           });
         }
+        if (command === "get_codex_account_mode") {
+          return Promise.resolve({
+            mode: "yuanheng",
+            officialLoginAvailable: true,
+            yuanhengAvailable: true,
+            restartRequired: false,
+            message: null,
+          });
+        }
+        if (command === "switch_codex_account_mode") {
+          return Promise.resolve({
+            mode: payload.mode,
+            officialLoginAvailable: true,
+            yuanhengAvailable: true,
+            restartRequired: true,
+            message: "已切换",
+          });
+        }
         if (command === "get_tool_launch_cwd") {
           return Promise.resolve(null);
         }
@@ -416,6 +434,44 @@ describe("useModelSwitchCenter", () => {
       tool: "claude",
       restart: false,
       cwd: "/tmp/codex project",
+    });
+  });
+
+  it("switches Codex to official mode without reapplying Yuanheng on launch", async () => {
+    const { wrapper } = createWrapper();
+    const { result } = renderHook(() => useModelSwitchCenter(), { wrapper });
+
+    await waitFor(() => {
+      expect(result.current.codexAccountMode.data?.mode).toBe("yuanheng");
+    });
+
+    await act(async () => {
+      await result.current.switchCodexMode("official");
+    });
+
+    expect(invokeMock).toHaveBeenCalledWith("switch_codex_account_mode", {
+      mode: "official",
+      expectedMode: "yuanheng",
+    });
+    await waitFor(() => {
+      expect(result.current.restartRequiredApps.has("codex")).toBe(false);
+      expect(result.current.restartRequiredApps.has("chatgpt-desktop")).toBe(
+        true,
+      );
+    });
+
+    invokeMock.mockClear();
+    await act(async () => {
+      await result.current.launch("codex");
+    });
+
+    expect(invokeMock).not.toHaveBeenCalledWith(
+      "configure_yuanheng_tools",
+      expect.anything(),
+    );
+    expect(invokeMock).toHaveBeenCalledWith("launch_tool", {
+      tool: "codex",
+      restart: false,
     });
   });
 });

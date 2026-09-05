@@ -309,6 +309,20 @@ impl Database {
         Ok(())
     }
 
+    /// 清除指定应用的数据库级当前供应商标记。
+    ///
+    /// 主要用于跨文件切换失败时恢复“原本没有当前供应商”的精确状态，
+    /// 避免用一个不存在的占位 ID 间接清空，令事务回滚语义保持明确。
+    pub fn clear_current_provider(&self, app_type: &str) -> Result<(), AppError> {
+        let conn = lock_conn!(self.conn);
+        conn.execute(
+            "UPDATE providers SET is_current = 0 WHERE app_type = ?1",
+            params![app_type],
+        )
+        .map_err(|e| AppError::Database(e.to_string()))?;
+        Ok(())
+    }
+
     pub fn update_provider_settings_config(
         &self,
         app_type: &str,

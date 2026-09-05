@@ -178,6 +178,22 @@ pub fn update_codex_session_model(model: &str, reasoning: &str) {
     );
 }
 
+/// 切到 OpenAI 官方账号时停止向新会话注入元衡模型选择。
+/// 已经启动的 App Server 仍需重启，才能丢弃启动时传入的路由覆盖项。
+pub fn clear_codex_session_model() {
+    let state = bridge_state();
+    if let Ok(mut selection) = state.selection.write() {
+        *selection = None;
+    }
+    if let Ok(mut pending) = state.pending_threads.write() {
+        pending.clear();
+    }
+    if let Ok(mut applied) = state.terminal_selections.write() {
+        applied.clear();
+    }
+    log::info!("[Codex Bridge] 已清除元衡模型注入，等待终端重启加载官方账号");
+}
+
 pub fn confirm_codex_session_model(session_id: &str, model: &str) -> bool {
     let confirmed = bridge_state().confirm_outbound_model(session_id, model);
     if confirmed {
@@ -388,7 +404,7 @@ async fn handle_terminal(
 
     let executable_parent = codex_executable.parent().map(PathBuf::from);
     let mut command = Command::new(&codex_executable);
-    if let Some(profile_path) = model_profile.as_deref() {
+    if let Some(profile_path) = model_profile.as_deref().filter(|path| path.is_file()) {
         // App Server 禁用 --profile；只覆盖非敏感路由字段，凭据继续来自 live 配置。
         for config_override in codex_profile_overrides(profile_path)? {
             command.args(["-c", &config_override]);

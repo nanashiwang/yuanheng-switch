@@ -91,6 +91,28 @@ export const handlers = [
       reasoningEffort: null,
     }),
   ),
+  http.post(`${TAURI_ENDPOINT}/get_codex_account_mode`, () =>
+    success({
+      mode: "yuanheng",
+      officialLoginAvailable: true,
+      yuanhengAvailable: true,
+      restartRequired: false,
+      message: null,
+    }),
+  ),
+  http.post(
+    `${TAURI_ENDPOINT}/switch_codex_account_mode`,
+    async ({ request }) => {
+      const body = (await request.json()) as { mode?: string };
+      return success({
+        mode: body.mode ?? "unknown",
+        officialLoginAvailable: true,
+        yuanhengAvailable: true,
+        restartRequired: true,
+        message: null,
+      });
+    },
+  ),
   http.post(`${TAURI_ENDPOINT}/get_usage_summary`, () =>
     success({
       totalRequests: 128,

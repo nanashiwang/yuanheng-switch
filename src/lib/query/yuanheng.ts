@@ -1,6 +1,10 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { yuanhengApi } from "@/lib/api";
-import type { YuanhengReasoningLevel, YuanhengToolId } from "@/lib/api";
+import type {
+  CodexAccountMode,
+  YuanhengReasoningLevel,
+  YuanhengToolId,
+} from "@/lib/api";
 
 export const yuanhengKeys = {
   connection: ["yuanheng", "connection"] as const,
@@ -8,6 +12,7 @@ export const yuanhengKeys = {
   tools: ["yuanheng", "tools"] as const,
   diagnostics: ["yuanheng", "diagnostics"] as const,
   codexBridge: ["yuanheng", "codex-bridge"] as const,
+  codexAccountMode: ["yuanheng", "codex-account-mode"] as const,
 };
 
 export function useYuanhengConnection() {
@@ -91,6 +96,9 @@ export function useRefreshYuanheng() {
       queryClient.setQueryData(yuanhengKeys.connection, status);
       queryClient.invalidateQueries({ queryKey: yuanhengKeys.tools });
       queryClient.invalidateQueries({ queryKey: yuanhengKeys.diagnostics });
+      queryClient.invalidateQueries({
+        queryKey: yuanhengKeys.codexAccountMode,
+      });
     },
     onError: () => {
       // 后端会在会话过期时清理本机会话，重新读取连接状态以退出过期缓存。
@@ -121,6 +129,9 @@ export function useSignOutYuanheng() {
       });
       queryClient.invalidateQueries({ queryKey: yuanhengKeys.tools });
       queryClient.invalidateQueries({ queryKey: yuanhengKeys.diagnostics });
+      queryClient.invalidateQueries({
+        queryKey: yuanhengKeys.codexAccountMode,
+      });
     },
   });
 }
@@ -142,6 +153,41 @@ export function useCodexSessionBridgeStatus() {
     retry: false,
     refetchInterval: 2_000,
     refetchOnWindowFocus: true,
+  });
+}
+
+export function useCodexAccountMode() {
+  return useQuery({
+    queryKey: yuanhengKeys.codexAccountMode,
+    queryFn: () => yuanhengApi.getCodexAccountMode(),
+    retry: false,
+    refetchOnWindowFocus: true,
+  });
+}
+
+export function useSwitchCodexAccountMode() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({
+      mode,
+      expectedMode,
+    }: {
+      mode: Exclude<CodexAccountMode, "unknown">;
+      expectedMode?: CodexAccountMode;
+    }) => yuanhengApi.switchCodexAccountMode(mode, expectedMode),
+    onSuccess: (status) => {
+      queryClient.setQueryData(yuanhengKeys.codexAccountMode, status);
+      queryClient.invalidateQueries({ queryKey: yuanhengKeys.tools });
+      queryClient.invalidateQueries({ queryKey: yuanhengKeys.diagnostics });
+      queryClient.invalidateQueries({
+        queryKey: yuanhengKeys.codexAccountMode,
+      });
+      queryClient.invalidateQueries({ queryKey: yuanhengKeys.codexBridge });
+      queryClient.invalidateQueries({ queryKey: ["providers", "codex"] });
+      queryClient.invalidateQueries({
+        queryKey: ["desktop", "tool-connections"],
+      });
+    },
   });
 }
 
@@ -209,6 +255,9 @@ export function useRollbackYuanhengTools() {
       queryClient.invalidateQueries({ queryKey: yuanhengKeys.tools });
       queryClient.invalidateQueries({ queryKey: yuanhengKeys.diagnostics });
       queryClient.invalidateQueries({
+        queryKey: yuanhengKeys.codexAccountMode,
+      });
+      queryClient.invalidateQueries({
         queryKey: ["desktop", "tool-connections"],
       });
     },
@@ -232,6 +281,9 @@ export function useConfigureYuanhengTools() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: yuanhengKeys.tools });
       queryClient.invalidateQueries({ queryKey: yuanhengKeys.diagnostics });
+      queryClient.invalidateQueries({
+        queryKey: yuanhengKeys.codexAccountMode,
+      });
       queryClient.invalidateQueries({
         queryKey: ["desktop", "tool-connections"],
       });

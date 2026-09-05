@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import {
+  type CodexAccountMode,
   isYuanhengCliTool,
   type YuanhengReasoningLevel,
   type YuanhengToolId,
@@ -10,10 +11,12 @@ import {
 import { settingsApi, yuanhengApi } from "@/lib/api";
 import {
   useConfigureYuanhengTools,
+  useCodexAccountMode,
   useCodexSessionBridgeStatus,
   useRefreshYuanheng,
   useYuanhengConnection,
   useYuanhengToolStatuses,
+  useSwitchCodexAccountMode,
 } from "@/lib/query/yuanheng";
 import { extractErrorMessage } from "@/utils/errorUtils";
 import {
@@ -64,6 +67,8 @@ export function useModelSwitchCenter() {
   const refreshConnection = useRefreshYuanheng();
   const statuses = useYuanhengToolStatuses();
   const configure = useConfigureYuanhengTools();
+  const codexAccountMode = useCodexAccountMode();
+  const switchCodexAccountMode = useSwitchCodexAccountMode();
   const codexBridge = useCodexSessionBridgeStatus();
   const desktopInstall = useDesktopInstallFlow();
   const cachedInventory = useMemo(
@@ -190,19 +195,36 @@ export function useModelSwitchCenter() {
   const runnableRows = useMemo(
     () =>
       DESKTOP_TOOLS.filter(
-        (app) => isInstalled(app) && statusMap.get(app)?.supported,
+        (app) =>
+          isInstalled(app) &&
+          ((app === "codex" || app === "chatgpt-desktop") &&
+          codexAccountMode.data?.mode === "official"
+            ? true
+            : statusMap.get(app)?.supported),
       ).sort((left, right) => {
-        const leftConfigured = statusMap.get(left)?.configured ? 0 : 1;
-        const rightConfigured = statusMap.get(right)?.configured ? 0 : 1;
+        const configuredRank = (app: YuanhengToolId) =>
+          ((app === "codex" || app === "chatgpt-desktop") &&
+            codexAccountMode.data?.mode === "official") ||
+          statusMap.get(app)?.configured
+            ? 0
+            : 1;
+        const leftConfigured = configuredRank(left);
+        const rightConfigured = configuredRank(right);
         return leftConfigured - rightConfigured;
       }),
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [statusMap, versionMap],
+    [codexAccountMode.data?.mode, statusMap, versionMap],
   );
   const rows = useMemo(
     () =>
       [...DESKTOP_TOOLS].sort((left, right) => {
         const rank = (app: YuanhengToolId) => {
+          if (
+            (app === "codex" || app === "chatgpt-desktop") &&
+            codexAccountMode.data?.mode === "official" &&
+            isInstalled(app)
+          )
+            return 0;
           if (statusMap.get(app)?.configured && isInstalled(app)) return 0;
           if (isInstalled(app) && statusMap.get(app)?.supported) return 1;
           if (isInstalled(app)) return 2;
@@ -211,7 +233,7 @@ export function useModelSwitchCenter() {
         return rank(left) - rank(right);
       }),
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [statusMap, versionMap],
+    [codexAccountMode.data?.mode, statusMap, versionMap],
   );
   const launchDirectoryState = useToolLaunchDirectories(
     Boolean(connection?.connected),
@@ -231,7 +253,11 @@ export function useModelSwitchCenter() {
 
   const retryBootstrap = async () => {
     clearToolInventoryCache();
-    await Promise.all([inventory.refetch(), statuses.refetch()]);
+    await Promise.all([
+      inventory.refetch(),
+      statuses.refetch(),
+      codexAccountMode.refetch(),
+    ]);
   };
 
   const refreshModels = () => {
@@ -365,6 +391,13 @@ export function useModelSwitchCenter() {
     },
     successMessage: (model: string, group?: string) => string,
   ) => {
+    if (
+      (app === "codex" || app === "chatgpt-desktop") &&
+      codexAccountMode.data?.mode === "official"
+    ) {
+      toast.info(dt("当前使用 OpenAI 官方账号，模型由 Codex 管理"));
+      return;
+    }
     const status = statusMap.get(app);
     const previous = {
       model: models[app],
@@ -496,6 +529,30 @@ export function useModelSwitchCenter() {
       dt("{{v0}} 推理等级已更新 · {{v1}}", { v0: toolLabel(app), v1: model }),
     );
 
+  const switchCodexMode = async (
+    mode: Exclude<CodexAccountMode, "unknown">,
+  ) => {
+    const expectedMode = codexAccountMode.data?.mode;
+    if (expectedMode === mode || switchCodexAccountMode.isPending) return;
+    try {
+      const result = await switchCodexAccountMode.mutateAsync({
+        mode,
+        expectedMode,
+      });
+      markRestartRequired("codex");
+      markRestartRequired("chatgpt-desktop");
+      toast.success(
+        result.message ??
+          (mode === "official"
+            ? dt("已切换到 OpenAI 官方账号")
+            : dt("已切换到元衡中转")),
+      );
+    } catch (error) {
+      await codexAccountMode.refetch();
+      toast.error(extractErrorMessage(error) || dt("Codex 使用方式切换失败"));
+    }
+  };
+
   const chooseLaunchDirectory = async (app: YuanhengToolId) => {
     try {
       const saved = await launchDirectoryState.chooseDirectory(app);
@@ -515,6 +572,9 @@ export function useModelSwitchCenter() {
     const operationId = beginOperation(app);
     try {
       const status = statusMap.get(app);
+      const usesOfficialCodexAccount =
+        (app === "codex" || app === "chatgpt-desktop") &&
+        codexAccountMode.data?.mode === "official";
       const model = models[app] ?? status?.recommendedModel ?? status?.model;
       const group = model
         ? pickPreferredGroup(
@@ -534,6 +594,7 @@ export function useModelSwitchCenter() {
           : "auto";
       const restartPending = getRestartRequiredApps().has(app);
       const dirty =
+        !usesOfficialCodexAccount &&
         !restartPending &&
         Boolean(
           !status?.configured ||
@@ -601,12 +662,15 @@ export function useModelSwitchCenter() {
     launchDirectoryPendingApps: launchDirectoryState.pendingApps,
     statusMap,
     codexBridge,
+    codexAccountMode,
+    codexModePending: switchCodexAccountMode.isPending,
     refreshModels,
     install,
     chooseDesktopPath,
     applyModel,
     applyGroup,
     applyReasoning,
+    switchCodexMode,
     chooseLaunchDirectory,
     launch,
   };

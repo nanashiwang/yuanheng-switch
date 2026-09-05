@@ -21,6 +21,8 @@ export {
   yuanhengTerminalModels,
 } from "./yuanheng";
 export type {
+  CodexAccountMode,
+  CodexAccountModeStatus,
   YuanhengConnectionStatus,
   YuanhengAccount,
   YuanhengAnnouncement,

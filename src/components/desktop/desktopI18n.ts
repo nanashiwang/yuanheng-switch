@@ -123,6 +123,22 @@ export const DESKTOP_EN: Record<string, string> = {
   "{{tool}} 当前工具令牌分组": "{{tool}} Token Group",
   正在读取本机工具与配置状态: "Reading local tool and configuration status",
   当前模型: "Current Model",
+  使用方式: "Connection Mode",
+  "OpenAI 官方账号": "OpenAI Official Account",
+  "使用 Codex 中已登录的 OpenAI 官方账号":
+    "Use the OpenAI account already signed in to Codex",
+  "使用元衡模型、分组与本地安全路由":
+    "Use YuanHeng models, token groups, and local secure routing",
+  元衡中转: "YuanHeng Relay",
+  "OpenAI 官方": "OpenAI Official",
+  "模型与推理等级由 Codex 官方账号管理；切回元衡后会恢复上次选择。":
+    "Models and reasoning are managed by the official Codex account. Your previous YuanHeng selection will be restored when you switch back.",
+  使用元衡模型与令牌分组: "Use YuanHeng models and token groups",
+  "当前使用 OpenAI 官方账号，模型由 Codex 管理":
+    "The OpenAI official account is active. Codex manages the model.",
+  "已切换到 OpenAI 官方账号": "Switched to the OpenAI official account",
+  已切换到元衡中转: "Switched to YuanHeng Relay",
+  "Codex 使用方式切换失败": "Failed to switch the Codex connection mode",
   快捷切换: "Quick Switch",
   账号默认: "Account Default",
   查看所有工具: "View All Tools",
