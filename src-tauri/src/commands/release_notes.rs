@@ -5,7 +5,10 @@ const MAX_MANIFEST_BYTES: usize = 128 * 1024;
 
 async fn read_release_notes(mut response: reqwest::Response) -> Result<serde_json::Value, String> {
     if !response.status().is_success() {
-        return Err(format!("更新公告暂时无法同步（HTTP {}）", response.status()));
+        return Err(format!(
+            "更新公告暂时无法同步（HTTP {}）",
+            response.status()
+        ));
     }
     if response.content_length().unwrap_or(0) > MAX_MANIFEST_BYTES as u64 {
         return Err("更新公告响应过大".into());
@@ -63,19 +66,17 @@ mod tests {
 
     #[tokio::test]
     async fn reads_only_release_notes_and_supports_legacy_manifests() {
-        let value = read_release_notes(
-            response(
-                r#"{"version":"1.0.0","platforms":{},"release_notes":[{"version":"1.0.0"}]}"#
-                    .into(),
-                axum::http::StatusCode::OK,
-            ),
-        )
+        let value = read_release_notes(response(
+            r#"{"version":"1.0.0","platforms":{},"release_notes":[{"version":"1.0.0"}]}"#.into(),
+            axum::http::StatusCode::OK,
+        ))
         .await
         .unwrap();
         assert_eq!(value[0]["version"], "1.0.0");
-        assert!(read_release_notes(
-            response(r#"{"notes":"legacy"}"#.into(), axum::http::StatusCode::OK)
-        )
+        assert!(read_release_notes(response(
+            r#"{"notes":"legacy"}"#.into(),
+            axum::http::StatusCode::OK
+        ))
         .await
         .unwrap()
         .is_null());
@@ -87,11 +88,12 @@ mod tests {
             ("invalid".to_string(), axum::http::StatusCode::OK),
             ("{}".to_string(), axum::http::StatusCode::BAD_GATEWAY),
             ("{}".to_string(), axum::http::StatusCode::FOUND),
-            (" ".repeat(MAX_MANIFEST_BYTES + 1), axum::http::StatusCode::OK),
+            (
+                " ".repeat(MAX_MANIFEST_BYTES + 1),
+                axum::http::StatusCode::OK,
+            ),
         ] {
-            assert!(read_release_notes(response(body, status))
-                .await
-                .is_err());
+            assert!(read_release_notes(response(body, status)).await.is_err());
         }
     }
 }
