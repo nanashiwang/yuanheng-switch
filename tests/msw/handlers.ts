@@ -70,6 +70,7 @@ const authenticateYuanheng = (username: string) => {
 };
 
 export const handlers = [
+  http.post(`${TAURI_ENDPOINT}/get_desktop_release_notes`, () => success(null)),
   http.post(`${TAURI_ENDPOINT}/get_migration_result`, () => success(false)),
   http.post(`${TAURI_ENDPOINT}/get_yuanheng_connection`, () =>
     success(getYuanhengConnection()),

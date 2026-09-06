@@ -2,7 +2,7 @@ import {
   AlertCircle,
   ArrowRight,
   Download,
-  ExternalLink,
+  BookOpen,
   Loader2,
   RefreshCw,
   Rocket,
@@ -18,9 +18,8 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { useUpdate } from "@/contexts/UpdateContext";
-import { settingsApi } from "@/lib/api";
-
-const RELEASES_URL = "https://github.com/nanashiwang/yuanheng-switch/releases";
+import { openAnnouncementCenter } from "@/lib/announcementCenter";
+import { useDesktopReleaseNotes } from "@/lib/query/desktopReleaseNotes";
 
 function formatMegabytes(bytes: number): string {
   return (bytes / 1024 / 1024).toFixed(1);
@@ -40,6 +39,7 @@ export function UpdatePrompt() {
     remindLater,
     ignoreUpdate,
   } = useUpdate();
+  const { data: releaseNotes } = useDesktopReleaseNotes(isPromptOpen);
 
   if (!updateInfo) return null;
 
@@ -48,18 +48,10 @@ export function UpdatePrompt() {
       ? Math.min(100, Math.round((progress.downloaded / progress.total) * 100))
       : null;
 
-  const openReleaseNotes = async () => {
-    const version = updateInfo.availableVersion.startsWith("v")
-      ? updateInfo.availableVersion
-      : `v${updateInfo.availableVersion}`;
-    try {
-      await settingsApi.openExternal(
-        `${RELEASES_URL}/tag/${encodeURIComponent(version)}`,
-      );
-    } catch {
-      await settingsApi.openExternal(RELEASES_URL);
-    }
-  };
+  const notes =
+    releaseNotes.find(
+      (note) => note.version === updateInfo.availableVersion.replace(/^v/, ""),
+    )?.content ?? updateInfo.notes;
 
   return (
     <Dialog
@@ -102,13 +94,13 @@ export function UpdatePrompt() {
             </span>
           </div>
 
-          {updateInfo.notes && (
+          {notes && (
             <div className="max-h-36 overflow-y-auto rounded-lg border px-4 py-3">
               <p className="mb-1.5 text-xs font-semibold">
                 {t("settings.releaseNotes")}
               </p>
               <p className="whitespace-pre-wrap text-xs leading-5 text-muted-foreground">
-                {updateInfo.notes}
+                {notes}
               </p>
             </div>
           )}
@@ -174,10 +166,10 @@ export function UpdatePrompt() {
                 type="button"
                 variant="ghost"
                 size="sm"
-                onClick={() => void openReleaseNotes()}
+                onClick={() => openAnnouncementCenter("updates")}
                 className="mr-auto gap-1.5"
               >
-                <ExternalLink className="h-3.5 w-3.5" />
+                <BookOpen className="h-3.5 w-3.5" />
                 {t("settings.releaseNotes")}
               </Button>
               <Button

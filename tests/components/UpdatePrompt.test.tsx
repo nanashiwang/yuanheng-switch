@@ -5,6 +5,17 @@ import type {
   UpdateDownloadProgress,
   UpdatePhase,
 } from "@/contexts/UpdateContext";
+import { QueryClientProvider } from "@tanstack/react-query";
+import { createTestQueryClient } from "../utils/testQueryClient";
+import { OPEN_ANNOUNCEMENTS_EVENT } from "@/lib/announcementCenter";
+
+function renderPrompt() {
+  return render(
+    <QueryClientProvider client={createTestQueryClient()}>
+      <UpdatePrompt />
+    </QueryClientProvider>,
+  );
+}
 
 const { openExternalMock, updateContextMock } = vi.hoisted(() => ({
   openExternalMock: vi.fn(),
@@ -51,7 +62,7 @@ describe("UpdatePrompt", () => {
   });
 
   it("展示版本、更新日志和三个更新决策", () => {
-    render(<UpdatePrompt />);
+    renderPrompt();
 
     expect(screen.getByText("v0.1.0")).toBeInTheDocument();
     expect(screen.getByText("v0.2.0")).toBeInTheDocument();
@@ -78,7 +89,7 @@ describe("UpdatePrompt", () => {
       total: 10 * 1024 * 1024,
     };
 
-    render(<UpdatePrompt />);
+    renderPrompt();
 
     expect(screen.getByText("50%")).toBeInTheDocument();
     expect(screen.getByText("5.0 MB / 10.0 MB")).toBeInTheDocument();
@@ -91,7 +102,7 @@ describe("UpdatePrompt", () => {
     updateContextMock.phase = "error";
     updateContextMock.error = "signature invalid";
 
-    render(<UpdatePrompt />);
+    renderPrompt();
 
     expect(screen.getByText("signature invalid")).toBeInTheDocument();
     fireEvent.click(
@@ -102,11 +113,26 @@ describe("UpdatePrompt", () => {
 
   it("便携版使用打开下载页文案", () => {
     updateContextMock.isPortable = true;
-    render(<UpdatePrompt />);
+    renderPrompt();
 
     fireEvent.click(
       screen.getByRole("button", { name: "settings.openDownloadPage" }),
     );
     expect(updateContextMock.startUpdate).toHaveBeenCalledTimes(1);
+  });
+
+  it("更新日志打开内部公告中心，不调用外部浏览器", () => {
+    const onOpen = vi.fn();
+    window.addEventListener(OPEN_ANNOUNCEMENTS_EVENT, onOpen);
+    try {
+      renderPrompt();
+      fireEvent.click(
+        screen.getByRole("button", { name: "settings.releaseNotes" }),
+      );
+      expect(onOpen).toHaveBeenCalledTimes(1);
+      expect(openExternalMock).not.toHaveBeenCalled();
+    } finally {
+      window.removeEventListener(OPEN_ANNOUNCEMENTS_EVENT, onOpen);
+    }
   });
 });

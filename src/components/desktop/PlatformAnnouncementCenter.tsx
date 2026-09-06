@@ -13,6 +13,18 @@ import {
 } from "lucide-react";
 import type { YuanhengAnnouncement, YuanhengAnnouncementType } from "@/lib/api";
 import { useYuanhengAnnouncements } from "@/lib/query/yuanheng";
+import { useDesktopReleaseNotes } from "@/lib/query/desktopReleaseNotes";
+import {
+  RELEASE_NOTES_SEEN_KEY,
+  releaseNoteIdentity,
+} from "@/lib/desktopReleaseNotes";
+import {
+  OPEN_ANNOUNCEMENTS_EVENT,
+  RELEASE_ANNOUNCEMENT_READ_EVENT,
+  openAnnouncementCenter,
+  type AnnouncementCategory,
+  type AnnouncementRequest,
+} from "@/lib/announcementCenter";
 import { cn } from "@/lib/utils";
 import {
   Dialog,
@@ -161,11 +173,17 @@ function AnnouncementDialog({
   onOpenChange,
   announcements,
   initialAnnouncementId,
+  category,
+  onCategoryChange,
+  statusMessage,
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   announcements: YuanhengAnnouncement[];
   initialAnnouncementId?: string;
+  category: AnnouncementCategory;
+  onCategoryChange: (category: AnnouncementCategory) => void;
+  statusMessage?: string;
 }) {
   const [selectedId, setSelectedId] = useState(
     initialAnnouncementId ?? announcements[0]?.id ?? "",
@@ -183,14 +201,19 @@ function AnnouncementDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-h-[78vh] max-w-[860px] overflow-hidden p-0">
+      <DialogContent
+        zIndex="top"
+        className="max-h-[78vh] max-w-[860px] overflow-hidden p-0"
+      >
         <DialogHeader className="relative pr-14">
           <DialogTitle className="flex items-center gap-2">
             <Megaphone className="h-4.5 w-4.5 text-primary" />
-            {dt("平台公告")}
+            {dt("公告中心")}
           </DialogTitle>
           <DialogDescription>
-            {dt("与元衡平台公告中心同步，每分钟自动检查更新")}
+            {category === "updates"
+              ? dt("仅展示最近两次客户端更新，不累计历史记录。")
+              : dt("与元衡平台公告中心同步，每分钟自动检查更新")}
           </DialogDescription>
           <button
             type="button"
@@ -202,7 +225,33 @@ function AnnouncementDialog({
           </button>
         </DialogHeader>
 
-        <div className="grid min-h-0 flex-1 md:grid-cols-[270px_minmax(0,1fr)]">
+        <div className="flex shrink-0 gap-2 border-b px-5 pb-3">
+          {(["updates", "platform"] as const).map((item) => (
+            <button
+              key={item}
+              type="button"
+              aria-pressed={category === item}
+              onClick={() => onCategoryChange(item)}
+              className={cn(
+                "rounded-lg px-3 py-1.5 text-xs font-semibold",
+                category === item
+                  ? "bg-primary/10 text-primary"
+                  : "text-muted-foreground hover:bg-muted",
+              )}
+            >
+              {dt(item === "updates" ? "客户端更新" : "平台通知")}
+            </button>
+          ))}
+        </div>
+        {statusMessage && (
+          <p
+            role="status"
+            className="shrink-0 px-5 py-2 text-xs text-muted-foreground"
+          >
+            {statusMessage}
+          </p>
+        )}
+        <div className="grid min-h-0 flex-1 overflow-y-auto md:grid-cols-[270px_minmax(0,1fr)]">
           <div className="max-h-[58vh] overflow-y-auto border-b border-border-default bg-muted/15 p-2 md:border-b-0 md:border-r">
             {announcements.map((announcement) => {
               const meta = TYPE_META[announcement.type];
@@ -226,14 +275,18 @@ function AnnouncementDialog({
                         meta.badgeClass,
                       )}
                     >
-                      {dt(meta.label)}
+                      {category === "updates"
+                        ? `v${announcement.id}`
+                        : dt(meta.label)}
                     </span>
                     <span className="text-[9px] text-muted-foreground">
                       {formatAnnouncementDate(announcement.publishDate)}
                     </span>
                   </span>
                   <span className="line-clamp-2 text-[11px] font-medium leading-5 text-foreground">
-                    {summarizeAnnouncement(announcement.content)}
+                    {category === "updates"
+                      ? announcement.content.split("\n")[0]
+                      : summarizeAnnouncement(announcement.content)}
                   </span>
                 </button>
               );
@@ -250,14 +303,18 @@ function AnnouncementDialog({
                       TYPE_META[selected.type].badgeClass,
                     )}
                   >
-                    {dt(TYPE_META[selected.type].label)}
+                    {category === "updates"
+                      ? `v${selected.id}`
+                      : dt(TYPE_META[selected.type].label)}
                   </span>
                   <span className="text-[10px] text-muted-foreground">
                     {formatAnnouncementDate(selected.publishDate)}
                   </span>
                 </div>
-                <div className="whitespace-pre-wrap break-words text-[12.5px] leading-6 text-foreground/90">
-                  {announcementToPlainText(selected.content)}
+                <div className="whitespace-pre-wrap break-words text-[12.5px] leading-6 text-foreground/90 [overflow-wrap:anywhere]">
+                  {category === "updates"
+                    ? selected.content
+                    : announcementToPlainText(selected.content)}
                 </div>
                 {selected.extra && (
                   <div className="mt-5 rounded-xl border border-border-default bg-muted/25 px-4 py-3 text-[11px] leading-5 text-muted-foreground">
@@ -273,7 +330,153 @@ function AnnouncementDialog({
   );
 }
 
+function readSeenRelease(): string | null {
+  try {
+    return localStorage.getItem(RELEASE_NOTES_SEEN_KEY);
+  } catch {
+    return null;
+  }
+}
+
+function markReleaseRead(identity: string): void {
+  try {
+    localStorage.setItem(RELEASE_NOTES_SEEN_KEY, identity);
+  } catch {
+    // Reading announcements is still available when storage is disabled.
+  }
+  window.dispatchEvent(
+    new CustomEvent(RELEASE_ANNOUNCEMENT_READ_EVENT, { detail: identity }),
+  );
+}
+
+function ReleaseAnnouncementBanner() {
+  const { data: releases } = useDesktopReleaseNotes();
+  const latest = releases[0];
+  const [seen, setSeen] = useState(readSeenRelease);
+  useEffect(() => {
+    const onRead = (event: Event) => {
+      const identity: unknown = (event as CustomEvent).detail;
+      if (typeof identity === "string") setSeen(identity);
+    };
+    window.addEventListener(RELEASE_ANNOUNCEMENT_READ_EVENT, onRead);
+    return () =>
+      window.removeEventListener(RELEASE_ANNOUNCEMENT_READ_EVENT, onRead);
+  }, []);
+  if (!latest) return null;
+  const identity = releaseNoteIdentity(latest);
+  const unread = identity !== seen;
+  return (
+    <div
+      className={cn(
+        "flex min-h-10 items-center gap-2.5 rounded-xl border px-3.5 py-2 text-[11px]",
+        unread
+          ? "border-primary/20 bg-primary/[0.06] text-primary"
+          : "bg-card/70 text-muted-foreground",
+      )}
+    >
+      <Megaphone className="h-3.5 w-3.5 shrink-0" />
+      <span className="shrink-0 font-semibold">{dt("客户端更新")}</span>
+      <span className="min-w-0 flex-1 truncate">
+        {dt("v{{version}} 更新公告", { version: latest.version })}
+      </span>
+      <button
+        type="button"
+        className="shrink-0 rounded-md px-1.5 py-1 font-semibold hover:bg-primary/10"
+        onClick={() => openAnnouncementCenter("updates")}
+      >
+        {dt("查看更新内容")}
+      </button>
+      {unread && (
+        <button
+          type="button"
+          aria-label={dt("标记本次更新已读")}
+          className="shrink-0 rounded p-0.5 opacity-60 hover:opacity-100"
+          onClick={() => markReleaseRead(identity)}
+        >
+          <X className="h-3.5 w-3.5" />
+        </button>
+      )}
+    </div>
+  );
+}
+
+/** One global host lets the workspace, About and updater share the same viewer. */
+export function DesktopAnnouncementCenter() {
+  const [open, setOpen] = useState(false);
+  const [category, setCategory] = useState<AnnouncementCategory>("updates");
+  const releaseQuery = useDesktopReleaseNotes(open);
+  const platformQuery = useYuanhengAnnouncements(
+    open && category === "platform",
+  );
+  const releases = releaseQuery.data;
+  const releaseAnnouncements = useMemo<YuanhengAnnouncement[]>(
+    () =>
+      releases.map((note) => ({
+        id: note.version,
+        content: note.content,
+        publishDate: note.publishedAt,
+        type: "success",
+        extra: null,
+      })),
+    [releases],
+  );
+
+  useEffect(() => {
+    const onOpen = (event: Event) => {
+      const detail = (event as CustomEvent<AnnouncementRequest>).detail;
+      if (detail?.category !== "updates" && detail?.category !== "platform")
+        return;
+      setCategory(detail.category);
+      setOpen(true);
+    };
+    window.addEventListener(OPEN_ANNOUNCEMENTS_EVENT, onOpen);
+    return () => window.removeEventListener(OPEN_ANNOUNCEMENTS_EVENT, onOpen);
+  }, []);
+  useEffect(() => {
+    if (open && category === "updates" && releases[0]) {
+      markReleaseRead(releaseNoteIdentity(releases[0]));
+    }
+  }, [open, category, releases]);
+
+  const announcements =
+    category === "updates"
+      ? releaseAnnouncements
+      : (platformQuery.data?.announcements ?? []);
+  const statusMessage =
+    category === "updates"
+      ? releaseQuery.isError
+        ? dt("暂时无法同步，正在显示本地保存的最近两次更新。")
+        : undefined
+      : platformQuery.isError
+        ? dt("平台公告暂时同步失败")
+        : platformQuery.isLoading
+          ? dt("正在同步平台公告…")
+          : announcements.length === 0
+            ? dt("已同步，暂无公告")
+            : undefined;
+
+  return (
+    <AnnouncementDialog
+      open={open}
+      onOpenChange={setOpen}
+      announcements={announcements}
+      category={category}
+      onCategoryChange={setCategory}
+      statusMessage={statusMessage}
+    />
+  );
+}
+
 export function PlatformAnnouncementCenter() {
+  return (
+    <div className="space-y-2">
+      <ReleaseAnnouncementBanner />
+      <PlatformNoticeBanner />
+    </div>
+  );
+}
+
+function PlatformNoticeBanner() {
   const query = useYuanhengAnnouncements();
   const announcements = useMemo(
     () => query.data?.announcements ?? [],
@@ -284,7 +487,6 @@ export function PlatformAnnouncementCenter() {
   const [dismissedIdentity, setDismissedIdentity] = useState<string | null>(
     () => localStorage.getItem(DISMISSED_ANNOUNCEMENT_KEY),
   );
-  const [dialogOpen, setDialogOpen] = useState(false);
   const isUnread = Boolean(
     latestIdentity && latestIdentity !== dismissedIdentity,
   );
@@ -362,7 +564,7 @@ export function PlatformAnnouncementCenter() {
         </span>
         <button
           type="button"
-          onClick={() => setDialogOpen(true)}
+          onClick={() => openAnnouncementCenter("platform")}
           className="inline-flex shrink-0 items-center gap-0.5 rounded-md px-1.5 py-1 font-semibold transition-colors hover:bg-current/5"
         >
           {isUnread ? dt("查看详情") : dt("查看历史")}
@@ -379,13 +581,6 @@ export function PlatformAnnouncementCenter() {
           </button>
         )}
       </div>
-
-      <AnnouncementDialog
-        open={dialogOpen}
-        onOpenChange={setDialogOpen}
-        announcements={announcements}
-        initialAnnouncementId={latest.id}
-      />
     </>
   );
 }

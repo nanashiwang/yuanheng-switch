@@ -16,6 +16,7 @@ import { message } from "@tauri-apps/plugin-dialog";
 import { exit } from "@tauri-apps/plugin-process";
 import { FrontendErrorBoundary } from "./components/FrontendErrorBoundary";
 import { UpdatePrompt } from "./components/UpdatePrompt";
+import { DesktopAnnouncementCenter } from "./components/desktop/PlatformAnnouncementCenter";
 import {
   installGlobalErrorHandlers,
   reportFrontendError,
@@ -125,6 +126,7 @@ async function bootstrap() {
             <UpdateProvider>
               <App />
               <UpdatePrompt />
+              <DesktopAnnouncementCenter />
               <Toaster />
             </UpdateProvider>
           </ThemeProvider>
