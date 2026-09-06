@@ -23,6 +23,13 @@ import {
 } from "@/components/desktop/PlatformAnnouncementCenter";
 import { setYuanhengAnnouncements } from "../msw/state";
 import { createTestQueryClient } from "../utils/testQueryClient";
+import bundledFeed from "@/data/desktop-release-notes.json";
+
+const [currentRelease, previousRelease] = bundledFeed.releases;
+function futureVersion(increment: number): string {
+  const [major, minor, patch] = currentRelease.version.split(".").map(Number);
+  return `${major}.${minor}.${patch + increment}`;
+}
 
 function renderCenter() {
   const client = createTestQueryClient();
@@ -134,16 +141,28 @@ describe("PlatformAnnouncementCenter", () => {
     expect(
       within(dialog).getByText("仅展示最近两次客户端更新，不累计历史记录。"),
     ).toBeInTheDocument();
-    expect(within(dialog).getAllByText("v0.1.44")).toHaveLength(2);
-    expect(within(dialog).getByText("v0.1.43")).toBeInTheDocument();
-    expect(within(dialog).queryByText("v0.1.42")).not.toBeInTheDocument();
+    expect(
+      within(dialog).getAllByText(`v${currentRelease.version}`),
+    ).toHaveLength(2);
+    expect(
+      within(dialog).getByText(`v${previousRelease.version}`),
+    ).toBeInTheDocument();
+    expect(
+      new Set(
+        within(dialog)
+          .getAllByText(/^v\d+\.\d+\.\d+$/)
+          .map((node) => node.textContent),
+      ),
+    ).toEqual(
+      new Set([`v${currentRelease.version}`, `v${previousRelease.version}`]),
+    );
     const pane = dialog.querySelector("article")!.parentElement!;
     pane.scrollTop = 100;
-    fireEvent.click(within(dialog).getByText("v0.1.43"));
+    fireEvent.click(within(dialog).getByText(`v${previousRelease.version}`));
     expect(pane.scrollTop).toBe(0);
-    expect(
-      within(dialog).getByText(/支持在元衡中转与 Codex 官方账号之间切换/),
-    ).toBeInTheDocument();
+    expect(dialog.querySelector("article")).toHaveTextContent(
+      previousRelease.content.replace(/\s+/g, " "),
+    );
     fireEvent.click(screen.getByRole("button", { name: "关闭公告中心" }));
     expect(
       screen.getByRole("button", { name: "查看更新内容" }),
@@ -157,20 +176,26 @@ describe("PlatformAnnouncementCenter", () => {
     server.use(
       http.post("http://tauri.local/get_desktop_release_notes", () =>
         HttpResponse.json(
-          ["0.1.46", "0.1.45", "0.1.44"].map((version) => ({
-            version,
-            publishedAt: "2026-09-06T00:00:00Z",
-            content: `公告 ${version}\n<img src="https://evil.test/track"><script>alert(1)</script>`,
-          })),
+          [futureVersion(2), futureVersion(1), currentRelease.version].map(
+            (version) => ({
+              version,
+              publishedAt: "2026-09-06T00:00:00Z",
+              content: `公告 ${version}\n<img src="https://evil.test/track"><script>alert(1)</script>`,
+            }),
+          ),
         ),
       ),
     );
     renderCenter();
-    await screen.findByText("v0.1.46 更新公告");
+    await screen.findByText(`v${futureVersion(2)} 更新公告`);
     fireEvent.click(screen.getByRole("button", { name: "查看更新内容" }));
     const dialog = screen.getByRole("dialog");
-    expect(within(dialog).getByText("v0.1.45")).toBeInTheDocument();
-    expect(within(dialog).queryByText("v0.1.44")).not.toBeInTheDocument();
+    expect(
+      within(dialog).getByText(`v${futureVersion(1)}`),
+    ).toBeInTheDocument();
+    expect(
+      within(dialog).queryByText(`v${currentRelease.version}`),
+    ).not.toBeInTheDocument();
     expect(dialog.querySelector("img, script, a")).toBeNull();
     expect(
       JSON.parse(localStorage.getItem(RELEASE_NOTES_CACHE_KEY)!),
@@ -189,7 +214,9 @@ describe("PlatformAnnouncementCenter", () => {
       await screen.findByText("暂时无法同步，正在显示本地保存的最近两次更新。"),
     ).toBeInTheDocument();
     expect(screen.getByRole("dialog")).toBeInTheDocument();
-    expect(screen.getAllByText("v0.1.44").length).toBeGreaterThan(0);
+    expect(
+      screen.getAllByText(`v${currentRelease.version}`).length,
+    ).toBeGreaterThan(0);
   });
 
   it("已读标记不累计历史，存储写入失败也不会阻止阅读", async () => {
@@ -235,27 +262,33 @@ describe("PlatformAnnouncementCenter", () => {
   });
 
   it("缓存尚未过期时，手动打开仍会刷新刚发布的最近两版", async () => {
-    let latest = 45;
+    let latest = 1;
     server.use(
       http.post("http://tauri.local/get_desktop_release_notes", () =>
         HttpResponse.json(
           [latest, latest - 1].map((version) => ({
-            version: `0.1.${version}`,
+            version: futureVersion(version),
             publishedAt: "2026-09-06T00:00:00Z",
-            content: `版本 0.1.${version} 的更新说明`,
+            content: `版本 ${futureVersion(version)} 的更新说明`,
           })),
         ),
       ),
     );
     renderCenter();
-    await screen.findByText("v0.1.45 更新公告");
-    latest = 46;
+    await screen.findByText(`v${futureVersion(1)} 更新公告`);
+    latest = 2;
     fireEvent.click(screen.getByRole("button", { name: "查看更新内容" }));
     const dialog = screen.getByRole("dialog");
     await waitFor(() =>
-      expect(within(dialog).getAllByText("v0.1.46")).toHaveLength(2),
+      expect(within(dialog).getAllByText(`v${futureVersion(2)}`)).toHaveLength(
+        2,
+      ),
     );
-    expect(within(dialog).getByText("v0.1.45")).toBeInTheDocument();
-    expect(within(dialog).queryByText("v0.1.44")).not.toBeInTheDocument();
+    expect(
+      within(dialog).getByText(`v${futureVersion(1)}`),
+    ).toBeInTheDocument();
+    expect(
+      within(dialog).queryByText(`v${currentRelease.version}`),
+    ).not.toBeInTheDocument();
   });
 });
