@@ -27,10 +27,11 @@ export function useYuanhengConnection() {
   });
 }
 
-export function useYuanhengAnnouncements() {
+export function useYuanhengAnnouncements(enabled = true) {
   return useQuery({
     queryKey: yuanhengKeys.announcements,
     queryFn: () => yuanhengApi.getAnnouncements(),
+    enabled,
     retry: 2,
     staleTime: 30_000,
     refetchInterval: 60_000,

@@ -192,6 +192,14 @@ jobs:
     env:
       GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
     steps:
+      - name: Checkout release announcements
+        uses: actions/checkout@v7
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v7
+        with:
+          node-version: "20"
+
       - name: Replace rate-limited API asset URLs
         shell: bash
         run: |
@@ -217,9 +225,13 @@ jobs:
           jq -e 'all(.platforms[].url; contains("/releases/download/"))' \
             release-assets/latest.rewritten.json > /dev/null
           mv release-assets/latest.rewritten.json release-assets/latest.json
+          node scripts/release-notes.mjs release-assets/latest.json release-assets/notes.txt
           gh release upload "$GITHUB_REF_NAME" release-assets/latest.json \
             --repo "$GITHUB_REPOSITORY" \
             --clobber
+          gh release edit "$GITHUB_REF_NAME" \
+            --repo "$GITHUB_REPOSITORY" \
+            --notes-file release-assets/notes.txt
 
   mirror-desktop-update:
     name: Mirror release to YuanHeng platform

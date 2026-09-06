@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   Download,
   Copy,
-  ExternalLink,
+  BookOpen,
   Github,
   Globe,
   Info,
@@ -33,12 +33,12 @@ import type {
   ToolInstallationReport,
 } from "@/lib/api/settings";
 import { useUpdate } from "@/contexts/UpdateContext";
+import { openAnnouncementCenter } from "@/lib/announcementCenter";
 import { Badge } from "@/components/ui/badge";
 import { motion } from "framer-motion";
 import appIcon from "@/assets/icons/app-icon.png";
 import { APP_ICON_MAP } from "@/config/appConfig";
 import {
-  YUANHENG_RELEASES_URL,
   YUANHENG_REPOSITORY_URL,
   YUANHENG_WEBSITE_URL,
 } from "@/config/yuanhengBrand";
@@ -443,28 +443,9 @@ export function AboutSection({ isPortable }: AboutSectionProps) {
 
   // ... (handlers like handleOpenReleaseNotes, handleCheckUpdate) ...
 
-  const handleOpenReleaseNotes = useCallback(async () => {
-    try {
-      const targetVersion = updateInfo?.availableVersion ?? version ?? "";
-      const displayVersion = targetVersion.startsWith("v")
-        ? targetVersion
-        : targetVersion
-          ? `v${targetVersion}`
-          : "";
-
-      if (!displayVersion) {
-        await settingsApi.openExternal(YUANHENG_RELEASES_URL);
-        return;
-      }
-
-      await settingsApi.openExternal(
-        `${YUANHENG_RELEASES_URL}/tag/${displayVersion}`,
-      );
-    } catch (error) {
-      console.error("[AboutSection] Failed to open release notes", error);
-      toast.error(t("settings.openReleaseNotesFailed"));
-    }
-  }, [t, updateInfo?.availableVersion, version]);
+  const handleOpenReleaseNotes = useCallback(() => {
+    openAnnouncementCenter("updates");
+  }, []);
 
   const handleCheckUpdate = useCallback(async () => {
     if (hasUpdate) {
@@ -883,7 +864,7 @@ export function AboutSection({ isPortable }: AboutSectionProps) {
               onClick={handleOpenReleaseNotes}
               className="h-8 gap-1.5 text-xs"
             >
-              <ExternalLink className="h-3.5 w-3.5" />
+              <BookOpen className="h-3.5 w-3.5" />
               {t("settings.releaseNotes")}
             </Button>
             <Button

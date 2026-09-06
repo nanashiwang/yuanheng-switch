@@ -1,5 +1,15 @@
 // Generated from the desktop Simplified Chinese source strings, then normalized for Taiwan terminology.
 export const DESKTOP_ZH_TW: Record<string, string> = {
+  公告中心: "公告中心",
+  客户端更新: "用戶端更新",
+  平台通知: "平台通知",
+  "仅展示最近两次客户端更新，不累计历史记录。":
+    "僅顯示最近兩次用戶端更新，不累計歷史紀錄。",
+  "v{{version}} 更新公告": "v{{version}} 更新公告",
+  查看更新内容: "查看更新內容",
+  标记本次更新已读: "將本次更新標記為已讀",
+  "暂时无法同步，正在显示本地保存的最近两次更新。":
+    "暫時無法同步，正在顯示本機儲存的最近兩次更新。",
   配置待验证: "設定待驗證",
   按需检查账号与工具凭据: "按需檢查帳號與工具憑據",
   "网络体检按需执行，不影响工作台加载。":

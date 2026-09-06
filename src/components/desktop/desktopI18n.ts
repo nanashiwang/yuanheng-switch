@@ -6,6 +6,16 @@ import { DESKTOP_ZH_TW } from "./desktopI18n.zhTW";
 type Values = Record<string, string | number | null | undefined>;
 
 export const DESKTOP_EN: Record<string, string> = {
+  公告中心: "Announcements",
+  客户端更新: "App Updates",
+  平台通知: "Platform Notices",
+  "仅展示最近两次客户端更新，不累计历史记录。":
+    "Only the latest two app updates are kept; older entries are not accumulated.",
+  "v{{version}} 更新公告": "v{{version}} release notes",
+  查看更新内容: "Read Updates",
+  标记本次更新已读: "Mark Update as Read",
+  "暂时无法同步，正在显示本地保存的最近两次更新。":
+    "Unable to sync right now. Showing the last two locally saved updates.",
   配置待验证: "Configuration awaiting verification",
   按需检查账号与工具凭据: "Check account and tool credentials on demand",
   "网络体检按需执行，不影响工作台加载。":

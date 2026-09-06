@@ -1,6 +1,7 @@
 import { readFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+import { loadReleaseNotes } from "./release-notes.mjs";
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const packageJson = JSON.parse(
@@ -36,4 +37,5 @@ if (tag && tag !== `v${version}`) {
   throw new Error(`标签 ${tag} 与应用版本 v${version} 不一致`);
 }
 
-console.log(`Release version verified: ${version}`);
+loadReleaseNotes(version);
+console.log(`Release version and latest two announcements verified: ${version}`);
