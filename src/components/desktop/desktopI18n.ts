@@ -6,6 +6,57 @@ import { DESKTOP_ZH_TW } from "./desktopI18n.zhTW";
 type Values = Record<string, string | number | null | undefined>;
 
 export const DESKTOP_EN: Record<string, string> = {
+  配置待验证: "Configuration awaiting verification",
+  按需检查账号与工具凭据: "Check account and tool credentials on demand",
+  "网络体检按需执行，不影响工作台加载。":
+    "Network checks run on demand without delaying the workspace.",
+  "将重新生成当前设备凭据并更新工具配置；旧令牌会保留，避免中断其他工具，是否继续？":
+    "Regenerate this device's credentials and update tool configurations? Old tokens will be retained to avoid interrupting other tools.",
+  等待请求记录: "Waiting for a request record",
+  等待调用验证: "Waiting for call verification",
+  "调用失败（HTTP {{code}}）": "Call failed (HTTP {{code}})",
+  使用说明: "User Guide",
+  元衡使用说明: "YuanHeng User Guide",
+  "安装、配置、模型切换和常见问题都可以在这里快速查看。":
+    "Find concise help for installation, configuration, model switching, and common issues.",
+  "当前说明版本：v0.1": "Guide version: v0.1",
+  "内容会随元衡平台更新，客户端保留本地版本以便离线查看。":
+    "The guide follows platform updates, with a local copy available offline.",
+  打开网页版: "Open Web Guide",
+  快速开始: "Getting Started",
+  遇到问题: "Troubleshooting",
+  "登录元衡账号，等待模型和令牌分组同步完成。":
+    "Sign in to YuanHeng and wait for models and token groups to sync.",
+  "进入工作台选择工具，点击配置，客户端会自动写入所需设置。":
+    "Choose a tool in Workspace and click Configure. The required settings are written automatically.",
+  "首次配置后按提示重新打开对应的 AI 工具。":
+    "After the first setup, reopen the AI tool as prompted.",
+  "在工作台直接切换模型、令牌分组和推理等级。":
+    "Switch models, token groups, and reasoning levels directly in Workspace.",
+  "Codex 支持在元衡中转与 OpenAI 官方账号之间切换。":
+    "Codex can switch between YuanHeng Relay and an OpenAI official account.",
+  "模型切换前会进行兼容性预检，避免配置后才发现协议或模型不匹配。":
+    "A compatibility check runs before model changes to catch protocol or model mismatches early.",
+  "先点击重新检测，确认工具路径、账号连接和本地路由状态。":
+    "Click Retry Detection first to verify tool paths, account connection, and local routing.",
+  "配置未生效时，完全退出并重新打开对应工具。":
+    "If a configuration is not active, fully quit and reopen the tool.",
+  "仍然失败时，查看诊断信息，并提供工具、模型、错误提示和发生时间。":
+    "If it still fails, check diagnostics and provide the tool, model, error, and approximate time.",
+  常见问题: "FAQ",
+  "为什么配置后还不能用？": "Why does it still not work after configuration?",
+  "多数情况是工具尚未重新打开，或当前模型/分组刚刚发生变化。":
+    "Usually the tool has not been reopened, or the current model or group has just changed.",
+  "切换官方账号会删除元衡配置吗？":
+    "Does switching to the official account delete YuanHeng settings?",
+  "不会。两种模式独立保存，切回元衡后会恢复上次模型和分组。":
+    "No. Both modes are stored separately, and your previous YuanHeng model and group are restored when you switch back.",
+  "第三方 Skill 可以直接安装吗？":
+    "Can third-party Skills be installed directly?",
+  "可以检索，但社区 Skill 可能未经验证，请确认来源后再安装。":
+    "You can search for them, but community Skills may be unverified. Check the source before installing.",
+  "请勿分享账号密码、API 密钥或未经授权的声音与内容。":
+    "Do not share account passwords, API keys, or voices and content without authorization.",
   工作台: "Workspace",
   工具管理: "Tool Management",
   能力中心: "Capability Center",

@@ -72,6 +72,7 @@ describe("useModelSwitchCenter", () => {
 
   beforeEach(() => {
     window.sessionStorage.clear();
+    window.localStorage.clear();
     connection = connected(["model-a", "model-b"]);
     statuses = [
       toolStatus("claude", "model-a"),
@@ -418,6 +419,60 @@ describe("useModelSwitchCenter", () => {
     expect(result.current.models.codex).toBe("model-a");
     expect(result.current.preflightResults.codex?.status).toBe("error");
     expect(configureResolvers.has("codex")).toBe(false);
+  });
+
+  it("revalidates and repairs the actual tool credential on launch without changing its group", async () => {
+    connection.modelGroups = { "model-a": ["custom-group", "default"] };
+    connection.groups = [
+      { id: "custom-group", description: "", ratio: 1 },
+      { id: "default", description: "", ratio: 1 },
+    ];
+    statuses.find((item) => item.app === "chatgpt-desktop")!.group =
+      "custom-group";
+    const original = invokeMock.getMockImplementation()!;
+    invokeMock.mockImplementation(
+      async (command: string, payload: Record<string, any> = {}) => {
+        if (command === "preflight_yuanheng_tool") {
+          return {
+            ...(await original(command, payload)),
+            status: "ok",
+            requiresConfiguration: true,
+          };
+        }
+        if (command === "configure_yuanheng_tools") {
+          return [
+            {
+              app: "chatgpt-desktop",
+              configured: true,
+              model: "model-a",
+              warnings: [],
+              error: null,
+            },
+          ];
+        }
+        return original(command, payload);
+      },
+    );
+    const { wrapper } = createWrapper();
+    const { result } = renderHook(() => useModelSwitchCenter(), { wrapper });
+    await waitFor(() =>
+      expect(result.current.groups["chatgpt-desktop"]).toBe("custom-group"),
+    );
+    await act(async () => {
+      await result.current.launch("chatgpt-desktop");
+    });
+    expect(invokeMock).toHaveBeenCalledWith(
+      "configure_yuanheng_tools",
+      expect.objectContaining({
+        apps: ["chatgpt-desktop"],
+        groups: { "chatgpt-desktop": "custom-group" },
+        models: { "chatgpt-desktop": "model-a" },
+      }),
+    );
+    expect(invokeMock).toHaveBeenCalledWith("launch_tool", {
+      tool: "chatgpt-desktop",
+      restart: true,
+    });
   });
 
   it("restarts Codex App after its model catalog configuration changes", async () => {

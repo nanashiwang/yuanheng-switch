@@ -27,6 +27,7 @@ import {
 } from "@/lib/api";
 import {
   useConfigureYuanhengTools,
+  useCodexAccountMode,
   usePreflightYuanhengTool,
   useRefreshYuanheng,
   useYuanhengConnection,
@@ -163,6 +164,7 @@ export function ToolSetupGrid({
   const refreshConnection = useRefreshYuanheng();
   const statuses = useYuanhengToolStatuses();
   const configure = useConfigureYuanhengTools();
+  const codexAccountMode = useCodexAccountMode();
   const preflight = usePreflightYuanhengTool();
   const desktopInstall = useDesktopInstallFlow();
   const launchDirectoryState = useToolLaunchDirectories();
@@ -289,15 +291,20 @@ export function ToolSetupGrid({
       : "auto";
   };
 
-  const preflightApps = async (apps: YuanhengToolId[]) => {
+  const preflightApps = async (
+    apps: YuanhengToolId[],
+    overrides: Partial<Record<YuanhengToolId, string>> = {},
+  ) => {
     const checked = new Set<string>();
+    let requiresConfiguration = false;
     for (const app of apps) {
-      const model = models[app] ?? statusMap.get(app)?.recommendedModel;
+      const model =
+        overrides[app] ?? models[app] ?? statusMap.get(app)?.recommendedModel;
       if (!model)
         throw new Error(dt("{{v0}} 没有可用模型", { v0: toolLabel(app) }));
       const group = preferredGroup(model, groups[app]);
       const selectedReasoning = selectedReasoningFor(app, model);
-      const key = [model, group ?? "", selectedReasoning].join("\u0000");
+      const key = [app, model, group ?? "", selectedReasoning].join("\u0000");
       if (checked.has(key)) continue;
       checked.add(key);
       const result = await preflight.mutateAsync({
@@ -311,7 +318,9 @@ export function ToolSetupGrid({
         throw new Error(failed?.message || result.message);
       }
       if (result.status === "warning") toast.info(result.message);
+      requiresConfiguration ||= Boolean(result.requiresConfiguration);
     }
+    return requiresConfiguration;
   };
 
   const configureApps = async (apps: YuanhengToolId[]) => {
@@ -385,7 +394,7 @@ export function ToolSetupGrid({
       return next;
     });
     try {
-      await preflightApps(["codex"]);
+      await preflightApps(["codex"], { codex: model });
       const results = await configure.mutateAsync({
         apps: ["codex"],
         models: { codex: model },
@@ -504,6 +513,17 @@ export function ToolSetupGrid({
 
   const launchTool = async (app: YuanhengToolId, forceRestart = false) => {
     try {
+      if (
+        (app === "codex" || app === "chatgpt-desktop") &&
+        codexAccountMode.data?.mode === "official"
+      ) {
+        await yuanhengApi.launchTool(
+          app,
+          forceRestart,
+          launchDirectoryState.directories[app],
+        );
+        return;
+      }
       const status = statusMap.get(app);
       const selectedModel = models[app] ?? status?.recommendedModel;
       const launchedModel = selectedModel ?? status?.model;
@@ -511,17 +531,19 @@ export function ToolSetupGrid({
         ? preferredGroup(selectedModel, groups[app])
         : undefined;
       const selectedReasoning = selectedReasoningFor(app, selectedModel);
-      const needsApply = Boolean(
-        !status?.configured ||
-          selectedModel !== status.model ||
-          (selectedGroup && selectedGroup !== status.group) ||
-          ((app === "claude-desktop" ||
-            app === "codex" ||
-            app === "chatgpt-desktop") &&
-            selectedReasoning !== (status.reasoning ?? "auto")),
-      );
+      const needsCredentialRepair = await preflightApps([app]);
+      const needsApply =
+        needsCredentialRepair ||
+        Boolean(
+          !status?.configured ||
+            selectedModel !== status.model ||
+            (selectedGroup && selectedGroup !== status.group) ||
+            ((app === "claude-desktop" ||
+              app === "codex" ||
+              app === "chatgpt-desktop") &&
+              selectedReasoning !== (status.reasoning ?? "auto")),
+        );
       if (needsApply) {
-        await preflightApps([app]);
         const results = await configure.mutateAsync({
           apps: [app],
           models: selectedModel ? { [app]: selectedModel } : undefined,

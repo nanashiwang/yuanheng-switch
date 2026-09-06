@@ -29,7 +29,6 @@ export function ToolActivationProgress({
   const routeDone = Boolean(
     configDone && (!activation?.routeRequired || activation.routeReady),
   );
-  const restartDone = routeDone && !restartRequired;
   const requestObservable = Boolean(activation?.routeRequired);
   const requestDone = Boolean(activation?.requestReceived);
   const successDone = Boolean(activation?.requestSucceeded);
@@ -38,28 +37,36 @@ export function ToolActivationProgress({
   const steps: Array<{ label: string; state: StepState }> = [
     {
       label: dt("配置已写入"),
-      state: configDone ? "done" : "active",
+      state: configDone ? "done" : "waiting",
     },
     {
       label: activation?.routeRequired ? dt("路由已启动") : dt("无需本地路由"),
-      state: routeDone ? "done" : configDone ? "active" : "waiting",
+      state: routeDone ? "done" : "waiting",
     },
     {
-      label: restartRequired ? dt("等待重新打开") : dt("客户端已就绪"),
-      state: restartDone ? "done" : routeDone ? "active" : "waiting",
-    },
-    {
-      label: requestObservable ? dt("已收到请求") : dt("请求不可观测"),
-      state: !requestObservable
-        ? "unknown"
+      label: restartRequired
+        ? dt("等待重新打开")
         : requestDone
-          ? "done"
-          : restartDone
-            ? "active"
-            : "waiting",
+          ? dt("客户端已就绪")
+          : dt("配置待验证"),
+      state: !restartRequired && requestDone ? "done" : "waiting",
     },
     {
-      label: dt("模型调用成功"),
+      label: !requestObservable
+        ? dt("请求不可观测")
+        : requestDone
+          ? dt("已收到请求")
+          : dt("等待请求记录"),
+      state: !requestObservable ? "unknown" : requestDone ? "done" : "waiting",
+    },
+    {
+      label: requestFailed
+        ? dt("调用失败（HTTP {{code}}）", {
+            code: activation?.lastStatusCode ?? "?",
+          })
+        : successDone
+          ? dt("模型调用成功")
+          : dt("等待调用验证"),
       state: !requestObservable
         ? "unknown"
         : successDone
@@ -147,14 +154,14 @@ export function ToolActivationProgress({
           </div>
         ))}
       </div>
-      {activation?.message && !compact && (
+      {activation?.message && (
         <p
           className={cn(
             "mt-1.5 text-[9px]",
             dark ? "text-white/45" : "text-muted-foreground",
           )}
         >
-          {activation.message}
+          {dt(activation.message)}
         </p>
       )}
     </div>

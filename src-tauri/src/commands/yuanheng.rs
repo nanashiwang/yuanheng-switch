@@ -199,6 +199,7 @@ pub struct YuanhengToolPreflight {
     pub image_input: String,
     pub checks: Vec<YuanhengPreflightCheck>,
     pub message: String,
+    pub requires_configuration: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -490,6 +491,7 @@ fn parse_user_groups(value: &Value) -> Result<Vec<YuanhengGroupOption>, String> 
 fn yuanheng_client() -> Result<reqwest::Client, String> {
     reqwest::Client::builder()
         .timeout(Duration::from_secs(15))
+        .redirect(reqwest::redirect::Policy::none())
         .build()
         .map_err(|e| format!("创建元衡客户端失败: {e}"))
 }
@@ -548,8 +550,18 @@ async fn fetch_user_models(
     user_id: &str,
     group: Option<&str>,
 ) -> Result<Vec<String>, String> {
+    fetch_user_models_at(client, BASE_URL, session_cookie, user_id, group).await
+}
+
+async fn fetch_user_models_at(
+    client: &reqwest::Client,
+    origin: &str,
+    session_cookie: &str,
+    user_id: &str,
+    group: Option<&str>,
+) -> Result<Vec<String>, String> {
     let mut request = client
-        .get(format!("{BASE_URL}/api/user/models"))
+        .get(format!("{origin}/api/user/models"))
         .header("Accept", "application/json")
         .header("User-Agent", "yuanheng-desktop/0.1");
     if let Some(group) = group {
@@ -593,14 +605,29 @@ async fn fetch_api_models(
     client: &reqwest::Client,
     api_token: &str,
 ) -> Result<Vec<String>, String> {
+    fetch_api_models_at(client, BASE_URL, api_token).await
+}
+
+async fn fetch_api_models_at(
+    client: &reqwest::Client,
+    origin: &str,
+    api_token: &str,
+) -> Result<Vec<String>, String> {
     let response = client
-        .get(format!("{OPENAI_BASE_URL}/models"))
+        .get(format!("{origin}/v1/models"))
         .header("Accept", "application/json")
         .header("User-Agent", "yuanheng-desktop/0.1")
         .bearer_auth(api_token)
         .send()
         .await
-        .map_err(|e| format!("连接元衡模型接口失败: {e}"))?;
+        .map_err(|_| "连接元衡模型接口失败，请检查网络后重试".to_string())?;
+    if !response.status().is_success() {
+        // 不回显上游原文，防止错误页回显 Authorization/账号信息。
+        return Err(format!(
+            "模型目录鉴权检查失败（HTTP {}）",
+            response.status().as_u16()
+        ));
+    }
     let (value, _) = parse_json_response(response).await?;
     parse_api_models(&value)
 }
@@ -626,23 +653,6 @@ async fn post_json(
         .await
         .map_err(|e| format!("连接元衡失败: {e}"))?;
     parse_json_response(response).await
-}
-
-async fn delete_json(
-    client: &reqwest::Client,
-    url: &str,
-    session_cookie: &str,
-    user_id: &str,
-) -> Result<Value, String> {
-    let request = client
-        .delete(url)
-        .header("Accept", "application/json")
-        .header("User-Agent", "yuanheng-desktop/0.1");
-    let response = with_session(request, Some(session_cookie), Some(user_id))
-        .send()
-        .await
-        .map_err(|e| format!("连接元衡失败: {e}"))?;
-    parse_json_response(response).await.map(|(value, _)| value)
 }
 
 fn ensure_api_success(value: &Value, fallback: &str) -> Result<(), String> {
@@ -931,12 +941,96 @@ fn normalize_api_token(raw: &str) -> Result<String, String> {
     }
 }
 
+#[cfg(test)]
 fn token_cache_for_stored_group(group: Option<&str>, token: String) -> HashMap<String, String> {
     let mut cache = HashMap::new();
     if let Some(group) = group.map(str::trim).filter(|group| !group.is_empty()) {
         cache.insert(group.to_string(), token);
     }
     cache
+}
+
+// 只从该工具、该分组的元衡托管记录取凭据，不能拿主凭据代替 Desktop 凭据。
+fn stored_tool_credential(
+    state: &AppState,
+    app_name: &str,
+    group: &str,
+    selected_model: Option<&str>,
+) -> Result<Option<String>, String> {
+    if app_name == "workbuddy" {
+        if state
+            .db
+            .get_setting(WORKBUDDY_GROUP_KEY)
+            .map_err(|e| e.to_string())?
+            .as_deref()
+            != Some(group)
+        {
+            return Ok(None);
+        }
+        let config = read_workbuddy_config();
+        let entry = config
+            .as_ref()
+            .and_then(|value| value.get("models"))
+            .and_then(Value::as_array)
+            .and_then(|models| {
+                models.iter().find(|entry| {
+                    selected_model
+                        .is_some_and(|model| entry.get("id").and_then(Value::as_str) == Some(model))
+                })
+            });
+        if entry.is_some_and(|model| {
+            model.get("url").and_then(Value::as_str)
+                != Some(&format!("{OPENAI_BASE_URL}/chat/completions"))
+        }) {
+            return Err("工具接口已被外部修改，请核对元衡配置后再试".to_string());
+        }
+        return Ok(entry
+            .and_then(|model| model.get("apiKey"))
+            .and_then(Value::as_str)
+            .filter(|key| !key.trim().is_empty())
+            .map(str::to_string));
+    }
+    let app = if app_name == CHATGPT_DESKTOP_NAMESPACE {
+        AppType::Codex
+    } else {
+        app_name.parse::<AppType>().map_err(|e| e.to_string())?
+    };
+    let Some(provider) = state
+        .db
+        .get_provider_by_id(MANAGED_PROVIDER_ID, app_name)
+        .map_err(|e| e.to_string())?
+    else {
+        return Ok(None);
+    };
+    if provider_group(&provider).as_deref() != Some(group)
+        || provider.category.as_deref() != Some("managed")
+    {
+        return Ok(None);
+    }
+    let (base_url, fallback_key) = provider.resolve_usage_credentials(&app);
+    if url::Url::parse(&base_url).ok().is_none_or(|url| {
+        url.scheme() != "https"
+            || url.host_str() != Some("cn.meta-api.vip")
+            || url.port_or_known_default() != Some(443)
+            || !url.username().is_empty()
+            || url.password().is_some()
+    }) {
+        return Err("工具接口已被外部修改，请核对元衡配置后再试".to_string());
+    }
+    let key = if matches!(app, AppType::Codex) {
+        // 与实际转发共用相同优先级，包含历史 env/API Key/bearer 写法。
+        crate::proxy::providers::get_adapter(&app)
+            .extract_auth(&provider)
+            .map(|auth| auth.api_key)
+            .unwrap_or_default()
+    } else {
+        fallback_key
+    };
+    Ok((!key.trim().is_empty() && key != LOCAL_PROXY_TOKEN).then_some(key))
+}
+
+fn is_token_rejected(error: &str) -> bool {
+    error.contains("HTTP 401") || error.contains("HTTP 403")
 }
 
 async fn ensure_device_api_token(
@@ -1704,6 +1798,7 @@ struct CodexModeSwitchSnapshot {
     terminal_profile: Option<String>,
     local_current: Option<String>,
     database_current: Option<String>,
+    previous_provider_setting: Option<String>,
 }
 
 fn capture_codex_mode_switch_snapshot(state: &AppState) -> Result<CodexModeSwitchSnapshot, String> {
@@ -1727,6 +1822,10 @@ fn capture_codex_mode_switch_snapshot(state: &AppState) -> Result<CodexModeSwitc
             .db
             .get_current_provider(AppType::Codex.as_str())
             .map_err(|error| error.to_string())?,
+        previous_provider_setting: state
+            .db
+            .get_setting(&previous_provider_key(&AppType::Codex))
+            .map_err(|error| error.to_string())?,
     })
 }
 
@@ -1746,6 +1845,17 @@ fn restore_codex_mode_switch_snapshot(
     snapshot: &CodexModeSwitchSnapshot,
 ) -> Result<(), String> {
     let mut errors = Vec::new();
+    let restore_previous = match snapshot.previous_provider_setting.as_deref() {
+        Some(value) => state
+            .db
+            .set_setting(&previous_provider_key(&AppType::Codex), value),
+        None => state
+            .db
+            .delete_setting(&previous_provider_key(&AppType::Codex)),
+    };
+    if let Err(error) = restore_previous {
+        errors.push(format!("恢复接管前供应商记录失败: {error}"));
+    }
     if let Err(error) = restore_optional_text_file(
         &crate::codex_config::get_codex_config_path(),
         snapshot.live_config.as_deref(),
@@ -2072,6 +2182,11 @@ async fn configure_codex_surface(
     // 与“元衡 / 官方账号”切换共享同一把锁，防止快速点击或并发命令
     // 把 CLI profile、Desktop live 配置和 current provider 写成交叉状态。
     let _guard = codex_account_mode_switch_lock().lock().await;
+    let snapshot = capture_codex_mode_switch_snapshot(state)?;
+    let desktop_current = state
+        .db
+        .get_current_provider(CHATGPT_DESKTOP_NAMESPACE)
+        .map_err(|error| error.to_string())?;
     // Desktop 会改写 Codex Live 配置；终端虽然只写独立 profile，仍需保留
     // 原始 Codex 状态，便于统一关闭元衡接管时恢复。
     remember_tool_state(state, &AppType::Codex)?;
@@ -2104,15 +2219,52 @@ async fn configure_codex_surface(
         selected
     } else {
         desktop_before
+            .clone()
             .or_else(|| terminal_before.clone())
             .unwrap_or_else(|| terminal.clone())
     };
 
-    save_managed_codex_provider(state, AppType::Codex.as_str(), &terminal)?;
-    save_managed_codex_provider(state, CHATGPT_DESKTOP_NAMESPACE, &desktop)?;
-    crate::settings::set_current_provider(&AppType::Codex, Some(MANAGED_PROVIDER_ID))
-        .map_err(|error| error.to_string())?;
-    write_codex_surface_config(state, surface).await?;
+    let update = async {
+        save_managed_codex_provider(state, AppType::Codex.as_str(), &terminal)?;
+        save_managed_codex_provider(state, CHATGPT_DESKTOP_NAMESPACE, &desktop)?;
+        crate::settings::set_current_provider(&AppType::Codex, Some(MANAGED_PROVIDER_ID))
+            .map_err(|error| error.to_string())?;
+        write_codex_surface_config(state, surface).await
+    }
+    .await;
+    if let Err(error) = update {
+        let mut rollback_errors = Vec::new();
+        for (namespace, old) in [
+            (AppType::Codex.as_str(), terminal_before.as_ref()),
+            (CHATGPT_DESKTOP_NAMESPACE, desktop_before.as_ref()),
+        ] {
+            let restored = match old {
+                Some(provider) => state.db.save_provider(namespace, provider),
+                None => state.db.delete_provider(namespace, MANAGED_PROVIDER_ID),
+            };
+            if let Err(e) = restored {
+                rollback_errors.push(e.to_string());
+            }
+        }
+        if let Err(e) = restore_codex_mode_switch_snapshot(state, &snapshot) {
+            rollback_errors.push(e);
+        }
+        let restored = match desktop_current.as_deref() {
+            Some(id) => state.db.set_current_provider(CHATGPT_DESKTOP_NAMESPACE, id),
+            None => state.db.clear_current_provider(CHATGPT_DESKTOP_NAMESPACE),
+        };
+        if let Err(e) = restored {
+            rollback_errors.push(e.to_string());
+        }
+        return if rollback_errors.is_empty() {
+            Err(error)
+        } else {
+            Err(format!(
+                "{error}；配置恢复未完成：{}",
+                rollback_errors.join("；")
+            ))
+        };
+    }
 
     Ok(YuanhengToolConfigureResult {
         app: surface.namespace().to_string(),
@@ -2821,20 +2973,39 @@ async fn yuanheng_tool_activation_statuses_inner(
         let route_ready = config_written && (!route_required || (proxy_running && owned_route));
 
         let latest_log = if route_required {
-            configured_at
-                .map(|start_date| state.db.get_latest_proxy_request_for_app(app, start_date))
-                .transpose()
+            // 旧安装没有配置时间时也展示近期失败，但不能用旧成功证明本次生效。
+            state
+                .db
+                .get_latest_proxy_request_for_app(
+                    app,
+                    configured_at.unwrap_or_else(|| chrono::Utc::now().timestamp() - 3600),
+                )
                 .map_err(|error| error.to_string())?
-                .flatten()
+                .filter(|log| {
+                    log.provider_id
+                        == if official_codex {
+                            CODEX_OFFICIAL_PROVIDER_ID
+                        } else {
+                            MANAGED_PROVIDER_ID
+                        }
+                })
         } else {
             None
         };
         let request_received = latest_log.is_some();
-        let request_succeeded = latest_log
-            .as_ref()
-            .is_some_and(|log| (200..400).contains(&log.status_code));
+        let request_succeeded = latest_log.as_ref().is_some_and(|log| {
+            configured_at.is_some()
+                && (200..300).contains(&log.status_code)
+                && log.error_message.is_none()
+        });
         let message = if !config_written {
             "尚未写入有效配置".to_string()
+        } else if latest_log
+            .as_ref()
+            .is_some_and(|log| log.status_code == 401 || log.status_code == 403)
+        {
+            "已收到请求，但工具分组凭据被拒绝；请在元衡中重新配置该工具，无需登录 OpenAI 官方账号"
+                .to_string()
         } else if configured_at.is_none() {
             "配置已存在；重新应用一次后可追踪完整生效过程".to_string()
         } else if !route_ready && request_succeeded {
@@ -3361,6 +3532,27 @@ async fn preflight_yuanheng_tool_inner(
     requested_group: Option<&str>,
     requested_reasoning: Option<&str>,
 ) -> Result<YuanhengToolPreflight, String> {
+    preflight_yuanheng_tool_at(
+        state,
+        app_name,
+        model,
+        requested_group,
+        requested_reasoning,
+        &yuanheng_client()?,
+        BASE_URL,
+    )
+    .await
+}
+
+async fn preflight_yuanheng_tool_at(
+    state: &AppState,
+    app_name: &str,
+    model: &str,
+    requested_group: Option<&str>,
+    requested_reasoning: Option<&str>,
+    client: &reqwest::Client,
+    origin: &str,
+) -> Result<YuanhengToolPreflight, String> {
     let app_name = app_name.trim();
     let is_workbuddy = app_name == "workbuddy";
     let app = match app_name {
@@ -3410,20 +3602,13 @@ async fn preflight_yuanheng_tool_inner(
     }
 
     let group = preferred_group_for_model(&connection, model, requested_group)?;
-    let session_cookie = state
-        .db
-        .get_setting(SESSION_COOKIE_KEY)
-        .map_err(|e| e.to_string())?
+    let session_cookie = get_yuanheng_secret(state, SESSION_COOKIE_KEY)?
         .filter(|value| !value.is_empty())
         .ok_or_else(|| "元衡登录状态缺失，请重新登录".to_string())?;
-    let user_id = state
-        .db
-        .get_setting(USER_ID_KEY)
-        .map_err(|e| e.to_string())?
+    let user_id = get_yuanheng_secret(state, USER_ID_KEY)?
         .filter(|value| !value.is_empty())
         .ok_or_else(|| "元衡用户 ID 缺失".to_string())?;
-    let client = yuanheng_client()?;
-    match fetch_user_models(&client, &session_cookie, &user_id, Some(&group)).await {
+    match fetch_user_models_at(client, origin, &session_cookie, &user_id, Some(&group)).await {
         Ok(models) if models.iter().any(|item| item == model) => push_preflight_check(
             &mut checks,
             "account",
@@ -3489,18 +3674,11 @@ async fn preflight_yuanheng_tool_inner(
         }
     }
 
-    let stored_token_group = state
-        .db
-        .get_setting(API_TOKEN_GROUP_KEY)
-        .map_err(|e| e.to_string())?;
-    let stored_token = state
-        .db
-        .get_setting(API_TOKEN_KEY)
-        .map_err(|e| e.to_string())?
-        .filter(|value| !value.is_empty());
-    if stored_token_group.as_deref() == Some(group.as_str()) {
+    let stored_token = stored_tool_credential(state, app_name, &group, Some(model))?;
+    let mut requires_configuration = stored_token.is_none();
+    {
         match stored_token {
-            Some(token) => match fetch_api_models(&client, &token).await {
+            Some(token) => match fetch_api_models_at(client, origin, &token).await {
                 Ok(models) if models.iter().any(|item| item == model) => push_preflight_check(
                     &mut checks,
                     "credential",
@@ -3518,37 +3696,39 @@ async fn preflight_yuanheng_tool_inner(
                         "API 凭据有效，但接口没有返回所选模型",
                     );
                 }
+                Err(error) if is_token_rejected(&error) => {
+                    requires_configuration = true;
+                    has_warning = true;
+                    push_preflight_check(
+                        &mut checks,
+                        "credential",
+                        "warning",
+                        "工具分组凭据需要同步",
+                        "当前工具凭据被拒绝；配置时会重新获取该分组凭据并验证，原配置在验证通过前保持不变",
+                    );
+                }
                 Err(error) => {
                     has_error = true;
                     push_preflight_check(
                         &mut checks,
                         "credential",
                         "error",
-                        "API 凭据不可用",
+                        "工具接口验证未完成",
                         error,
                     );
                 }
             },
             None => {
-                has_error = true;
+                has_warning = true;
                 push_preflight_check(
                     &mut checks,
                     "credential",
-                    "error",
-                    "API 凭据缺失",
-                    "请重新连接元衡账号",
+                    "warning",
+                    "分组凭据将在配置时核验",
+                    "尚无该工具、该分组的可用凭据；配置时将获取并验证对应凭据",
                 );
             }
         }
-    } else {
-        has_warning = true;
-        push_preflight_check(
-            &mut checks,
-            "credential",
-            "warning",
-            "分组凭据将在配置时创建",
-            format!("当前本机凭据不属于 {group} 分组，配置时会安全创建或复用对应凭据"),
-        );
     }
 
     let route_required = matches!(app, AppType::ClaudeDesktop | AppType::Codex) && !is_workbuddy;
@@ -3608,6 +3788,7 @@ async fn preflight_yuanheng_tool_inner(
             "warning" => "兼容性预检通过，配置时还需完成一项自动准备".to_string(),
             _ => "兼容性预检未通过，已阻止写入配置".to_string(),
         },
+        requires_configuration,
     })
 }
 
@@ -3804,6 +3985,15 @@ async fn diagnose_yuanheng_inner(state: &AppState) -> Result<YuanhengDiagnosticR
                 message: "登录状态有效。".to_string(),
                 action: None,
             }),
+            Err(error) if !is_yuanheng_session_auth_error(&error) => {
+                checks.push(YuanhengDiagnosticCheck {
+                    id: "session".to_string(),
+                    status: "warning".to_string(),
+                    title: "暂时无法验证登录".to_string(),
+                    message: "网络或平台响应异常，未清除登录状态，请稍后重新检查。".to_string(),
+                    action: None,
+                })
+            }
             _ => checks.push(YuanhengDiagnosticCheck {
                 id: "session".to_string(),
                 status: "error".to_string(),
@@ -3831,6 +4021,13 @@ async fn diagnose_yuanheng_inner(state: &AppState) -> Result<YuanhengDiagnosticR
                 message: "本机凭据可访问模型接口。".to_string(),
                 action: None,
             }),
+            Err(error) if !is_token_rejected(&error) => checks.push(YuanhengDiagnosticCheck {
+                id: "credential".to_string(),
+                status: "warning".to_string(),
+                title: "凭据检查暂未完成".to_string(),
+                message: "网络或模型目录响应异常，不能据此认定令牌失效。".to_string(),
+                action: None,
+            }),
             Err(_) => checks.push(YuanhengDiagnosticCheck {
                 id: "credential".to_string(),
                 status: "error".to_string(),
@@ -3842,6 +4039,57 @@ async fn diagnose_yuanheng_inner(state: &AppState) -> Result<YuanhengDiagnosticR
     }
 
     let tool_statuses = all_tool_statuses(state, &connection);
+    // 体检验证每个托管工具的真实分组 key。按 key 复用响应，防止同一分组重复请求。
+    let mut credential_results: HashMap<String, Result<Vec<String>, String>> = HashMap::new();
+    let mut credential_attention = BTreeSet::new();
+    for tool in tool_statuses.iter().filter(|tool| tool.configured) {
+        let Some(group) = tool.group.as_deref() else {
+            continue;
+        };
+        let token = stored_tool_credential(state, &tool.app, group, tool.model.as_deref())?;
+        let result = if let Some(token) = token {
+            if let Some(result) = credential_results.get(&token) {
+                result.clone()
+            } else {
+                let result = fetch_api_models(&client, &token).await;
+                credential_results.insert(token, result.clone());
+                result
+            }
+        } else {
+            Err("工具凭据缺失（HTTP 401）".to_string())
+        };
+        let (status, message, action) = match result {
+            Ok(models)
+                if tool
+                    .model
+                    .as_ref()
+                    .is_none_or(|model| models.contains(model)) =>
+            {
+                ("ok", "该工具的分组凭据已通过模型目录验证。", None)
+            }
+            Ok(_) => (
+                "error",
+                "该工具凭据无法访问所选模型，请重新配置该工具。",
+                Some("repair_tools"),
+            ),
+            Err(error) if is_token_rejected(&error) => (
+                "error",
+                "该工具实际使用的分组令牌被拒绝；账号登录正常并不代表工具令牌有效。",
+                Some("repair_tools"),
+            ),
+            Err(_) => ("warning", "网络检查未完成，未将其判定为令牌失效。", None),
+        };
+        if status != "ok" {
+            credential_attention.insert(tool.app.clone());
+        }
+        checks.push(YuanhengDiagnosticCheck {
+            id: format!("tool_credential:{}", tool.app),
+            status: status.to_string(),
+            title: format!("{} · {} 分组凭据", tool.app, group),
+            message: message.to_string(),
+            action: action.map(str::to_string),
+        });
+    }
     let invalid_model_tools: Vec<String> = tool_statuses
         .iter()
         .filter(|item| item.configured)
@@ -3904,10 +4152,13 @@ async fn diagnose_yuanheng_inner(state: &AppState) -> Result<YuanhengDiagnosticR
             });
         }
     }
-    let ready_tools = tool_statuses.iter().filter(|item| item.configured).count();
+    let ready_tools = tool_statuses
+        .iter()
+        .filter(|item| item.configured && !credential_attention.contains(&item.app))
+        .count();
     let attention_tools: Vec<String> = tool_statuses
         .iter()
-        .filter(|item| item.needs_update)
+        .filter(|item| item.needs_update || credential_attention.contains(&item.app))
         .map(|item| item.app.clone())
         .collect();
     if !attention_tools.is_empty() {
@@ -3994,13 +4245,9 @@ pub async fn configure_yuanheng_tools(
     if apps.is_empty() || apps.len() > 10 {
         return Err("请选择 1 到 10 个 AI 工具".to_string());
     }
-    let control_token = get_yuanheng_secret(&state, API_TOKEN_KEY)?
+    let _control_token = get_yuanheng_secret(&state, API_TOKEN_KEY)?
         .filter(|value| !value.is_empty())
         .ok_or_else(|| "请先连接元衡账号".to_string())?;
-    let control_token_group = state
-        .db
-        .get_setting(API_TOKEN_GROUP_KEY)
-        .map_err(|e| e.to_string())?;
     let session_cookie = get_yuanheng_secret(&state, SESSION_COOKIE_KEY)?
         .filter(|value| !value.is_empty())
         .ok_or_else(|| "元衡登录状态缺失，请重新登录".to_string())?;
@@ -4014,11 +4261,14 @@ pub async fn configure_yuanheng_tools(
     let requested_reasoning = reasoning.unwrap_or_default();
     // 旧版本没有记录令牌所属分组，不能用当前账号分组反推，否则会把 default
     // 令牌误用于新选择的分组。缺少记录时按目标分组重新读取令牌。
-    let mut token_cache =
-        token_cache_for_stored_group(control_token_group.as_deref(), control_token);
+    // 每次显式配置都向已登录账号重新取该分组的 key，禁止沿用可能已撤销的主 key。
+    // 同一批次内仅按分组复用，绝不跨分组复用。
+    let mut token_cache: HashMap<String, String> = HashMap::new();
+    let mut verified_token_models: HashMap<String, Vec<String>> = HashMap::new();
     let mut group_models_cache: HashMap<String, Result<Vec<String>, String>> = HashMap::new();
     let mut results = Vec::new();
     let mut seen = BTreeSet::new();
+    let previous_statuses = all_tool_statuses(&state, &connection);
     for app_name in apps {
         if !seen.insert(app_name.clone()) {
             continue;
@@ -4042,10 +4292,14 @@ pub async fn configure_yuanheng_tools(
                 }
             },
         };
+        let previous = previous_statuses.iter().find(|item| item.app == app_name);
         let model = match resolve_tool_model(
             app.clone(),
             &connection.models,
-            requested_models.get(&app_name).map(String::as_str),
+            requested_models
+                .get(&app_name)
+                .map(String::as_str)
+                .or_else(|| previous.and_then(|item| item.model.as_deref())),
         ) {
             Ok(model) => model,
             Err(error) => {
@@ -4062,7 +4316,10 @@ pub async fn configure_yuanheng_tools(
         let group = match preferred_group_for_model(
             &connection,
             &model,
-            requested_groups.get(&app_name).map(String::as_str),
+            requested_groups
+                .get(&app_name)
+                .map(String::as_str)
+                .or_else(|| previous.and_then(|item| item.group.as_deref())),
         ) {
             Ok(group) => group,
             Err(error) => {
@@ -4077,7 +4334,10 @@ pub async fn configure_yuanheng_tools(
             }
         };
         let reasoning = match resolve_reasoning_level(
-            requested_reasoning.get(&app_name).map(String::as_str),
+            requested_reasoning
+                .get(&app_name)
+                .map(String::as_str)
+                .or_else(|| previous.and_then(|item| item.reasoning.as_deref())),
             &model,
             &connection.reasoning_levels,
         ) {
@@ -4143,6 +4403,31 @@ pub async fn configure_yuanheng_tools(
                 }
             }
         };
+        let verified_models = if let Some(models) = verified_token_models.get(&group) {
+            Ok(models.clone())
+        } else {
+            fetch_api_models(&client, &token).await
+        };
+        match verified_models {
+            Ok(models) if models.iter().any(|item| item == &model) => {
+                verified_token_models.insert(group.clone(), models);
+            }
+            result => {
+                let detail = result
+                    .err()
+                    .unwrap_or_else(|| "该凭据没有所选模型的访问权限".to_string());
+                results.push(YuanhengToolConfigureResult {
+                    app: app_name,
+                    configured: false,
+                    model: Some(model),
+                    warnings: Vec::new(),
+                    error: Some(format!(
+                        "{group} 分组凭据验证未通过，原配置未更改：{detail}"
+                    )),
+                });
+                continue;
+            }
+        }
         if !is_workbuddy
             && matches!(&app, AppType::ClaudeDesktop | AppType::Codex)
             && !state.proxy_service.is_running().await
@@ -4157,6 +4442,19 @@ pub async fn configure_yuanheng_tools(
                 });
                 continue;
             }
+        }
+        if get_yuanheng_secret(&state, USER_ID_KEY)?.as_deref() != Some(user_id.as_str())
+            || get_yuanheng_secret(&state, SESSION_COOKIE_KEY)?.as_deref()
+                != Some(session_cookie.as_str())
+        {
+            results.push(YuanhengToolConfigureResult {
+                app: app_name,
+                configured: false,
+                model: Some(model),
+                warnings: Vec::new(),
+                error: Some("配置期间登录账号发生变化，已停止写入，请重新选择分组".to_string()),
+            });
+            break;
         }
         let configured = if is_workbuddy {
             configure_workbuddy(&state, &token, &model, &group_models, &group)
@@ -4368,6 +4666,7 @@ pub async fn rotate_yuanheng_device_token(
         .and_then(Value::as_str)
         .ok_or_else(|| "元衡工具凭据响应缺少 key".to_string())?;
     let api_token = normalize_api_token(key)?;
+    verify_api_token(&client, &api_token).await?;
     persist_connection(
         &state,
         &session_cookie,
@@ -4377,23 +4676,9 @@ pub async fn rotate_yuanheng_device_token(
         &status,
     )?;
 
-    if let Some(previous_token_id) = previous_token_id.filter(|id| *id != token_id) {
-        match delete_json(
-            &client,
-            &format!("{BASE_URL}/api/token/{previous_token_id}"),
-            &session_cookie,
-            &user_id,
-        )
-        .await
-        {
-            Ok(value) => {
-                if let Err(error) = ensure_api_success(&value, "撤销旧凭据失败") {
-                    log::warn!("[YuanHeng] {error}");
-                }
-            }
-            Err(error) => log::warn!("[YuanHeng] 撤销旧凭据失败: {error}"),
-        }
-    }
+    // 旧 key 可能仍被 CLI、其他分组配置或离线设备引用。在所有消费者确认
+    // 切换之前禁止撤销；不能依赖前端随后发起的重配命令充当跨端事务。
+    // 用户需要撤销时可在平台令牌管理中显式处理。
 
     Ok(status)
 }
@@ -4587,6 +4872,246 @@ mod tests {
     use crate::database::Database;
     use serial_test::serial;
     use std::sync::Arc;
+
+    #[tokio::test]
+    #[serial]
+    async fn preflight_uses_secure_login_and_each_tools_group_credential() {
+        use axum::{routing::get, Json, Router};
+        crate::secure_storage::clear_for_tests();
+        let (_home, state) = isolated_state();
+        let groups = ["default", "auto", "premium", "中文分组", "custom/group"];
+        let connection = YuanhengConnectionStatus {
+            connected: true,
+            models: vec!["test-model".to_string()],
+            terminal_models: vec!["test-model".to_string()],
+            groups: groups
+                .iter()
+                .map(|group| YuanhengGroupOption {
+                    id: group.to_string(),
+                    description: String::new(),
+                    ratio: None,
+                })
+                .collect(),
+            model_groups: HashMap::from([(
+                "test-model".to_string(),
+                groups.iter().map(|s| s.to_string()).collect(),
+            )]),
+            ..Default::default()
+        };
+        persist_connection(
+            &state,
+            "session=fake-test",
+            "test-user",
+            "sk-main-valid",
+            1,
+            &connection,
+        )
+        .unwrap();
+        assert!(state.db.get_setting(SESSION_COOKIE_KEY).unwrap().is_none());
+        assert!(state.db.get_setting(USER_ID_KEY).unwrap().is_none());
+        assert!(state.db.get_setting(API_TOKEN_KEY).unwrap().is_none());
+        let router = Router::new()
+            .route(
+                "/api/user/models",
+                get(|headers: axum::http::HeaderMap| async move {
+                    assert_eq!(headers.get("cookie").unwrap(), "session=fake-test");
+                    Json(json!({"success": true, "data": ["test-model"]}))
+                }),
+            )
+            .route(
+                "/v1/models",
+                get(|headers: axum::http::HeaderMap| async move {
+                    let token = headers.get("authorization").unwrap().to_str().unwrap();
+                    if token == "Bearer sk-rejected" {
+                        (
+                            axum::http::StatusCode::UNAUTHORIZED,
+                            Json(json!({"message": "must-not-leak-token"})),
+                        )
+                    } else {
+                        assert!(token.starts_with("Bearer sk-group-"));
+                        (
+                            axum::http::StatusCode::OK,
+                            Json(json!({"data": [{"id": "test-model"}]})),
+                        )
+                    }
+                }),
+            );
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let origin = format!("http://{}", listener.local_addr().unwrap());
+        let task = tokio::spawn(async move { axum::serve(listener, router).await.unwrap() });
+        let client = yuanheng_client().unwrap();
+        for (index, group) in groups.iter().enumerate() {
+            for app in [
+                "codex",
+                CHATGPT_DESKTOP_NAMESPACE,
+                "claude",
+                "claude-desktop",
+                "gemini",
+                "opencode",
+                "openclaw",
+                "hermes",
+                "grokbuild",
+            ] {
+                let kind = if app == CHATGPT_DESKTOP_NAMESPACE {
+                    AppType::Codex
+                } else {
+                    app.parse().unwrap()
+                };
+                let provider = managed_provider(
+                    &kind,
+                    &format!("sk-group-{index}"),
+                    "test-model",
+                    group,
+                    "auto",
+                )
+                .unwrap();
+                state.db.save_provider(app, &provider).unwrap();
+                let result = preflight_yuanheng_tool_at(
+                    &state,
+                    app,
+                    "test-model",
+                    Some(group),
+                    Some("auto"),
+                    &client,
+                    &origin,
+                )
+                .await
+                .unwrap();
+                assert_ne!(result.status, "error", "{app}/{group}: {:?}", result.checks);
+                assert!(!result.requires_configuration, "{app}/{group}");
+                assert!(result
+                    .checks
+                    .iter()
+                    .any(|check| check.id == "credential" && check.status == "ok"));
+            }
+            configure_workbuddy(
+                &state,
+                &format!("sk-group-{index}"),
+                "test-model",
+                &["test-model".to_string()],
+                group,
+            )
+            .unwrap();
+            let result = preflight_yuanheng_tool_at(
+                &state,
+                "workbuddy",
+                "test-model",
+                Some(group),
+                Some("auto"),
+                &client,
+                &origin,
+            )
+            .await
+            .unwrap();
+            assert_ne!(result.status, "error");
+            assert!(!result.requires_configuration);
+        }
+        // 主 key 有效不应掩盖 Desktop key 被拒绝；CLI 的 key 也不能代替它。
+        let provider = managed_provider(
+            &AppType::Codex,
+            "sk-rejected",
+            "test-model",
+            "premium",
+            "auto",
+        )
+        .unwrap();
+        state
+            .db
+            .save_provider(CHATGPT_DESKTOP_NAMESPACE, &provider)
+            .unwrap();
+        let result = preflight_yuanheng_tool_at(
+            &state,
+            CHATGPT_DESKTOP_NAMESPACE,
+            "test-model",
+            Some("premium"),
+            Some("auto"),
+            &client,
+            &origin,
+        )
+        .await
+        .unwrap();
+        assert!(result.requires_configuration);
+        assert!(result
+            .checks
+            .iter()
+            .any(|check| check.id == "credential" && check.status == "warning"));
+        assert!(!serde_json::to_string(&result)
+            .unwrap()
+            .contains("must-not-leak"));
+        // 没配置过的分组进入准备流程，不误报用户未登录。
+        let result = preflight_yuanheng_tool_at(
+            &state,
+            CHATGPT_DESKTOP_NAMESPACE,
+            "test-model",
+            Some("中文分组"),
+            None,
+            &client,
+            &origin,
+        )
+        .await
+        .unwrap();
+        assert!(result.requires_configuration);
+        task.abort();
+        let _ = task.await;
+        crate::secure_storage::clear_for_tests();
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn codex_config_failure_restores_both_providers_and_files() {
+        let (_home, state) = isolated_state();
+        prepare_managed_codex_mode(&state, true);
+        let before_cli = managed_codex_provider_for_namespace(&state, "codex")
+            .unwrap()
+            .unwrap();
+        let before_app = managed_codex_provider_for_namespace(&state, CHATGPT_DESKTOP_NAMESPACE)
+            .unwrap()
+            .unwrap();
+        let before = capture_codex_mode_switch_snapshot(&state).unwrap();
+        // 路由未启动，注入写入链路中途失败，不能把新分组/新 key 留在 DB。
+        let result = configure_codex_surface(
+            &state,
+            CodexSurface::Desktop,
+            "sk-new",
+            "test-model",
+            &["test-model".to_string()],
+            "other-group",
+            "auto",
+        )
+        .await;
+        assert!(result.is_err());
+        assert_eq!(
+            managed_codex_provider_for_namespace(&state, "codex")
+                .unwrap()
+                .unwrap()
+                .settings_config,
+            before_cli.settings_config
+        );
+        assert_eq!(
+            managed_codex_provider_for_namespace(&state, CHATGPT_DESKTOP_NAMESPACE)
+                .unwrap()
+                .unwrap()
+                .settings_config,
+            before_app.settings_config
+        );
+        assert_eq!(
+            crate::codex_config::read_codex_config_text().unwrap(),
+            before.live_config.unwrap()
+        );
+        assert_eq!(
+            std::fs::read_to_string(codex_terminal_profile_path()).unwrap(),
+            before.terminal_profile.unwrap()
+        );
+    }
+
+    #[test]
+    fn network_failures_do_not_mean_token_rejection() {
+        assert!(is_token_rejected("模型目录鉴权检查失败（HTTP 401）"));
+        assert!(is_token_rejected("模型目录鉴权检查失败（HTTP 403）"));
+        for error in ["连接超时", "HTTP 502", "HTTP 429", "非 JSON 响应"] {
+            assert!(!is_token_rejected(error));
+        }
+    }
 
     #[test]
     fn login_accepts_existing_usernames_longer_than_registration_limit() {

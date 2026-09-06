@@ -2,6 +2,7 @@ import type { ToolVersionInfo } from "@/lib/api/settings";
 
 const CACHE_KEY = "yuanheng.desktop.tool-inventory.v1";
 export const TOOL_INVENTORY_CACHE_TTL_MS = 5 * 60_000;
+const CACHE_MAX_AGE_MS = 7 * 24 * 60 * 60_000;
 
 interface ToolInventoryCacheRecord {
   savedAt: number;
@@ -21,9 +22,19 @@ export function readToolInventoryCache(
     const parsed = JSON.parse(raw) as ToolInventoryCacheRecord;
     if (
       !Number.isFinite(parsed.savedAt) ||
-      Date.now() - parsed.savedAt > TOOL_INVENTORY_CACHE_TTL_MS ||
+      parsed.savedAt > Date.now() ||
+      Date.now() - parsed.savedAt > CACHE_MAX_AGE_MS ||
       !Array.isArray(parsed.targets) ||
-      !Array.isArray(parsed.data)
+      !Array.isArray(parsed.data) ||
+      !parsed.targets.every((target: unknown) => typeof target === "string") ||
+      !parsed.data.every(
+        (item: unknown) =>
+          item !== null &&
+          typeof item === "object" &&
+          typeof (item as ToolVersionInfo).name === "string" &&
+          ((item as ToolVersionInfo).version == null ||
+            typeof (item as ToolVersionInfo).version === "string"),
+      )
     ) {
       return undefined;
     }

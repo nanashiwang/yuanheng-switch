@@ -1,5 +1,6 @@
 import {
   Activity,
+  BookOpen,
   Blocks,
   Bot,
   CreditCard,
@@ -62,6 +63,12 @@ const pages: Array<{
     label: "会话与用量",
     description: "查看请求与成本",
     icon: Activity,
+  },
+  {
+    view: "guide",
+    label: "使用说明",
+    description: "查看安装、配置与常见问题",
+    icon: BookOpen,
   },
   {
     view: "network",

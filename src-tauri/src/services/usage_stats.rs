@@ -1620,10 +1620,9 @@ impl Database {
                     l.input_token_semantics
              FROM proxy_request_logs l
              LEFT JOIN providers p ON l.provider_id = p.id AND l.app_type = p.app_type
-             WHERE {} AND l.app_type = ?1 AND l.created_at >= ?2
-             ORDER BY l.created_at DESC
+             WHERE COALESCE(l.data_source, 'proxy') = 'proxy' AND l.app_type = ?1 AND l.created_at >= ?2
+             ORDER BY l.created_at DESC, l.rowid DESC
              LIMIT 1",
-            effective_usage_log_filter("l")
         );
         let result = conn.query_row(
             &sql,
@@ -1631,11 +1630,8 @@ impl Database {
             row_to_request_log_detail,
         );
         match result {
-            Ok(mut detail) => {
-                let mut pricing_cache = HashMap::new();
-                Self::maybe_backfill_log_costs(&conn, &mut detail, &mut pricing_cache)?;
-                Ok(Some(detail))
-            }
+            // 生效检查必须只读，不能因轮询诊断而写账单或触发新用量事件。
+            Ok(detail) => Ok(Some(detail)),
             Err(rusqlite::Error::QueryReturnedNoRows) => Ok(None),
             Err(error) => Err(AppError::Database(error.to_string())),
         }

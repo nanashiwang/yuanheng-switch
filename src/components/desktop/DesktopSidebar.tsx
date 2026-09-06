@@ -8,6 +8,7 @@ import {
   ExternalLink,
   Gauge,
   Globe,
+  BookOpen,
   Network,
   LoaderCircle,
   Mic2,
@@ -43,6 +44,7 @@ const dailyItems = [
 ];
 
 const professionalItems = [
+  { id: "guide" as const, label: "使用说明", icon: BookOpen },
   { id: "network" as const, label: "连接与路由", icon: Network },
   { id: "settings" as const, label: "设置", icon: Settings },
 ];
