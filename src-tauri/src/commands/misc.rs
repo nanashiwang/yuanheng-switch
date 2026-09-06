@@ -8,8 +8,8 @@ use regex::Regex;
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::str::FromStr;
-use tauri::AppHandle;
 use tauri::State;
+use tauri::{AppHandle, Manager};
 use tauri_plugin_dialog::DialogExt;
 use tauri_plugin_opener::OpenerExt;
 
@@ -226,23 +226,34 @@ pub async fn get_installed_tool_versions(
         VALID_VERSION_TOOLS.to_vec()
     };
 
-    tokio::task::spawn_blocking(move || {
-        requested
-            .into_iter()
-            .map(|tool| {
-                let pref = wsl_shell_by_tool.as_ref().and_then(|m| m.get(tool));
-                let custom_path = crate::app_store::get_desktop_app_path_from_store(&app, tool);
+    use futures::{stream, StreamExt};
+    // 限制并发，避免一口气拉起全部 CLI；慢工具不再把其他工具探测串行拖长。
+    let owned_tools: Vec<String> = requested.into_iter().map(str::to_string).collect();
+    let tasks = owned_tools.into_iter().map(|tool| {
+        let app = app.clone();
+        let pref = wsl_shell_by_tool.as_ref().and_then(|m| m.get(&tool));
+        let shell = pref.and_then(|p| p.wsl_shell.clone());
+        let flag = pref.and_then(|p| p.wsl_shell_flag.clone());
+        async move {
+            tokio::task::spawn_blocking(move || {
+                let custom_path = crate::app_store::get_desktop_app_path_from_store(&app, &tool);
                 get_single_local_tool_version_impl(
-                    tool,
-                    pref.and_then(|p| p.wsl_shell.as_deref()),
-                    pref.and_then(|p| p.wsl_shell_flag.as_deref()),
+                    &tool,
+                    shell.as_deref(),
+                    flag.as_deref(),
                     custom_path.as_deref(),
                 )
             })
-            .collect()
-    })
-    .await
-    .map_err(|e| format!("local tool probe task join error: {e}"))
+            .await
+            .map_err(|e| format!("local tool probe task join error: {e}"))
+        }
+    });
+    stream::iter(tasks)
+        .buffered(3)
+        .collect::<Vec<_>>()
+        .await
+        .into_iter()
+        .collect()
 }
 
 #[tauri::command]
@@ -3202,6 +3213,19 @@ pub async fn launch_tool(
     restart: Option<bool>,
     cwd: Option<String>,
 ) -> Result<bool, String> {
+    if matches!(tool.as_str(), "codex" | "chatgpt-desktop") {
+        let state = app
+            .try_state::<crate::store::AppState>()
+            .ok_or_else(|| "应用状态尚未就绪，请稍后再启动 Codex".to_string())?;
+        if crate::commands::managed_codex_routes_require_core(state.db.as_ref()) {
+            // 不能只根据界面的“已配置”跳过运行态核验，尤其是升级后首次启动。
+            state
+                .proxy_service
+                .start()
+                .await
+                .map_err(|error| format!("本地路由未就绪，未启动 Codex：{error}"))?;
+        }
+    }
     if tool == "claude-desktop" {
         #[cfg(target_os = "macos")]
         {

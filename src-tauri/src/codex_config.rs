@@ -302,6 +302,12 @@ fn cleanup_stale_yuanheng_catalogs(
     current_filename: &str,
 ) -> Result<(), AppError> {
     let dir = get_codex_config_dir();
+    // 新配置尚未提交时旧目录仍可能被当前 App/终端使用，失败回滚也需要它。
+    let active_configs = [
+        fs::read_to_string(get_codex_config_path()).unwrap_or_default(),
+        fs::read_to_string(crate::services::codex_session_bridge::codex_session_profile_path())
+            .unwrap_or_default(),
+    ];
     let base_stem = Path::new(base_filename)
         .file_stem()
         .and_then(|value| value.to_str())
@@ -311,6 +317,9 @@ fn cleanup_stale_yuanheng_catalogs(
         let entry = entry.map_err(|error| AppError::Message(error.to_string()))?;
         let filename = entry.file_name().to_string_lossy().to_string();
         if filename != current_filename
+            && !active_configs
+                .iter()
+                .any(|config| config.contains(&filename))
             && is_versioned_yuanheng_catalog_filename(&filename)
             && filename.starts_with(&format!("{base_stem}-"))
         {

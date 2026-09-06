@@ -275,7 +275,14 @@ export function ModelSwitchCenter({
                               ? dt("需要重启以加载模型目录")
                               : usesOfficialCodexAccount
                                 ? dt("OpenAI 官方账号")
-                                : (codexStatus ?? dt("配置已生效"))}
+                                : activationMap.get(app)?.lastStatusCode &&
+                                    activationMap.get(app)!.lastStatusCode! >=
+                                      400
+                                  ? dt("调用失败（HTTP {{code}}）", {
+                                      code: activationMap.get(app)!
+                                        .lastStatusCode,
+                                    })
+                                  : (codexStatus ?? dt("配置已写入"))}
                           </span>
                         </>
                       ) : detectionFailed ? (

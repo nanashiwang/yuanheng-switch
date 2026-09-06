@@ -23,6 +23,7 @@ export function useYuanhengConnection() {
     queryKey: yuanhengKeys.connection,
     queryFn: () => yuanhengApi.getConnection(),
     retry: false,
+    staleTime: 30_000,
   });
 }
 
@@ -144,6 +145,7 @@ export function useYuanhengToolStatuses() {
     queryKey: yuanhengKeys.tools,
     queryFn: () => yuanhengApi.getToolStatuses(),
     retry: false,
+    staleTime: 30_000,
     refetchInterval: 30_000,
     refetchOnWindowFocus: true,
   });
@@ -155,7 +157,8 @@ export function useYuanhengToolActivationStatuses() {
     queryKey: yuanhengKeys.activation,
     queryFn: () => yuanhengApi.getToolActivationStatuses(),
     retry: false,
-    refetchInterval: 10_000,
+    staleTime: 5_000,
+    refetchInterval: 30_000,
     refetchOnWindowFocus: true,
   });
   useEffect(() => {
@@ -163,10 +166,14 @@ export function useYuanhengToolActivationStatuses() {
     let disposed = false;
     void listen("usage-log-recorded", () => {
       queryClient.invalidateQueries({ queryKey: yuanhengKeys.activation });
-    }).then((off) => {
-      if (disposed) off();
-      else unlisten = off;
-    });
+    })
+      .then((off) => {
+        if (disposed) off();
+        else unlisten = off;
+      })
+      .catch(() => {
+        /* 无事件桥时仍有低频轮询兜底。 */
+      });
     return () => {
       disposed = true;
       unlisten?.();
@@ -196,7 +203,7 @@ export function useCodexSessionBridgeStatus() {
     queryKey: yuanhengKeys.codexBridge,
     queryFn: () => yuanhengApi.getCodexSessionBridgeStatus(),
     retry: false,
-    refetchInterval: 2_000,
+    refetchInterval: 10_000,
     refetchOnWindowFocus: true,
   });
 }
@@ -237,11 +244,13 @@ export function useSwitchCodexAccountMode() {
   });
 }
 
-export function useYuanhengDiagnostics() {
+export function useYuanhengDiagnostics(enabled = true) {
   return useQuery({
     queryKey: yuanhengKeys.diagnostics,
     queryFn: () => yuanhengApi.getDiagnostics(),
+    enabled,
     retry: false,
+    staleTime: 60_000,
     refetchInterval: 60_000,
     refetchOnWindowFocus: true,
   });
@@ -251,18 +260,34 @@ export function useRepairYuanheng() {
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn: async (actions: string[] = []) => {
-      const connection = actions.includes("repair_credentials")
-        ? await yuanhengApi.rotateDeviceToken()
-        : await yuanhengApi.refresh();
+      // 同步优先；不要在工具尚未重配前撤销仍可能被使用的旧令牌。
+      const connection = await yuanhengApi.refresh();
       const statuses = await yuanhengApi.getToolStatuses();
+      const codexMode = await yuanhengApi.getCodexAccountMode();
       const apps = statuses
         .filter(
           (item) =>
+            !(
+              codexMode.mode === "official" &&
+              (item.app === "codex" || item.app === "chatgpt-desktop")
+            ),
+        )
+        .filter(
+          (item) =>
             item.needsUpdate ||
-            (actions.includes("repair_tools") && item.configured),
+            ((actions.includes("repair_tools") ||
+              actions.includes("repair_credentials")) &&
+              item.configured),
         )
         .map((item) => item.app);
-      if (apps.length > 0) await yuanhengApi.configureTools(apps);
+      if (apps.length > 0) {
+        const results = await yuanhengApi.configureTools(apps);
+        const failed = results.filter((item) => !item.configured);
+        if (failed.length)
+          throw new Error(
+            failed.map((item) => item.error || item.app).join("；"),
+          );
+      }
       return { connection, repairedTools: apps };
     },
     onSuccess: ({ connection }) => {
@@ -279,10 +304,25 @@ export function useRotateYuanhengCredential() {
     mutationFn: async () => {
       const connection = await yuanhengApi.rotateDeviceToken();
       const statuses = await yuanhengApi.getToolStatuses();
+      const codexMode = await yuanhengApi.getCodexAccountMode();
       const apps = statuses
-        .filter((item) => item.needsUpdate)
+        .filter(
+          (item) =>
+            !(
+              codexMode.mode === "official" &&
+              (item.app === "codex" || item.app === "chatgpt-desktop")
+            ),
+        )
+        .filter((item) => item.needsUpdate || item.configured)
         .map((item) => item.app);
-      if (apps.length > 0) await yuanhengApi.configureTools(apps);
+      if (apps.length > 0) {
+        const results = await yuanhengApi.configureTools(apps);
+        const failed = results.filter((item) => !item.configured);
+        if (failed.length)
+          throw new Error(
+            failed.map((item) => item.error || item.app).join("；"),
+          );
+      }
       return { connection, updatedTools: apps };
     },
     onSuccess: ({ connection }) => {

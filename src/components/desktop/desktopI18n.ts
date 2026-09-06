@@ -6,6 +6,15 @@ import { DESKTOP_ZH_TW } from "./desktopI18n.zhTW";
 type Values = Record<string, string | number | null | undefined>;
 
 export const DESKTOP_EN: Record<string, string> = {
+  配置待验证: "Configuration awaiting verification",
+  按需检查账号与工具凭据: "Check account and tool credentials on demand",
+  "网络体检按需执行，不影响工作台加载。":
+    "Network checks run on demand without delaying the workspace.",
+  "将重新生成当前设备凭据并更新工具配置；旧令牌会保留，避免中断其他工具，是否继续？":
+    "Regenerate this device's credentials and update tool configurations? Old tokens will be retained to avoid interrupting other tools.",
+  等待请求记录: "Waiting for a request record",
+  等待调用验证: "Waiting for call verification",
+  "调用失败（HTTP {{code}}）": "Call failed (HTTP {{code}})",
   使用说明: "User Guide",
   元衡使用说明: "YuanHeng User Guide",
   "安装、配置、模型切换和常见问题都可以在这里快速查看。":

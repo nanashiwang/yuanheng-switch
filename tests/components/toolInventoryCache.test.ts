@@ -36,14 +36,33 @@ describe("toolInventoryCache", () => {
     expect(readToolInventoryCache(["claude"])).toBeUndefined();
   });
 
-  it("expires stale inventory and supports explicit invalidation", () => {
+  it("retains stale inventory for display while live detection refreshes it", () => {
     const now = Date.now();
     const nowSpy = vi.spyOn(Date, "now").mockReturnValue(now);
     writeToolInventoryCache(["codex"], inventory);
     nowSpy.mockReturnValue(now + TOOL_INVENTORY_CACHE_TTL_MS + 1);
 
-    expect(readToolInventoryCache(["codex"])).toBeUndefined();
+    expect(readToolInventoryCache(["codex"])?.data).toEqual(inventory);
     clearToolInventoryCache();
     expect(window.localStorage.length).toBe(0);
+  });
+
+  it("rejects corrupt rows and future timestamps instead of crashing the workspace", () => {
+    writeToolInventoryCache(["codex"], inventory);
+    const key = window.localStorage.key(0)!;
+    const original = JSON.parse(window.localStorage.getItem(key)!);
+    for (const patch of [
+      { data: [null] },
+      { data: [{ version: 123 }] },
+      { targets: [null] },
+      { savedAt: Date.now() + 60_000 },
+      { savedAt: Date.now() - 8 * 24 * 60 * 60_000 },
+    ]) {
+      window.localStorage.setItem(
+        key,
+        JSON.stringify({ ...original, ...patch }),
+      );
+      expect(readToolInventoryCache(["codex"])).toBeUndefined();
+    }
   });
 });

@@ -1,5 +1,14 @@
 // Generated from the desktop Simplified Chinese source strings, then normalized for Taiwan terminology.
 export const DESKTOP_ZH_TW: Record<string, string> = {
+  配置待验证: "設定待驗證",
+  按需检查账号与工具凭据: "按需檢查帳號與工具憑據",
+  "网络体检按需执行，不影响工作台加载。":
+    "網路體檢按需執行，不影響工作台載入。",
+  "将重新生成当前设备凭据并更新工具配置；旧令牌会保留，避免中断其他工具，是否继续？":
+    "將重新產生目前裝置憑據並更新工具設定；舊權杖會保留，避免中斷其他工具，是否繼續？",
+  等待请求记录: "等待請求紀錄",
+  等待调用验证: "等待呼叫驗證",
+  "调用失败（HTTP {{code}}）": "呼叫失敗（HTTP {{code}}）",
   使用说明: "使用說明",
   元衡使用说明: "元衡使用說明",
   "安装、配置、模型切换和常见问题都可以在这里快速查看。":

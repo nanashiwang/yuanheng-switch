@@ -93,7 +93,7 @@ export function useModelSwitchCenter() {
     initialDataUpdatedAt: cachedInventory?.savedAt,
     staleTime: TOOL_INVENTORY_CACHE_TTL_MS,
     retry: false,
-    refetchOnMount: "always",
+    refetchOnMount: true,
     refetchOnWindowFocus: false,
   });
   const [models, setModels] = useState<Partial<Record<YuanhengToolId, string>>>(
@@ -155,7 +155,7 @@ export function useModelSwitchCenter() {
   useEffect(() => {
     preflightCache.current.clear();
     setPreflightResults({});
-  }, [connection?.lastSyncedAt]);
+  }, [connection?.lastSyncedAt, connection?.userId, connection?.connected]);
 
   useEffect(
     () =>
@@ -274,6 +274,7 @@ export function useModelSwitchCenter() {
 
   const retryBootstrap = async () => {
     clearToolInventoryCache();
+    preflightCache.current.clear();
     await Promise.all([
       inventory.refetch(),
       statuses.refetch(),
@@ -318,10 +319,11 @@ export function useModelSwitchCenter() {
       group,
       reasoning: selectedReasoning,
     });
-    preflightCache.current.set(cacheKey, {
-      checkedAt: Date.now(),
-      result,
-    });
+    if (result.status === "ok" && !result.requiresConfiguration) {
+      preflightCache.current.set(cacheKey, { checkedAt: Date.now(), result });
+    } else {
+      preflightCache.current.delete(cacheKey);
+    }
     setPreflightResults((current) => ({ ...current, [app]: result }));
     if (result.status === "error") {
       const failed = result.checks.find((check) => check.status === "error");
@@ -677,8 +679,15 @@ export function useModelSwitchCenter() {
             (group && group !== status.group) ||
             normalizedReasoning !== (status.reasoning ?? "auto"),
         );
-      if (dirty && model) {
-        await runPreflight(app, model, group, normalizedReasoning);
+      // 启动不是仅检查“文件写过”：验证这个工具/分组实际使用的凭据。
+      const credentialCheck =
+        !usesOfficialCodexAccount && model
+          ? await runPreflight(app, model, group, normalizedReasoning)
+          : undefined;
+      if (!isCurrentOperation(app, operationId)) return;
+      const needsApply =
+        dirty || Boolean(credentialCheck?.requiresConfiguration);
+      if (needsApply && model) {
         const results = await configure.mutateAsync({
           apps: [app],
           models: { [app]: model },
@@ -695,7 +704,7 @@ export function useModelSwitchCenter() {
         }
       }
       if (!isCurrentOperation(app, operationId)) return;
-      const shouldRestart = isDesktopApp(app) && (dirty || restartPending);
+      const shouldRestart = isDesktopApp(app) && (needsApply || restartPending);
       await yuanhengApi.launchTool(
         app,
         shouldRestart,

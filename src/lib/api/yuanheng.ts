@@ -154,6 +154,7 @@ export interface YuanhengToolPreflight {
   imageInput: "supported" | "unsupported" | "unknown";
   checks: YuanhengPreflightCheck[];
   message: string;
+  requiresConfiguration?: boolean;
 }
 
 export interface YuanhengToolActivationStatus {

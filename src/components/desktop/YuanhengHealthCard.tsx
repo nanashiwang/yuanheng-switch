@@ -65,7 +65,8 @@ export function YuanhengHealthCard({
   onConfigureTools,
 }: YuanhengHealthCardProps) {
   const { data: connection } = useYuanhengConnection();
-  const diagnostics = useYuanhengDiagnostics();
+  // 首屏不发起账号/多个分组的网络体检，由用户主动检查，避免和工具探测抢资源。
+  const diagnostics = useYuanhengDiagnostics(false);
   const repair = useRepairYuanheng();
   const rotateCredential = useRotateYuanhengCredential();
   const rollbackTools = useRollbackYuanhengTools();
@@ -78,6 +79,11 @@ export function YuanhengHealthCard({
   );
 
   const handlePrimaryAction = async () => {
+    if (!report) {
+      const result = await diagnostics.refetch();
+      if (result.isError) toast.error(dt("暂时无法检查"));
+      return;
+    }
     if (!connection?.connected || actions.has("login")) {
       onOpenConnection?.();
       return;
@@ -142,7 +148,7 @@ export function YuanhengHealthCard({
     if (
       !window.confirm(
         dt(
-          "将重新生成当前设备凭据，并自动更新已经配置的工具。旧凭据会被撤销，是否继续？",
+          "将重新生成当前设备凭据并更新工具配置；旧令牌会保留，避免中断其他工具，是否继续？",
         ),
       )
     ) {
@@ -212,8 +218,9 @@ export function YuanhengHealthCard({
     );
   }
 
-  const primaryLabel =
-    !connection?.connected || actions.has("login")
+  const primaryLabel = !report
+    ? dt("重新检查")
+    : !connection?.connected || actions.has("login")
       ? dt("前往登录")
       : actions.has("configure_tools") && !actions.has("repair_credentials")
         ? dt("配置工具")
@@ -238,12 +245,18 @@ export function YuanhengHealthCard({
             {dt("智能体检")}
           </p>
           <h2 className="mt-1 font-display text-base font-semibold">
-            {report ? dt(meta.title) : dt("暂时无法检查")}
+            {report
+              ? dt(meta.title)
+              : diagnostics.isError
+                ? dt("暂时无法检查")
+                : dt("按需检查账号与工具凭据")}
           </h2>
           <p className="mt-1 text-[11px] leading-5 text-muted-foreground">
             {report?.checks.find((item) => item.status !== "ok")?.message
               ? dt(report.checks.find((item) => item.status !== "ok")!.message)
-              : dt(meta.description)}
+              : !report
+                ? dt("网络体检按需执行，不影响工作台加载。")
+                : dt(meta.description)}
           </p>
         </div>
       </div>

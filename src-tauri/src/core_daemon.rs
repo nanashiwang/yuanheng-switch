@@ -154,6 +154,11 @@ impl CoreSupervisor {
         db: &Database,
         source: &Path,
     ) -> Result<CoreInfo, String> {
+        static START_LOCK: OnceLock<tokio::sync::Mutex<()>> = OnceLock::new();
+        let _guard = START_LOCK
+            .get_or_init(|| tokio::sync::Mutex::new(()))
+            .lock()
+            .await;
         let installed = install_versioned_core(&self.config_dir, source)?;
         let token = ensure_admin_token(&self.config_dir)?;
         let config = db
@@ -170,10 +175,8 @@ impl CoreSupervisor {
                     );
                     return Ok(info);
                 }
-                activate_core_version(&self.config_dir, &installed.path)?;
-                self.restart_service(true).await?;
                 return self
-                    .wait_until_ready(&token, &config, Some(&installed.id))
+                    .upgrade_idle_core(&token, &config, &installed, &info)
                     .await;
             }
 
@@ -184,10 +187,8 @@ impl CoreSupervisor {
 
             // 发布版只在没有进行中的请求时无感切换，活跃 SSE 会话保持在旧 Core。
             if info.status.active_connections == 0 {
-                activate_core_version(&self.config_dir, &installed.path)?;
-                self.request_shutdown(&token, &config).await?;
                 return self
-                    .wait_until_ready(&token, &config, Some(&installed.id))
+                    .upgrade_idle_core(&token, &config, &installed, &info)
                     .await;
             }
 
@@ -202,6 +203,73 @@ impl CoreSupervisor {
         self.install_and_start_service().await?;
         self.wait_until_ready(&token, &config, Some(&installed.id))
             .await
+    }
+
+    async fn upgrade_idle_core(
+        &self,
+        token: &str,
+        config: &ProxyConfig,
+        installed: &InstalledCore,
+        previous: &CoreInfo,
+    ) -> Result<CoreInfo, String> {
+        // 保存可回退的旧二进制。版本目录不变，失败时不会丢失旧版本。
+        let old = install_versioned_core(&self.config_dir, &current_core_path(&self.config_dir))?;
+        #[cfg(not(target_os = "macos"))]
+        {
+            self.request_shutdown(token, config).await?;
+            let deadline = tokio::time::Instant::now() + CORE_START_TIMEOUT;
+            while read_runtime_record(&self.config_dir)
+                .ok()
+                .is_some_and(|record| record.pid == previous.pid)
+            {
+                if tokio::time::Instant::now() >= deadline {
+                    return Err("旧 Core 尚未安全退出，未覆盖正在使用的文件".to_string());
+                }
+                tokio::time::sleep(Duration::from_millis(100)).await;
+            }
+        }
+        #[cfg(target_os = "macos")]
+        let _ = previous;
+
+        let upgrade = async {
+            // Windows 进程已停止，但系统可能仍短暂持有映像句柄；只重试共享冲突。
+            let deadline = tokio::time::Instant::now() + CORE_START_TIMEOUT;
+            loop {
+                match activate_core_version(&self.config_dir, &installed.path) {
+                    Ok(()) => break,
+                    Err(error)
+                        if cfg!(windows)
+                            && (error.contains("os error 32") || error.contains("os error 5"))
+                            && tokio::time::Instant::now() < deadline =>
+                    {
+                        tokio::time::sleep(Duration::from_millis(100)).await;
+                    }
+                    Err(error) => return Err(error),
+                }
+            }
+            #[cfg(target_os = "macos")]
+            self.request_shutdown(token, config).await?;
+            #[cfg(not(target_os = "macos"))]
+            self.install_and_start_service().await?;
+            self.wait_until_ready(token, config, Some(&installed.id))
+                .await
+        }
+        .await;
+        match upgrade {
+            Ok(info) => Ok(info),
+            Err(error) => {
+                // 启动已经发生时不能覆盖可能仍运行的新进程。
+                if self.query_info(token, config).await.is_ok() {
+                    return Err(format!("Core 升级核验失败，保留正在运行的核心：{error}"));
+                }
+                activate_core_version(&self.config_dir, &old.path)?;
+                self.install_and_start_service().await?;
+                self.wait_until_ready(token, config, Some(&old.id))
+                    .await
+                    .map_err(|rollback| format!("{error}；旧 Core 恢复失败：{rollback}"))?;
+                Err(format!("Core 升级失败，已恢复旧版本：{error}"))
+            }
+        }
     }
 
     pub async fn reload(&self, db: &Database) -> Result<(), String> {
@@ -531,6 +599,10 @@ async fn run_core(config_dir: PathBuf) -> Result<(), String> {
                         let _ = reply.send(result);
                     }
                     CoreCommand::Shutdown { reply } => {
+                        if server.get_status().await.active_connections > 0 {
+                            let _ = reply.send(Err("仍有活跃请求，暂不停止 Core".to_string()));
+                            continue;
+                        }
                         let _ = reply.send(Ok(()));
                         tokio::time::sleep(Duration::from_millis(120)).await;
                         break;
@@ -788,6 +860,9 @@ fn install_versioned_core(config_dir: &Path, source: &Path) -> Result<InstalledC
 }
 
 fn activate_core_version(config_dir: &Path, version_dir: &Path) -> Result<(), String> {
+    if !version_dir.join(CORE_EXECUTABLE_NAME).is_file() {
+        return Err("候选 Core 二进制不存在，未切换版本".to_string());
+    }
     let root = core_root(config_dir);
     fs::create_dir_all(&root).map_err(|error| format!("创建 Core 目录失败: {error}"))?;
     let current = root.join("current");
@@ -814,7 +889,11 @@ fn activate_core_version(config_dir: &Path, version_dir: &Path) -> Result<(), St
             .map_err(|error| format!("创建 Core current 目录失败: {error}"))?;
         let source = version_dir.join(CORE_EXECUTABLE_NAME);
         let destination = current.join(CORE_EXECUTABLE_NAME);
-        fs::copy(source, destination).map_err(|error| format!("切换 Core 版本失败: {error}"))?;
+        // 先准备完整文件再替换；复制失败不会截断旧二进制。
+        let temporary = current.join("yuanheng-core.next.exe");
+        fs::copy(source, &temporary).map_err(|error| format!("准备 Core 版本失败: {error}"))?;
+        fs::rename(&temporary, &destination)
+            .map_err(|error| format!("切换 Core 版本失败: {error}"))?;
     }
 
     Ok(())
@@ -1136,11 +1215,59 @@ mod tests {
     use super::proxy_origin;
     #[cfg(target_os = "macos")]
     use super::xml_escape;
+    #[cfg(windows)]
+    use super::CORE_EXECUTABLE_NAME;
+    use super::{activate_core_version, current_core_path, install_versioned_core};
 
     #[test]
     fn proxy_origin_normalizes_bind_all_addresses() {
         assert_eq!(proxy_origin("0.0.0.0", 15721), "http://127.0.0.1:15721");
         assert_eq!(proxy_origin("::", 15721), "http://[::1]:15721");
+    }
+
+    #[test]
+    fn activating_missing_core_preserves_previous_binary() {
+        let dir = tempfile::tempdir().unwrap();
+        let source = dir.path().join("source.bin");
+        std::fs::write(&source, b"old-version").unwrap();
+        let installed = install_versioned_core(dir.path(), &source).unwrap();
+        activate_core_version(dir.path(), &installed.path).unwrap();
+        // 缺失候选版本必须在切换指针或覆盖二进制之前拒绝。
+        assert!(activate_core_version(dir.path(), &dir.path().join("missing")).is_err());
+        assert_eq!(
+            std::fs::read(current_core_path(dir.path())).unwrap(),
+            b"old-version"
+        );
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn windows_locked_core_is_not_truncated_and_switches_after_handle_closes() {
+        use std::os::windows::fs::OpenOptionsExt;
+        let dir = tempfile::tempdir().unwrap();
+        let old = dir.path().join("old");
+        let next = dir.path().join("next");
+        std::fs::create_dir_all(&old).unwrap();
+        std::fs::create_dir_all(&next).unwrap();
+        std::fs::write(old.join(CORE_EXECUTABLE_NAME), b"old-version").unwrap();
+        std::fs::write(next.join(CORE_EXECUTABLE_NAME), b"new-version").unwrap();
+        activate_core_version(dir.path(), &old).unwrap();
+        let lock = std::fs::OpenOptions::new()
+            .read(true)
+            .share_mode(0)
+            .open(current_core_path(dir.path()))
+            .unwrap();
+        assert!(activate_core_version(dir.path(), &next).is_err());
+        drop(lock);
+        assert_eq!(
+            std::fs::read(current_core_path(dir.path())).unwrap(),
+            b"old-version"
+        );
+        activate_core_version(dir.path(), &next).unwrap();
+        assert_eq!(
+            std::fs::read(current_core_path(dir.path())).unwrap(),
+            b"new-version"
+        );
     }
 
     #[cfg(target_os = "macos")]
