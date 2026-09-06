@@ -8,11 +8,13 @@ import type {
 import { QueryClientProvider } from "@tanstack/react-query";
 import { createTestQueryClient } from "../utils/testQueryClient";
 import { OPEN_ANNOUNCEMENTS_EVENT } from "@/lib/announcementCenter";
+import { DesktopAnnouncementCenter } from "@/components/desktop/PlatformAnnouncementCenter";
 
-function renderPrompt() {
+function renderPrompt(includeCenter = false) {
   return render(
     <QueryClientProvider client={createTestQueryClient()}>
       <UpdatePrompt />
+      {includeCenter && <DesktopAnnouncementCenter />}
     </QueryClientProvider>,
   );
 }
@@ -134,5 +136,21 @@ describe("UpdatePrompt", () => {
     } finally {
       window.removeEventListener(OPEN_ANNOUNCEMENTS_EVENT, onOpen);
     }
+  });
+
+  it("关闭内部公告不改变更新决定，也不关闭原更新弹窗", () => {
+    renderPrompt(true);
+    fireEvent.click(
+      screen.getByRole("button", { name: "settings.releaseNotes" }),
+    );
+    expect(screen.getAllByRole("dialog", { hidden: true })).toHaveLength(2);
+    fireEvent.click(screen.getByRole("button", { name: "关闭公告中心" }));
+    expect(screen.getAllByRole("dialog")).toHaveLength(1);
+    expect(
+      screen.getByRole("button", { name: "settings.updateNow" }),
+    ).toBeInTheDocument();
+    expect(updateContextMock.remindLater).not.toHaveBeenCalled();
+    expect(updateContextMock.ignoreUpdate).not.toHaveBeenCalled();
+    expect(updateContextMock.startUpdate).not.toHaveBeenCalled();
   });
 });

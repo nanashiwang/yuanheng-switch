@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   Download,
   Copy,
-  ExternalLink,
+  BookOpen,
   Github,
   Globe,
   Info,
@@ -864,7 +864,7 @@ export function AboutSection({ isPortable }: AboutSectionProps) {
               onClick={handleOpenReleaseNotes}
               className="h-8 gap-1.5 text-xs"
             >
-              <ExternalLink className="h-3.5 w-3.5" />
+              <BookOpen className="h-3.5 w-3.5" />
               {t("settings.releaseNotes")}
             </Button>
             <Button

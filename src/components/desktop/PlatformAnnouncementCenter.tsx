@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   AlertTriangle,
   BellRing,
@@ -198,6 +198,10 @@ function AnnouncementDialog({
   const selected =
     announcements.find((announcement) => announcement.id === selectedId) ??
     announcements[0];
+  const detailRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (detailRef.current) detailRef.current.scrollTop = 0;
+  }, [selected?.id, category]);
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -293,7 +297,10 @@ function AnnouncementDialog({
             })}
           </div>
 
-          <div className="min-h-[320px] max-h-[58vh] overflow-y-auto px-6 py-5">
+          <div
+            ref={detailRef}
+            className="min-h-[320px] max-h-[58vh] overflow-y-auto px-6 py-5"
+          >
             {selected && (
               <article>
                 <div className="mb-4 flex flex-wrap items-center gap-2">
@@ -428,10 +435,15 @@ export function DesktopAnnouncementCenter() {
         return;
       setCategory(detail.category);
       setOpen(true);
+      if (detail.category === "updates") {
+        // An update may have just been published while the workspace cache is fresh.
+        // Keep the local view usable, but explicitly refresh on this user action.
+        void releaseQuery.refetch({ cancelRefetch: false });
+      }
     };
     window.addEventListener(OPEN_ANNOUNCEMENTS_EVENT, onOpen);
     return () => window.removeEventListener(OPEN_ANNOUNCEMENTS_EVENT, onOpen);
-  }, []);
+  }, [releaseQuery.refetch]);
   useEffect(() => {
     if (open && category === "updates" && releases[0]) {
       markReleaseRead(releaseNoteIdentity(releases[0]));
@@ -461,7 +473,12 @@ export function DesktopAnnouncementCenter() {
       onOpenChange={setOpen}
       announcements={announcements}
       category={category}
-      onCategoryChange={setCategory}
+      onCategoryChange={(next) => {
+        setCategory(next);
+        if (next === "updates") {
+          void releaseQuery.refetch({ cancelRefetch: false });
+        }
+      }}
       statusMessage={statusMessage}
     />
   );
@@ -485,7 +502,13 @@ function PlatformNoticeBanner() {
   const latest = announcements[0];
   const latestIdentity = latest ? getAnnouncementIdentity(latest) : null;
   const [dismissedIdentity, setDismissedIdentity] = useState<string | null>(
-    () => localStorage.getItem(DISMISSED_ANNOUNCEMENT_KEY),
+    () => {
+      try {
+        return localStorage.getItem(DISMISSED_ANNOUNCEMENT_KEY);
+      } catch {
+        return null;
+      }
+    },
   );
   const isUnread = Boolean(
     latestIdentity && latestIdentity !== dismissedIdentity,
@@ -493,7 +516,11 @@ function PlatformNoticeBanner() {
 
   const dismissLatest = () => {
     if (!latestIdentity) return;
-    localStorage.setItem(DISMISSED_ANNOUNCEMENT_KEY, latestIdentity);
+    try {
+      localStorage.setItem(DISMISSED_ANNOUNCEMENT_KEY, latestIdentity);
+    } catch {
+      // Platform notices must remain usable alongside the release viewer.
+    }
     setDismissedIdentity(latestIdentity);
   };
 

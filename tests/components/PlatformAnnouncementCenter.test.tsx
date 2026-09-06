@@ -137,7 +137,10 @@ describe("PlatformAnnouncementCenter", () => {
     expect(within(dialog).getAllByText("v0.1.44")).toHaveLength(2);
     expect(within(dialog).getByText("v0.1.43")).toBeInTheDocument();
     expect(within(dialog).queryByText("v0.1.42")).not.toBeInTheDocument();
+    const pane = dialog.querySelector("article")!.parentElement!;
+    pane.scrollTop = 100;
     fireEvent.click(within(dialog).getByText("v0.1.43"));
+    expect(pane.scrollTop).toBe(0);
     expect(
       within(dialog).getByText(/支持在元衡中转与 Codex 官方账号之间切换/),
     ).toBeInTheDocument();
@@ -208,5 +211,51 @@ describe("PlatformAnnouncementCenter", () => {
     } finally {
       write.mockRestore();
     }
+  });
+
+  it("本机存储完全禁用时，公告区和内部窗口仍可用", () => {
+    const read = vi
+      .spyOn(Storage.prototype, "getItem")
+      .mockImplementation(() => {
+        throw new Error("disabled");
+      });
+    const write = vi
+      .spyOn(Storage.prototype, "setItem")
+      .mockImplementation(() => {
+        throw new Error("disabled");
+      });
+    try {
+      renderCenter();
+      fireEvent.click(screen.getByRole("button", { name: "查看更新内容" }));
+      expect(screen.getByRole("dialog")).toBeInTheDocument();
+    } finally {
+      read.mockRestore();
+      write.mockRestore();
+    }
+  });
+
+  it("缓存尚未过期时，手动打开仍会刷新刚发布的最近两版", async () => {
+    let latest = 45;
+    server.use(
+      http.post("http://tauri.local/get_desktop_release_notes", () =>
+        HttpResponse.json(
+          [latest, latest - 1].map((version) => ({
+            version: `0.1.${version}`,
+            publishedAt: "2026-09-06T00:00:00Z",
+            content: `版本 0.1.${version} 的更新说明`,
+          })),
+        ),
+      ),
+    );
+    renderCenter();
+    await screen.findByText("v0.1.45 更新公告");
+    latest = 46;
+    fireEvent.click(screen.getByRole("button", { name: "查看更新内容" }));
+    const dialog = screen.getByRole("dialog");
+    await waitFor(() =>
+      expect(within(dialog).getAllByText("v0.1.46")).toHaveLength(2),
+    );
+    expect(within(dialog).getByText("v0.1.45")).toBeInTheDocument();
+    expect(within(dialog).queryByText("v0.1.44")).not.toBeInTheDocument();
   });
 });
