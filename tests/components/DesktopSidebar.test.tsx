@@ -82,4 +82,18 @@ describe("DesktopSidebar", () => {
     fireEvent.click(screen.getByRole("button", { name: "声音克隆" }));
     expect(onNavigate).toHaveBeenCalledWith("voiceClone");
   });
+
+  it("提供使用说明入口并支持导航", () => {
+    const onNavigate = vi.fn();
+    render(
+      <DesktopSidebar
+        view="home"
+        onNavigate={onNavigate}
+        proxyRunning={false}
+      />,
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "使用说明" }));
+    expect(onNavigate).toHaveBeenCalledWith("guide");
+  });
 });
