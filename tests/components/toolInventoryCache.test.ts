@@ -65,4 +65,20 @@ describe("toolInventoryCache", () => {
       expect(readToolInventoryCache(["codex"])).toBeUndefined();
     }
   });
+
+  it("does not persist raw probe output or unexpected credential fields", () => {
+    writeToolInventoryCache(
+      ["codex"],
+      [
+        {
+          ...inventory[0],
+          error: "Bearer sk-secret-account-token",
+          apiKey: "must-not-persist",
+        } as any,
+      ],
+    );
+    const cached = window.localStorage.getItem(window.localStorage.key(0)!)!;
+    expect(cached).not.toContain("sk-secret");
+    expect(cached).not.toContain("must-not-persist");
+  });
 });

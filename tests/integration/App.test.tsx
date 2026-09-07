@@ -680,22 +680,23 @@ describe("App integration with MSW", { timeout: 15_000 }, () => {
     setSettings({ firstRunNoticeConfirmed: true });
     let openedUrl = "";
     server.use(
-      http.post("http://tauri.local/get_tool_versions", async ({ request }) => {
-        const { tools = [] } = (await request.json()) as { tools?: string[] };
-        return HttpResponse.json(
-          tools
-            .filter((name) => name !== "claude-desktop")
-            .map((name) => ({
+      http.post(
+        "http://tauri.local/get_installed_tool_versions",
+        async ({ request }) => {
+          const { tools = [] } = (await request.json()) as { tools?: string[] };
+          return HttpResponse.json(
+            tools.map((name) => ({
               name,
-              version: "1.0.0",
-              latest_version: "1.0.0",
-              error: null,
+              version: name === "claude-desktop" ? null : "1.0.0",
+              latest_version: null,
+              error: name === "claude-desktop" ? "not installed" : null,
               installed_but_broken: false,
               env_type: "macos",
               wsl_distro: null,
             })),
-        );
-      }),
+          );
+        },
+      ),
       http.post("http://tauri.local/open_external", async ({ request }) => {
         const { url } = (await request.json()) as { url: string };
         openedUrl = url;

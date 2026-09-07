@@ -6,6 +6,22 @@ import type {
   RemoteSnapshotInfo,
 } from "@/types";
 import type { AppId } from "./types";
+import { createSingleFlight } from "@/lib/singleFlight";
+import { toolDetectionEpoch } from "@/lib/toolDetectionEpoch";
+
+const toolDetectionFlight = createSingleFlight();
+function detectionKey(
+  command: string,
+  tools?: string[],
+  preferences?: Record<string, unknown>,
+) {
+  return JSON.stringify([
+    command,
+    toolDetectionEpoch(),
+    tools ? [...new Set(tools)].sort() : null,
+    Object.entries(preferences ?? {}).sort(([a], [b]) => a.localeCompare(b)),
+  ]);
+}
 
 export interface ConfigTransferResult {
   success: boolean;
@@ -367,7 +383,12 @@ export const settingsApi = {
       { wslShell?: string | null; wslShellFlag?: string | null }
     >,
   ): Promise<ToolVersionInfo[]> {
-    return await invoke("get_tool_versions", { tools, wslShellByTool });
+    const probeGeneration = toolDetectionEpoch();
+    return toolDetectionFlight(
+      detectionKey("full", tools, wslShellByTool),
+      () =>
+        invoke("get_tool_versions", { tools, wslShellByTool, probeGeneration }),
+    );
   },
 
   /** 仅检测本机工具，不等待远程版本源。 */
@@ -378,10 +399,16 @@ export const settingsApi = {
       { wslShell?: string | null; wslShellFlag?: string | null }
     >,
   ): Promise<ToolVersionInfo[]> {
-    return await invoke("get_installed_tool_versions", {
-      tools,
-      wslShellByTool,
-    });
+    const probeGeneration = toolDetectionEpoch();
+    return toolDetectionFlight(
+      detectionKey("local", tools, wslShellByTool),
+      () =>
+        invoke("get_installed_tool_versions", {
+          tools,
+          wslShellByTool,
+          probeGeneration,
+        }),
+    );
   },
 
   async pickDesktopAppPath(tool: string): Promise<string | null> {

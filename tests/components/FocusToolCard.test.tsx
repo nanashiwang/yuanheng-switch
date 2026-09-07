@@ -27,6 +27,7 @@ function createSwitcher(
     modelMeta: {},
     bootstrapPhase,
     bootstrapRefreshing: false,
+    inventoryRefreshFailed: false,
     retryBootstrap,
     rows: [],
     runnableRows: [],

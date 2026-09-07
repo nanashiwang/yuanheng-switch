@@ -246,6 +246,10 @@ pub struct YuanhengDiagnosticReport {
     pub ready_tools: usize,
     pub attention_tools: Vec<String>,
     pub checks: Vec<YuanhengDiagnosticCheck>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub support_json: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub snapshot_id: Option<String>,
 }
 
 impl Default for YuanhengConnectionStatus {
@@ -3959,6 +3963,8 @@ async fn diagnose_yuanheng_inner(state: &AppState) -> Result<YuanhengDiagnosticR
             ready_tools: 0,
             attention_tools: Vec::new(),
             checks,
+            support_json: None,
+            snapshot_id: None,
         });
     }
 
@@ -4200,6 +4206,8 @@ async fn diagnose_yuanheng_inner(state: &AppState) -> Result<YuanhengDiagnosticR
         ready_tools,
         attention_tools,
         checks,
+        support_json: None,
+        snapshot_id: None,
     })
 }
 
@@ -4207,7 +4215,202 @@ async fn diagnose_yuanheng_inner(state: &AppState) -> Result<YuanhengDiagnosticR
 pub async fn get_yuanheng_diagnostics(
     state: State<'_, AppState>,
 ) -> Result<YuanhengDiagnosticReport, String> {
-    diagnose_yuanheng_inner(&state).await
+    use super::support_diagnostics as support;
+    let requested_at = std::time::Instant::now();
+    let owner = diagnostic_owner(&state)?;
+    let _run = state.diagnostic_run.lock().await;
+    {
+        let snapshot = state
+            .diagnostic_snapshot
+            .lock()
+            .map_err(|_| "诊断快照不可用")?;
+        if let Some(snapshot) = snapshot.as_ref() {
+            if snapshot.owner == owner && snapshot.captured >= requested_at {
+                return Ok(snapshot.report.clone());
+            }
+        }
+    }
+    let connection = read_cached_status(&state)?;
+    if connection.connected && connection.user_id != get_yuanheng_secret(&state, USER_ID_KEY)? {
+        return Err("缓存账号与登录状态不一致，请刷新账号后检查".into());
+    }
+    let mut report = match tokio::time::timeout(
+        std::time::Duration::from_secs(25),
+        diagnose_yuanheng_inner(&state),
+    )
+    .await
+    {
+        Ok(result) => result?,
+        Err(_) => YuanhengDiagnosticReport {
+            status: "warning".into(),
+            checked_at: chrono::Utc::now().timestamp(),
+            ready_tools: 0,
+            attention_tools: vec![],
+            checks: vec![YuanhengDiagnosticCheck {
+                id: "timeout".into(),
+                status: "warning".into(),
+                title: "网络体检超时".into(),
+                message: "已停止等待网络检查，仍可导出本机状态；未将账号判定为失效。".into(),
+                action: None,
+            }],
+            support_json: None,
+            snapshot_id: None,
+        },
+    };
+    let now = chrono::Utc::now().timestamp();
+    // Do not export historical traffic from before the current account's sync.
+    let since = connection
+        .last_synced_at
+        .unwrap_or(now)
+        .max(now - 3600)
+        .min(now);
+    let mut warnings = Vec::new();
+    let mut requests = if connection.connected {
+        match support::recent_requests(&state.db, since, now) {
+            Ok(requests) => requests,
+            Err(_) => {
+                warnings.push("request_metadata_unavailable");
+                Vec::new()
+            }
+        }
+    } else {
+        Vec::new()
+    };
+    let private_labels = connection
+        .account
+        .as_ref()
+        .map(|account| vec![account.username.as_str(), account.display_name.as_str()])
+        .unwrap_or_default();
+    for request in &mut requests {
+        request.model = support::hide_account_label(&request.model, &private_labels);
+    }
+    let proxy = match tokio::time::timeout(
+        std::time::Duration::from_secs(3),
+        state.proxy_service.get_status(),
+    )
+    .await
+    {
+        Ok(Ok(status)) => json!({
+            "running": status.running, "port": status.port,
+            "listener": if status.address == "127.0.0.1" || status.address == "::1" { "loopback" } else { "other-address-hidden" },
+            "activeConnections": status.active_connections,
+            "uptimeSeconds": status.uptime_seconds,
+        }),
+        _ => {
+            warnings.push("proxy_status_unavailable");
+            serde_json::Value::Null
+        }
+    };
+    let mut group_labels: HashMap<String, String> = HashMap::new();
+    let tool_statuses = all_tool_statuses(&state, &connection);
+    let configured_at = tool_statuses
+        .iter()
+        .filter(|tool| tool.configured)
+        .map(|tool| {
+            (
+                tool.app.clone(),
+                read_tool_configured_at(&state, &tool.app).unwrap_or(since),
+            )
+        })
+        .collect::<HashMap<_, _>>();
+    if support::latest_request_failures(&requests, &configured_at) > 0 {
+        if report.status == "ok" {
+            report.status = "warning".into();
+        }
+        report.checks.push(YuanhengDiagnosticCheck {
+            id: "recent_requests".into(),
+            status: "warning".into(),
+            title: "最近请求需要关注".into(),
+            message: "配置检查通过不等于模型调用成功，请查看报告中的最近 HTTP 状态和耗时。".into(),
+            action: None,
+        });
+    }
+    let tools: Vec<_> = tool_statuses
+        .iter()
+        .map(|tool| {
+            let group = tool.group.as_ref().map(|group| {
+                let next = format!("group-{}", group_labels.len() + 1);
+                group_labels.entry(group.clone()).or_insert(next).clone()
+            });
+            json!({
+                "tool": support::safe_tool(&tool.app), "configured": tool.configured,
+                "needsUpdate": tool.needs_update,
+            "model": tool.model.as_deref().map(|model| support::hide_account_label(model, &private_labels)), "group": group,
+            })
+        })
+        .collect();
+    if owner != diagnostic_owner(&state)? {
+        return Err("检查期间账号发生变化，请重新检查".into());
+    }
+    let installations = super::misc::support_probe_observations();
+    if installations.is_empty() {
+        warnings.push("no_recent_local_installation_probe; use Redetect for installation details");
+    }
+    let snapshot_id = uuid::Uuid::new_v4().to_string();
+    let document = json!({
+        "schemaVersion": 2, "snapshotId": snapshot_id,
+        "product": "YuanHeng Desktop", "version": env!("CARGO_PKG_VERSION"),
+        "platform": std::env::consts::OS, "architecture": std::env::consts::ARCH,
+        "capturedAt": chrono::Utc::now().to_rfc3339(),
+        "checkedAt": report.checked_at,
+        "checkDurationMs": requested_at.elapsed().as_millis() as u64,
+        "status": report.status, "checks": support::safe_checks(&report),
+        "tools": tools, "configLocations": support::config_locations(),
+        "detectedInstallations": installations,
+        "proxy": proxy, "recentRequests": requests, "requestWindowStart": since,
+        "warnings": warnings,
+        "privacy": "No account names, tokens, raw paths, headers, conversation content, raw errors or request IDs. Groups are aliases; custom models are hidden.",
+        "scope": "Latest 20 completed local proxy records since the current account sync, within one hour. Direct/official traffic outside the local proxy is not observable. HTTP status alone does not identify fault ownership.",
+    });
+    report.snapshot_id = Some(snapshot_id);
+    report.support_json =
+        Some(serde_json::to_string_pretty(&document).map_err(|_| "生成诊断快照失败")?);
+    *state
+        .diagnostic_snapshot
+        .lock()
+        .map_err(|_| "诊断快照不可用")? = Some(support::DiagnosticSnapshot {
+        owner,
+        captured: std::time::Instant::now(),
+        report: report.clone(),
+    });
+    Ok(report)
+}
+
+fn diagnostic_owner(state: &AppState) -> Result<String, String> {
+    use sha2::{Digest, Sha256};
+    let mut hash = Sha256::new();
+    for key in [SESSION_COOKIE_KEY, USER_ID_KEY, API_TOKEN_KEY] {
+        let value = get_yuanheng_secret(state, key)?.unwrap_or_default();
+        hash.update((value.len() as u64).to_le_bytes());
+        hash.update(value.as_bytes());
+    }
+    Ok(format!("{:x}", hash.finalize()))
+}
+
+#[allow(non_snake_case)]
+#[tauri::command]
+pub fn get_yuanheng_diagnostic_snapshot(
+    state: State<'_, AppState>,
+    snapshotId: String,
+) -> Result<String, String> {
+    read_diagnostic_snapshot(&state, &snapshotId)
+}
+
+fn read_diagnostic_snapshot(state: &AppState, snapshot_id: &str) -> Result<String, String> {
+    let owner = diagnostic_owner(state)?;
+    let snapshot = state
+        .diagnostic_snapshot
+        .lock()
+        .map_err(|_| "诊断快照不可用")?;
+    let snapshot = snapshot
+        .as_ref()
+        .filter(|snapshot| snapshot.matches(&owner, snapshot_id))
+        .ok_or("诊断快照已过期或账号已切换，请重新检查")?;
+    snapshot
+        .report
+        .support_json
+        .clone()
+        .ok_or_else(|| "请先生成诊断快照".into())
 }
 
 #[allow(non_snake_case)]
@@ -4215,20 +4418,13 @@ pub async fn get_yuanheng_diagnostics(
 pub async fn export_yuanheng_diagnostics(
     state: State<'_, AppState>,
     filePath: String,
+    snapshotId: String,
 ) -> Result<String, String> {
     if filePath.trim().is_empty() {
         return Err("请选择诊断文件保存位置".to_string());
     }
-    let report = diagnose_yuanheng_inner(&state).await?;
-    let document = json!({
-        "product": "YuanHeng Desktop",
-        "version": env!("CARGO_PKG_VERSION"),
-        "generatedAt": chrono::Utc::now().to_rfc3339(),
-        "platform": std::env::consts::OS,
-        "architecture": std::env::consts::ARCH,
-        "report": report
-    });
-    let content = serde_json::to_string_pretty(&document).map_err(|e| e.to_string())?;
+    let content = read_diagnostic_snapshot(&state, &snapshotId)?;
+    // Export precisely what was previewed/copied. Never re-run network diagnostics here.
     std::fs::write(&filePath, content).map_err(|e| format!("写入诊断文件失败: {e}"))?;
     Ok(filePath)
 }

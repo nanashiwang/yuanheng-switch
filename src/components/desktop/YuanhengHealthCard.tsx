@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import {
   AlertTriangle,
   CheckCircle2,
@@ -13,6 +13,7 @@ import {
   Stethoscope,
   Undo2,
   Wrench,
+  FileSearch,
 } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
@@ -28,6 +29,13 @@ import {
 import { extractErrorMessage } from "@/utils/errorUtils";
 import { cn } from "@/lib/utils";
 import { dt } from "./desktopI18n";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogDescription,
+} from "@/components/ui/dialog";
 
 interface YuanhengHealthCardProps {
   compact?: boolean;
@@ -37,15 +45,15 @@ interface YuanhengHealthCardProps {
 
 const STATUS_META = {
   ok: {
-    title: "一切正常",
-    description: "账号、API 和工具配置均可用。",
+    title: "检查通过",
+    description: "配置检查已通过，实际调用以请求记录为准。",
     icon: CheckCircle2,
     tone: "text-emerald-600 dark:text-emerald-400",
     background: "bg-emerald-500/10",
   },
   warning: {
-    title: "需要完成一项设置",
-    description: "元衡可以自动处理大部分配置问题。",
+    title: "存在需要关注的项目",
+    description: "请查看本次检查详情与诊断报告。",
     icon: AlertTriangle,
     tone: "text-amber-600 dark:text-amber-400",
     background: "bg-amber-500/10",
@@ -71,6 +79,11 @@ export function YuanhengHealthCard({
   const rotateCredential = useRotateYuanhengCredential();
   const rollbackTools = useRollbackYuanhengTools();
   const [expanded, setExpanded] = useState(false);
+  const [previewOpen, setPreviewOpen] = useState(false);
+  const [sharing, setSharing] = useState(false);
+  useEffect(() => {
+    setPreviewOpen(false);
+  }, [connection?.userId, connection?.lastSyncedAt]);
   const report = diagnostics.data;
   const meta = STATUS_META[report?.status ?? "warning"];
   const StatusIcon = meta.icon;
@@ -92,9 +105,15 @@ export function YuanhengHealthCard({
       onConfigureTools?.();
       return;
     }
-    if (report?.status === "ok") {
-      await diagnostics.refetch();
-      toast.success(dt("体检完成，一切正常"));
+    if (
+      report?.status === "ok" ||
+      (!actions.has("repair_tools") && !actions.has("repair_credentials"))
+    ) {
+      const result = await diagnostics.refetch();
+      if (result.isError) toast.error(dt("暂时无法检查"));
+      else if (result.data?.status === "ok")
+        toast.success(dt("本次检查项已通过"));
+      else toast.warning(dt("本次检查发现需要关注的项目"));
       return;
     }
     const repairTargets =
@@ -127,20 +146,18 @@ export function YuanhengHealthCard({
   };
 
   const copyDiagnostics = async () => {
-    if (!report) return;
-    const safeReport = {
-      product: "YuanHeng Desktop",
-      generatedAt: new Date().toISOString(),
-      status: report.status,
-      readyTools: report.readyTools,
-      attentionTools: report.attentionTools,
-      checks: report.checks,
-    };
+    if (!report?.snapshotId || sharing) return;
+    setSharing(true);
     try {
-      await copyText(JSON.stringify(safeReport, null, 2));
+      const content = await yuanhengApi.getDiagnosticSnapshot(
+        report.snapshotId,
+      );
+      await copyText(content);
       toast.success(dt("脱敏诊断已复制"));
-    } catch {
-      toast.error(dt("复制诊断失败"));
+    } catch (error) {
+      toast.error(extractErrorMessage(error) || dt("复制诊断失败"));
+    } finally {
+      setSharing(false);
     }
   };
 
@@ -170,16 +187,20 @@ export function YuanhengHealthCard({
   };
 
   const exportDiagnostics = async () => {
+    if (!report?.snapshotId || sharing) return;
+    setSharing(true);
     const stamp = new Date().toISOString().replace(/[:.]/g, "-");
     try {
       const filePath = await settingsApi.saveFileDialog(
         `yuanheng-diagnostics-${stamp}.json`,
       );
       if (!filePath) return;
-      const savedPath = await yuanhengApi.exportDiagnostics(filePath);
-      toast.success(dt("脱敏诊断已导出：{{v0}}", { v0: savedPath }));
+      await yuanhengApi.exportDiagnostics(filePath, report.snapshotId);
+      toast.success(dt("脱敏诊断已导出"));
     } catch (error) {
       toast.error(extractErrorMessage(error) || dt("导出诊断失败"));
+    } finally {
+      setSharing(false);
     }
   };
 
@@ -224,7 +245,8 @@ export function YuanhengHealthCard({
       ? dt("前往登录")
       : actions.has("configure_tools") && !actions.has("repair_credentials")
         ? dt("配置工具")
-        : report?.status === "ok"
+        : report?.status === "ok" ||
+            (!actions.has("repair_tools") && !actions.has("repair_credentials"))
           ? dt("重新检查")
           : dt("一键修复");
 
@@ -321,7 +343,23 @@ export function YuanhengHealthCard({
             variant="ghost"
             size="sm"
             className="w-full text-[11px]"
+            disabled={!report?.supportJson}
+            onClick={() => setPreviewOpen(true)}
+          >
+            <FileSearch className="h-3.5 w-3.5" />
+            {dt("预览脱敏报告")}
+          </Button>
+          <p className="text-[10px] leading-4 text-muted-foreground">
+            {dt(
+              "仅包含诊断元数据，不含账号、令牌、原始路径和对话内容。复制与导出使用本次快照，不会重新体检。",
+            )}
+          </p>
+          <Button
+            variant="ghost"
+            size="sm"
+            className="w-full text-[11px]"
             onClick={() => void copyDiagnostics()}
+            disabled={sharing || !report?.snapshotId || diagnostics.isFetching}
           >
             <ClipboardCheck className="h-3.5 w-3.5" />
             {dt("复制脱敏诊断")}
@@ -331,6 +369,7 @@ export function YuanhengHealthCard({
             size="sm"
             className="w-full text-[11px]"
             onClick={() => void exportDiagnostics()}
+            disabled={sharing || !report?.snapshotId || diagnostics.isFetching}
           >
             <Download className="h-3.5 w-3.5" />
             {dt("导出脱敏诊断")}
@@ -368,6 +407,24 @@ export function YuanhengHealthCard({
             </Button>
           )}
         </div>
+      )}
+      {report?.supportJson && (
+        <Dialog open={previewOpen} onOpenChange={setPreviewOpen}>
+          <DialogContent className="max-w-[800px] overflow-hidden" zIndex="top">
+            <DialogHeader>
+              <DialogTitle>{dt("预览脱敏报告")}</DialogTitle>
+              <DialogDescription>
+                {dt(
+                  "分享前请确认内容；报告不会自动上传，快照有效期为 15 分钟。",
+                )}
+              </DialogDescription>
+            </DialogHeader>
+            <pre className="max-h-[55vh] overflow-auto whitespace-pre-wrap break-words rounded-lg bg-muted p-4 text-xs">
+              {report.supportJson}
+            </pre>
+            <Button onClick={() => setPreviewOpen(false)}>{dt("关闭")}</Button>
+          </DialogContent>
+        </Dialog>
       )}
     </section>
   );

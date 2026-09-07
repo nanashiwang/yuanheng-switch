@@ -7,6 +7,9 @@ pub struct AppState {
     pub db: Arc<Database>,
     pub proxy_service: ProxyService,
     pub usage_cache: Arc<UsageCache>,
+    pub diagnostic_snapshot:
+        std::sync::Mutex<Option<crate::commands::support_diagnostics::DiagnosticSnapshot>>,
+    pub diagnostic_run: tokio::sync::Mutex<()>,
 }
 
 impl AppState {
@@ -18,6 +21,8 @@ impl AppState {
             db,
             proxy_service,
             usage_cache: Arc::new(UsageCache::new()),
+            diagnostic_snapshot: std::sync::Mutex::new(None),
+            diagnostic_run: tokio::sync::Mutex::new(()),
         }
     }
 
@@ -29,6 +34,8 @@ impl AppState {
             db,
             proxy_service,
             usage_cache: Arc::new(UsageCache::new()),
+            diagnostic_snapshot: std::sync::Mutex::new(None),
+            diagnostic_run: tokio::sync::Mutex::new(()),
         }
     }
 }

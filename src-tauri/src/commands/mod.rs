@@ -28,6 +28,7 @@ mod settings;
 pub mod skill;
 mod stream_check;
 mod subscription;
+pub(crate) mod support_diagnostics;
 mod sync_support;
 mod xai_oauth;
 

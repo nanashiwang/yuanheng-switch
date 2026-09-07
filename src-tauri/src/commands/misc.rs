@@ -97,7 +97,7 @@ pub async fn get_skills_migration_result() -> Result<Option<SkillsMigrationPaylo
     Ok(crate::init_status::take_skills_migration_result())
 }
 
-#[derive(serde::Serialize)]
+#[derive(Clone, serde::Serialize)]
 pub struct ToolVersion {
     name: String,
     version: Option<String>,
@@ -117,6 +117,93 @@ pub struct ToolVersion {
     /// 用户显式选择的原始路径，即使失效也保留给 UI 提示与重选。
     custom_path: Option<String>,
     custom_path_valid: bool,
+}
+
+type LocalProbeResult = Option<(std::time::Instant, ToolVersion)>;
+type LocalProbeSlot = std::sync::Arc<tokio::sync::Mutex<LocalProbeResult>>;
+static LOCAL_PROBE_SLOTS: Lazy<std::sync::Mutex<HashMap<String, LocalProbeSlot>>> =
+    Lazy::new(|| std::sync::Mutex::new(HashMap::new()));
+static LOCAL_PROBE_LIMIT: Lazy<std::sync::Arc<tokio::sync::Semaphore>> =
+    Lazy::new(|| std::sync::Arc::new(tokio::sync::Semaphore::new(3)));
+
+pub(crate) fn support_probe_observations() -> Vec<serde_json::Value> {
+    let Ok(slots) = LOCAL_PROBE_SLOTS.lock() else {
+        return Vec::new();
+    };
+    slots.values().filter_map(|slot| {
+        let cached = slot.try_lock().ok()?;
+        let (at, value) = cached.as_ref()?;
+        if at.elapsed().as_secs() > 300 { return None; }
+        let source = value.detection_source.as_deref().filter(|source|
+            ["automatic", "registry", "microsoft_store", "custom", "not_found"].contains(source));
+        Some(serde_json::json!({
+            "tool": value.name, "observedAgeSeconds": at.elapsed().as_secs(),
+            "version": value.version.as_deref().and_then(super::support_diagnostics::safe_version),
+            "installed": value.version.is_some() || value.installed_but_broken,
+            "runnable": value.version.is_some() && !value.installed_but_broken,
+            "environment": value.env_type, "source": source,
+            "locationCategory": value.install_path.as_deref().map(super::support_diagnostics::path_category),
+            "path": "[local-path-hidden]",
+            "customPathValid": value.custom_path_valid,
+        }))
+    }).take(10).collect()
+}
+
+/// Pending probes are shared across pages/commands. A later explicit request
+/// always probes again; no settled TTL can conceal an install or path change.
+async fn coordinated_local_probe(
+    tool: String,
+    shell: Option<String>,
+    flag: Option<String>,
+    custom_path: Option<String>,
+    generation: u64,
+) -> Result<ToolVersion, String> {
+    let requested_at = std::time::Instant::now();
+    let (_, distro) = tool_env_type_and_wsl_distro(&tool);
+    let key = serde_json::to_string(&(&tool, &shell, &flag, &custom_path, distro, generation))
+        .map_err(|e| e.to_string())?;
+    shared_local_probe(key, requested_at, move || {
+        get_single_local_tool_version_impl(
+            &tool,
+            shell.as_deref(),
+            flag.as_deref(),
+            custom_path.as_deref(),
+        )
+    })
+    .await
+}
+
+async fn shared_local_probe(
+    key: String,
+    requested_at: std::time::Instant,
+    probe: impl FnOnce() -> ToolVersion + Send + 'static,
+) -> Result<ToolVersion, String> {
+    let slot = {
+        let mut slots = LOCAL_PROBE_SLOTS.lock().map_err(|_| "工具检测锁不可用")?;
+        if slots.len() >= 64 {
+            slots.retain(|_, slot| std::sync::Arc::strong_count(slot) > 1);
+        }
+        slots.entry(key).or_default().clone()
+    };
+    let mut result = slot.lock().await;
+    if let Some((finished, value)) = result.as_ref() {
+        if *finished >= requested_at {
+            return Ok(value.clone());
+        }
+    }
+    let permit = LOCAL_PROBE_LIMIT
+        .clone()
+        .acquire_owned()
+        .await
+        .map_err(|_| "工具检测队列已关闭")?;
+    let value = tokio::task::spawn_blocking(move || {
+        let _permit = permit;
+        probe()
+    })
+    .await
+    .map_err(|e| format!("local tool probe task join error: {e}"))?;
+    *result = Some((std::time::Instant::now(), value.clone()));
+    Ok(value)
 }
 
 const VALID_TOOLS: [&str; 7] = [
@@ -175,6 +262,7 @@ pub async fn get_tool_versions(
     app: AppHandle,
     tools: Option<Vec<String>>,
     wsl_shell_by_tool: Option<HashMap<String, WslShellPreferenceInput>>,
+    probe_generation: Option<u64>,
 ) -> Result<Vec<ToolVersion>, String> {
     let requested: Vec<&str> = if let Some(tools) = tools.as_ref() {
         let set: std::collections::HashSet<&str> = tools.iter().map(|s| s.as_str()).collect();
@@ -192,17 +280,19 @@ pub async fn get_tool_versions(
         let tool_wsl_shell_flag = pref.and_then(|p| p.wsl_shell_flag.clone());
         let custom_path = crate::app_store::get_desktop_app_path_from_store(&app, tool);
         async move {
-            get_single_tool_version_impl(
-                tool,
-                tool_wsl_shell.as_deref(),
-                tool_wsl_shell_flag.as_deref(),
-                custom_path.as_deref(),
+            let local = coordinated_local_probe(
+                tool.to_string(),
+                tool_wsl_shell,
+                tool_wsl_shell_flag,
+                custom_path,
+                probe_generation.unwrap_or(0),
             )
-            .await
+            .await?;
+            Ok(enrich_remote_tool_version(local).await)
         }
     });
 
-    Ok(futures::future::join_all(tasks).await)
+    futures::future::join_all(tasks).await.into_iter().collect()
 }
 
 /// 仅探测本机工具，不访问 npm、GitHub 或 PyPI。
@@ -214,6 +304,7 @@ pub async fn get_installed_tool_versions(
     app: AppHandle,
     tools: Option<Vec<String>>,
     wsl_shell_by_tool: Option<HashMap<String, WslShellPreferenceInput>>,
+    probe_generation: Option<u64>,
 ) -> Result<Vec<ToolVersion>, String> {
     let requested: Vec<&str> = if let Some(tools) = tools.as_ref() {
         let set: std::collections::HashSet<&str> = tools.iter().map(|s| s.as_str()).collect();
@@ -235,17 +326,15 @@ pub async fn get_installed_tool_versions(
         let shell = pref.and_then(|p| p.wsl_shell.clone());
         let flag = pref.and_then(|p| p.wsl_shell_flag.clone());
         async move {
-            tokio::task::spawn_blocking(move || {
-                let custom_path = crate::app_store::get_desktop_app_path_from_store(&app, &tool);
-                get_single_local_tool_version_impl(
-                    &tool,
-                    shell.as_deref(),
-                    flag.as_deref(),
-                    custom_path.as_deref(),
-                )
-            })
+            let custom_path = crate::app_store::get_desktop_app_path_from_store(&app, &tool);
+            coordinated_local_probe(
+                tool,
+                shell,
+                flag,
+                custom_path,
+                probe_generation.unwrap_or(0),
+            )
             .await
-            .map_err(|e| format!("local tool probe task join error: {e}"))
         }
     });
     stream::iter(tasks)
@@ -904,14 +993,9 @@ fn get_single_local_tool_version_impl(
 }
 
 /// 获取单个工具的完整版本信息（本地版本 + 远程最新版）。
-async fn get_single_tool_version_impl(
-    tool: &str,
-    wsl_shell: Option<&str>,
-    wsl_shell_flag: Option<&str>,
-    custom_path: Option<&str>,
-) -> ToolVersion {
-    let mut result =
-        get_single_local_tool_version_impl(tool, wsl_shell, wsl_shell_flag, custom_path);
+async fn enrich_remote_tool_version(mut result: ToolVersion) -> ToolVersion {
+    let name = result.name.clone();
+    let tool = name.as_str();
     if matches!(tool, "claude-desktop" | "chatgpt-desktop" | "workbuddy") {
         return result;
     }
@@ -4288,6 +4372,89 @@ pub async fn set_window_theme(window: tauri::Window, theme: String) -> Result<()
 
 #[cfg(test)]
 mod tests {
+    #[tokio::test]
+    async fn local_probe_global_limit_is_three_even_across_independent_requests() {
+        use std::sync::{
+            atomic::{AtomicUsize, Ordering},
+            Arc,
+        };
+        let active = Arc::new(AtomicUsize::new(0));
+        let peak = Arc::new(AtomicUsize::new(0));
+        let tasks = (0..9).map(|_| {
+            let active = active.clone();
+            let peak = peak.clone();
+            super::shared_local_probe(
+                uuid::Uuid::new_v4().to_string(),
+                std::time::Instant::now(),
+                move || {
+                    let count = active.fetch_add(1, Ordering::SeqCst) + 1;
+                    peak.fetch_max(count, Ordering::SeqCst);
+                    std::thread::sleep(std::time::Duration::from_millis(20));
+                    active.fetch_sub(1, Ordering::SeqCst);
+                    super::ToolVersion {
+                        name: "codex".into(),
+                        version: None,
+                        latest_version: None,
+                        error: None,
+                        installed_but_broken: false,
+                        env_type: "unknown".into(),
+                        wsl_distro: None,
+                        install_path: None,
+                        detection_source: None,
+                        custom_path: None,
+                        custom_path_valid: true,
+                    }
+                },
+            )
+        });
+        assert!(futures::future::join_all(tasks)
+            .await
+            .iter()
+            .all(Result::is_ok));
+        assert!(peak.load(Ordering::SeqCst) <= 3);
+        assert_eq!(active.load(Ordering::SeqCst), 0);
+    }
+    #[tokio::test]
+    async fn local_probe_coalesces_pending_work_and_reprobes_after_completion() {
+        use std::sync::{
+            atomic::{AtomicUsize, Ordering},
+            Arc,
+        };
+        use std::time::{Duration, Instant};
+        let key = format!("probe-test-{}", uuid::Uuid::new_v4());
+        let calls = Arc::new(AtomicUsize::new(0));
+        let make = || {
+            let calls = calls.clone();
+            move || {
+                calls.fetch_add(1, Ordering::SeqCst);
+                std::thread::sleep(Duration::from_millis(40));
+                super::ToolVersion {
+                    name: "codex".into(),
+                    version: Some("1.0.0".into()),
+                    latest_version: None,
+                    error: None,
+                    installed_but_broken: false,
+                    env_type: "unknown".into(),
+                    wsl_distro: None,
+                    install_path: None,
+                    detection_source: None,
+                    custom_path: None,
+                    custom_path_valid: true,
+                }
+            }
+        };
+        let requested = Instant::now();
+        let (a, b) = tokio::join!(
+            super::shared_local_probe(key.clone(), requested, make()),
+            super::shared_local_probe(key.clone(), requested, make()),
+        );
+        assert!(a.is_ok() && b.is_ok());
+        assert_eq!(calls.load(Ordering::SeqCst), 1);
+        super::shared_local_probe(key, Instant::now(), make())
+            .await
+            .unwrap();
+        assert_eq!(calls.load(Ordering::SeqCst), 2);
+    }
     use super::*;
     use std::path::{Path, PathBuf};
 

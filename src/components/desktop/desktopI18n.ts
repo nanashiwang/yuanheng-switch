@@ -6,6 +6,28 @@ import { DESKTOP_ZH_TW } from "./desktopI18n.zhTW";
 type Values = Record<string, string | number | null | undefined>;
 
 export const DESKTOP_EN: Record<string, string> = {
+  检查通过: "Checks Passed",
+  "配置检查已通过，实际调用以请求记录为准。":
+    "Configuration checks passed. Request records determine actual call results.",
+  存在需要关注的项目: "Items Need Attention",
+  "请查看本次检查详情与诊断报告。":
+    "Review the current check details and diagnostic report.",
+  本次检查项已通过: "The current checks passed",
+  最近请求需要关注: "Recent requests need attention",
+  "配置检查通过不等于模型调用成功，请查看报告中的最近 HTTP 状态和耗时。":
+    "Passing configuration checks does not prove a model call succeeded. Review recent HTTP status codes and timings in the report.",
+  本次检查发现需要关注的项目: "This check found items that need attention",
+  预览脱敏报告: "Preview Redacted Report",
+  脱敏诊断已导出: "Redacted diagnostics exported",
+  "仅包含诊断元数据，不含账号、令牌、原始路径和对话内容。复制与导出使用本次快照，不会重新体检。":
+    "Diagnostic metadata only: no account details, tokens, raw paths or conversations. Copy and export use this snapshot without running another check.",
+  "分享前请确认内容；报告不会自动上传，快照有效期为 15 分钟。":
+    "Review before sharing. Reports are never uploaded automatically. Snapshots expire after 15 minutes.",
+  "本次检测暂未完成，仍显示上次本机快照；启动前会重新验证。":
+    "Detection did not finish. Showing the last local snapshot; launch will revalidate.",
+  网络体检超时: "Network check timed out",
+  "已停止等待网络检查，仍可导出本机状态；未将账号判定为失效。":
+    "Stopped waiting for the network. Local status can still be exported; the account was not marked invalid.",
   公告中心: "Announcements",
   客户端更新: "App Updates",
   平台通知: "Platform Notices",

@@ -163,6 +163,14 @@ export function ModelSwitchCenter({
         </div>
       )}
 
+      {switcher.inventoryRefreshFailed && (
+        <p
+          role="status"
+          className="mb-3 rounded-lg bg-amber-500/10 px-3 py-2 text-xs text-muted-foreground"
+        >
+          {dt("本次检测暂未完成，仍显示上次本机快照；启动前会重新验证。")}
+        </p>
+      )}
       {bootstrapPhase === "error" && (
         <div className="mb-3 flex items-center gap-2 rounded-xl border border-amber-500/25 bg-amber-500/[0.06] px-3 py-2 text-[10px] text-amber-800 dark:text-amber-200">
           <AlertTriangle className="h-3.5 w-3.5 shrink-0" />

@@ -142,9 +142,15 @@ export function useSignOutYuanheng() {
 }
 
 export function useYuanhengToolStatuses() {
+  const { data: connection } = useYuanhengConnection();
   return useQuery({
-    queryKey: yuanhengKeys.tools,
+    queryKey: [
+      ...yuanhengKeys.tools,
+      connection?.userId ?? null,
+      connection?.lastSyncedAt ?? null,
+    ],
     queryFn: () => yuanhengApi.getToolStatuses(),
+    enabled: Boolean(connection?.connected),
     retry: false,
     staleTime: 30_000,
     refetchInterval: 30_000,
@@ -154,9 +160,15 @@ export function useYuanhengToolStatuses() {
 
 export function useYuanhengToolActivationStatuses() {
   const queryClient = useQueryClient();
+  const { data: connection } = useYuanhengConnection();
   const query = useQuery({
-    queryKey: yuanhengKeys.activation,
+    queryKey: [
+      ...yuanhengKeys.activation,
+      connection?.userId ?? null,
+      connection?.lastSyncedAt ?? null,
+    ],
     queryFn: () => yuanhengApi.getToolActivationStatuses(),
+    enabled: Boolean(connection?.connected),
     retry: false,
     staleTime: 5_000,
     refetchInterval: 30_000,
@@ -246,8 +258,14 @@ export function useSwitchCodexAccountMode() {
 }
 
 export function useYuanhengDiagnostics(enabled = true) {
+  const { data: connection } = useYuanhengConnection();
   return useQuery({
-    queryKey: yuanhengKeys.diagnostics,
+    queryKey: [
+      ...yuanhengKeys.diagnostics,
+      connection?.userId ?? null,
+      connection?.connected ?? false,
+      connection?.lastSyncedAt ?? null,
+    ],
     queryFn: () => yuanhengApi.getDiagnostics(),
     enabled,
     retry: false,
