@@ -1,3 +1,4 @@
+import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { useTranslation } from "react-i18next";
 import {
@@ -6,7 +7,10 @@ import {
   Boxes,
   BookOpenText,
   CheckCircle2,
+  ChevronDown,
   Compass,
+  Copy,
+  ExternalLink,
   ImageIcon,
   Loader2,
   PackageCheck,
@@ -24,12 +28,18 @@ import {
 } from "@/hooks/useSkills";
 import { useAllMcpServers, useUpsertMcpServer } from "@/hooks/useMcp";
 import {
+  BLENDER_DOWNLOAD_URL,
+  BLENDER_MCP_ADDON_INSTALL_COMMAND,
+  BLENDER_MCP_UV_INSTALL_COMMANDS,
   BLENDER_MCP_VERSION,
+  UV_INSTALLATION_DOCS_URL,
   getMcpPresetWithDescription,
   mcpPresets,
 } from "@/config/mcpPresets";
 import { APP_ICON_MAP } from "@/config/appConfig";
 import { Button } from "@/components/ui/button";
+import { copyText } from "@/lib/clipboard";
+import { isWindows } from "@/lib/platform";
 import { PageHeader } from "./PageHeader";
 import type { DesktopView } from "./types";
 import { dt } from "./desktopI18n";
@@ -41,6 +51,7 @@ interface CapabilityCenterProps {
 
 export function CapabilityCenter({ activeApp, onOpen }: CapabilityCenterProps) {
   const { t } = useTranslation();
+  const [blenderGuideOpen, setBlenderGuideOpen] = useState(true);
   const { data: skills = [] } = useInstalledSkills();
   const installImagegen = useInstallBuiltinImagegen();
   const { data: mcpServers = {} } = useAllMcpServers();
@@ -65,6 +76,9 @@ export function CapabilityCenter({ activeApp, onOpen }: CapabilityCenterProps) {
   const blenderEnabledApps = blenderServer
     ? Object.values(blenderServer.apps).filter(Boolean).length
     : 0;
+  const blenderUvInstallCommand = isWindows()
+    ? BLENDER_MCP_UV_INSTALL_COMMANDS.windows
+    : BLENDER_MCP_UV_INSTALL_COMMANDS.macos;
 
   const handleInstallImagegen = async () => {
     try {
@@ -104,6 +118,30 @@ export function CapabilityCenter({ activeApp, onOpen }: CapabilityCenterProps) {
       await settingsApi.openExternal("https://github.com/ahujasid/blender-mcp");
     } catch (error) {
       toast.error(t("common.error"), { description: String(error) });
+    }
+  };
+  const handleOpenUvDocs = async () => {
+    try {
+      await settingsApi.openExternal(UV_INSTALLATION_DOCS_URL);
+    } catch (error) {
+      toast.error(t("common.error"), { description: String(error) });
+    }
+  };
+  const handleOpenBlenderDownload = async () => {
+    try {
+      await settingsApi.openExternal(BLENDER_DOWNLOAD_URL);
+    } catch (error) {
+      toast.error(t("common.error"), { description: String(error) });
+    }
+  };
+  const handleCopyBlenderGuideText = async (text: string, label: string) => {
+    try {
+      await copyText(text);
+      toast.success(t("mcp.presets.blender-mcp.guide.copied", { label }));
+    } catch (error) {
+      toast.error(t("mcp.presets.blender-mcp.guide.copyFailed"), {
+        description: String(error),
+      });
     }
   };
   const cards = [
@@ -288,6 +326,234 @@ export function CapabilityCenter({ activeApp, onOpen }: CapabilityCenterProps) {
                   : t("mcp.presets.blender-mcp.add")}
               </Button>
             </div>
+          </div>
+          <div className="border-t border-orange-500/15 bg-orange-500/[0.025]">
+            <button
+              type="button"
+              className="flex w-full items-center gap-3 px-5 py-3 text-left transition-colors hover:bg-orange-500/[0.04]"
+              aria-expanded={blenderGuideOpen}
+              aria-controls="blender-mcp-beginner-guide"
+              onClick={() => setBlenderGuideOpen((open) => !open)}
+            >
+              <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-orange-500/10 text-xs font-semibold text-orange-700 dark:text-orange-300">
+                6
+              </span>
+              <span className="min-w-0 flex-1">
+                <span className="block text-xs font-semibold">
+                  {t("mcp.presets.blender-mcp.guide.title")}
+                </span>
+                <span className="mt-0.5 block text-[10px] text-muted-foreground">
+                  {t("mcp.presets.blender-mcp.guide.subtitle")}
+                </span>
+              </span>
+              <ChevronDown
+                className={`h-4 w-4 shrink-0 text-muted-foreground transition-transform ${
+                  blenderGuideOpen ? "rotate-180" : ""
+                }`}
+              />
+            </button>
+
+            {blenderGuideOpen && (
+              <div
+                id="blender-mcp-beginner-guide"
+                className="border-t border-orange-500/10 px-5 py-1"
+              >
+                <ol>
+                  <li className="grid gap-3 py-4 sm:grid-cols-[28px_minmax(0,1fr)]">
+                    <span className="flex h-7 w-7 items-center justify-center rounded-full bg-orange-500/10 text-[11px] font-semibold text-orange-700 dark:text-orange-300">
+                      1
+                    </span>
+                    <div className="min-w-0">
+                      <p className="text-xs font-semibold">
+                        {t("mcp.presets.blender-mcp.guide.step1Title")}
+                      </p>
+                      <p className="mt-1 text-[10.5px] leading-5 text-muted-foreground">
+                        {t("mcp.presets.blender-mcp.guide.step1Description")}
+                      </p>
+                      <div className="mt-2 flex flex-wrap items-center gap-2">
+                        <Button
+                          type="button"
+                          size="sm"
+                          variant="outline"
+                          onClick={() => void handleOpenBlenderDownload()}
+                        >
+                          <ExternalLink className="h-3.5 w-3.5" />
+                          {t("mcp.presets.blender-mcp.guide.blenderDownload")}
+                        </Button>
+                        <code className="max-w-full overflow-x-auto rounded bg-muted px-2.5 py-1.5 text-[10px]">
+                          {blenderUvInstallCommand}
+                        </code>
+                        <Button
+                          type="button"
+                          size="sm"
+                          variant="outline"
+                          onClick={() =>
+                            void handleCopyBlenderGuideText(
+                              blenderUvInstallCommand,
+                              t(
+                                "mcp.presets.blender-mcp.guide.uvInstallCommand",
+                              ),
+                            )
+                          }
+                        >
+                          <Copy className="h-3.5 w-3.5" />
+                          {t("mcp.presets.blender-mcp.guide.copyCommand")}
+                        </Button>
+                        <Button
+                          type="button"
+                          size="sm"
+                          variant="ghost"
+                          onClick={() => void handleOpenUvDocs()}
+                        >
+                          <ExternalLink className="h-3.5 w-3.5" />
+                          {t("mcp.presets.blender-mcp.guide.uvDocs")}
+                        </Button>
+                      </div>
+                    </div>
+                  </li>
+
+                  <li className="grid gap-3 border-t py-4 sm:grid-cols-[28px_minmax(0,1fr)]">
+                    <span className="flex h-7 w-7 items-center justify-center rounded-full bg-orange-500/10 text-[11px] font-semibold text-orange-700 dark:text-orange-300">
+                      2
+                    </span>
+                    <div className="min-w-0">
+                      <p className="text-xs font-semibold">
+                        {t("mcp.presets.blender-mcp.guide.step2Title")}
+                      </p>
+                      <p className="mt-1 text-[10.5px] leading-5 text-muted-foreground">
+                        {t("mcp.presets.blender-mcp.guide.step2Description")}
+                      </p>
+                      <div className="mt-2 flex flex-wrap items-center gap-2">
+                        <code className="max-w-full overflow-x-auto rounded bg-muted px-2.5 py-1.5 text-[10px]">
+                          {BLENDER_MCP_ADDON_INSTALL_COMMAND}
+                        </code>
+                        <Button
+                          type="button"
+                          size="sm"
+                          variant="outline"
+                          onClick={() =>
+                            void handleCopyBlenderGuideText(
+                              BLENDER_MCP_ADDON_INSTALL_COMMAND,
+                              t(
+                                "mcp.presets.blender-mcp.guide.addonInstallCommand",
+                              ),
+                            )
+                          }
+                        >
+                          <Copy className="h-3.5 w-3.5" />
+                          {t("mcp.presets.blender-mcp.guide.copyCommand")}
+                        </Button>
+                      </div>
+                    </div>
+                  </li>
+
+                  <li className="grid gap-3 border-t py-4 sm:grid-cols-[28px_minmax(0,1fr)]">
+                    <span className="flex h-7 w-7 items-center justify-center rounded-full bg-orange-500/10 text-[11px] font-semibold text-orange-700 dark:text-orange-300">
+                      3
+                    </span>
+                    <div>
+                      <p className="text-xs font-semibold">
+                        {t("mcp.presets.blender-mcp.guide.step3Title")}
+                      </p>
+                      <p className="mt-1 text-[10.5px] leading-5 text-muted-foreground">
+                        {t("mcp.presets.blender-mcp.guide.step3Description")}
+                      </p>
+                    </div>
+                  </li>
+
+                  <li className="grid gap-3 border-t py-4 sm:grid-cols-[28px_minmax(0,1fr)]">
+                    <span className="flex h-7 w-7 items-center justify-center rounded-full bg-orange-500/10 text-[11px] font-semibold text-orange-700 dark:text-orange-300">
+                      4
+                    </span>
+                    <div>
+                      <p className="text-xs font-semibold">
+                        {t("mcp.presets.blender-mcp.guide.step4Title")}
+                      </p>
+                      <p className="mt-1 text-[10.5px] leading-5 text-muted-foreground">
+                        {t("mcp.presets.blender-mcp.guide.step4Description")}
+                      </p>
+                      <Button
+                        type="button"
+                        size="sm"
+                        className="mt-2"
+                        disabled={upsertMcp.isPending}
+                        onClick={() => void handleAddBlenderMcp()}
+                      >
+                        {upsertMcp.isPending ? (
+                          <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                        ) : (
+                          <ArrowRight className="h-3.5 w-3.5" />
+                        )}
+                        {blenderServer
+                          ? t(
+                              "mcp.presets.blender-mcp.guide.openAgentSelection",
+                            )
+                          : t(
+                              "mcp.presets.blender-mcp.guide.addAndSelectAgent",
+                            )}
+                      </Button>
+                    </div>
+                  </li>
+
+                  <li className="grid gap-3 border-t py-4 sm:grid-cols-[28px_minmax(0,1fr)]">
+                    <span className="flex h-7 w-7 items-center justify-center rounded-full bg-orange-500/10 text-[11px] font-semibold text-orange-700 dark:text-orange-300">
+                      5
+                    </span>
+                    <div>
+                      <p className="text-xs font-semibold">
+                        {t("mcp.presets.blender-mcp.guide.step5Title")}
+                      </p>
+                      <p className="mt-1 text-[10.5px] leading-5 text-muted-foreground">
+                        {t("mcp.presets.blender-mcp.guide.step5Description")}
+                      </p>
+                      <p className="mt-1 text-[10px] leading-5 text-amber-700 dark:text-amber-300">
+                        {t("mcp.presets.blender-mcp.guide.firstRunHint")}
+                      </p>
+                    </div>
+                  </li>
+
+                  <li className="grid gap-3 border-t py-4 sm:grid-cols-[28px_minmax(0,1fr)]">
+                    <span className="flex h-7 w-7 items-center justify-center rounded-full bg-orange-500/10 text-[11px] font-semibold text-orange-700 dark:text-orange-300">
+                      6
+                    </span>
+                    <div className="min-w-0">
+                      <p className="text-xs font-semibold">
+                        {t("mcp.presets.blender-mcp.guide.step6Title")}
+                      </p>
+                      <p className="mt-1 text-[10.5px] leading-5 text-muted-foreground">
+                        {t("mcp.presets.blender-mcp.guide.step6Description")}
+                      </p>
+                      <div className="mt-2 flex flex-wrap items-center gap-2">
+                        <code className="max-w-full overflow-x-auto rounded bg-muted px-2.5 py-1.5 text-[10px]">
+                          {t("mcp.presets.blender-mcp.guide.testPrompt")}
+                        </code>
+                        <Button
+                          type="button"
+                          size="sm"
+                          variant="outline"
+                          onClick={() =>
+                            void handleCopyBlenderGuideText(
+                              t("mcp.presets.blender-mcp.guide.testPrompt"),
+                              t(
+                                "mcp.presets.blender-mcp.guide.testPromptLabel",
+                              ),
+                            )
+                          }
+                        >
+                          <Copy className="h-3.5 w-3.5" />
+                          {t("mcp.presets.blender-mcp.guide.copyTestPrompt")}
+                        </Button>
+                      </div>
+                    </div>
+                  </li>
+                </ol>
+
+                <div className="mb-4 border-l-2 border-amber-500/50 pl-3 text-[10px] leading-5 text-amber-800 dark:text-amber-200">
+                  <p>{t("mcp.presets.blender-mcp.guide.safetyHint")}</p>
+                  <p>{t("mcp.presets.blender-mcp.guide.doNotRunHint")}</p>
+                </div>
+              </div>
+            )}
           </div>
         </section>
 
