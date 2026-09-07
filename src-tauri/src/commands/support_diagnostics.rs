@@ -33,6 +33,9 @@ const TOOLS: [&str; 10] = [
 ];
 
 pub fn safe_tool(value: &str) -> &str {
+    if value == "grok" {
+        return "grokbuild";
+    }
     if TOOLS.contains(&value) {
         value
     } else {
@@ -285,6 +288,7 @@ mod tests {
     use super::*;
     #[test]
     fn paths_and_arbitrary_models_never_export_names_or_secrets() {
+        assert_eq!(safe_tool("grok"), "grokbuild");
         for path in [
             "/Users/Alice/private/project",
             "C:\\Users\\Alice\\secret",

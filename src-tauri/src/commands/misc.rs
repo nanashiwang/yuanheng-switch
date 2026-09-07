@@ -137,12 +137,13 @@ pub(crate) fn support_probe_observations() -> Vec<serde_json::Value> {
         let source = value.detection_source.as_deref().filter(|source|
             ["automatic", "registry", "microsoft_store", "custom", "not_found"].contains(source));
         Some(serde_json::json!({
-            "tool": value.name, "observedAgeSeconds": at.elapsed().as_secs(),
+            "tool": super::support_diagnostics::safe_tool(&value.name), "observedAgeSeconds": at.elapsed().as_secs(),
             "version": value.version.as_deref().and_then(super::support_diagnostics::safe_version),
             "installed": value.version.is_some() || value.installed_but_broken,
             "runnable": value.version.is_some() && !value.installed_but_broken,
             "environment": value.env_type, "source": source,
             "locationCategory": value.install_path.as_deref().map(super::support_diagnostics::path_category),
+            "installationPathResolved": value.install_path.is_some(),
             "path": "[local-path-hidden]",
             "customPathValid": value.custom_path_valid,
         }))
