@@ -17,7 +17,7 @@ import { Edit3, Trash2, ExternalLink } from "lucide-react";
 import { settingsApi } from "@/lib/api";
 import { mcpPresets } from "@/config/mcpPresets";
 import { toast } from "sonner";
-import { MCP_APP_IDS } from "@/config/appConfig";
+import { APP_ICON_MAP, MCP_APP_IDS } from "@/config/appConfig";
 import { AppCountBar } from "@/components/common/AppCountBar";
 import { AppToggleGroup } from "@/components/common/AppToggleGroup";
 import { ListItemRow } from "@/components/common/ListItemRow";
@@ -29,6 +29,16 @@ interface UnifiedMcpPanelProps {
 export interface UnifiedMcpPanelHandle {
   openAdd: () => void;
   openImport: () => void;
+}
+
+export function findSingleClientConflict(
+  server: McpServer | undefined,
+  targetApp: AppId,
+): AppId | undefined {
+  if (!server?.tags?.includes("single-client")) return undefined;
+  return MCP_APP_IDS.find(
+    (candidate) => candidate !== targetApp && server.apps[candidate],
+  );
 }
 
 const UnifiedMcpPanel = React.forwardRef<
@@ -79,6 +89,18 @@ const UnifiedMcpPanel = React.forwardRef<
     app: AppId,
     enabled: boolean,
   ) => {
+    const server = serversMap?.[serverId];
+    if (enabled) {
+      const activeElsewhere = findSingleClientConflict(server, app);
+      if (activeElsewhere) {
+        toast.error(t("mcp.singleClient.title"), {
+          description: t("mcp.singleClient.description", {
+            app: APP_ICON_MAP[activeElsewhere].label,
+          }),
+        });
+        return;
+      }
+    }
     try {
       await toggleAppMutation.mutateAsync({ serverId, app, enabled });
     } catch (error) {

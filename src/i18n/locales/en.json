@@ -1957,6 +1957,16 @@
       "installed": "Installed",
       "docs": "Docs",
       "requiresEnv": "Requires env",
+      "blender-mcp": {
+        "description": "Control Blender scenes, objects, materials, and rendering through MCP. Install uv first, then install and enable the MCP for Blender add-on in Blender.",
+        "community": "Curated community MCP",
+        "safety": "YuanHeng enables safe mode and disables anonymous telemetry by default. Save your Blender project before use.",
+        "add": "Add plugin",
+        "configure": "Choose Agent",
+        "enabledCount": "Enabled for {{count}}",
+        "added": "Blender MCP added. Choose one Agent to enable it.",
+        "addFailed": "Failed to add Blender MCP"
+      },
       "fetch": {
         "name": "mcp-server-fetch",
         "description": "Universal HTTP request tool, supports GET/POST and other HTTP methods, suitable for quick API requests and web data scraping"
@@ -1977,6 +1987,10 @@
         "name": "@upstash/context7-mcp",
         "description": "Context7 documentation search tool providing latest library docs and code examples, with higher limits when configured with a key"
       }
+    },
+    "singleClient": {
+      "title": "This MCP supports one Agent at a time",
+      "description": "Disable {{app}} before enabling another Agent to avoid a Blender port conflict."
     }
   },
   "prompts": {

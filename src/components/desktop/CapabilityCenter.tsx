@@ -11,17 +11,23 @@ import {
   Loader2,
   PackageCheck,
   RefreshCw,
+  ShieldCheck,
   Sparkles,
   Wrench,
 } from "lucide-react";
 import { toast } from "sonner";
 import type { AppId } from "@/lib/api";
-import { promptsApi } from "@/lib/api";
+import { promptsApi, settingsApi } from "@/lib/api";
 import {
   useInstallBuiltinImagegen,
   useInstalledSkills,
 } from "@/hooks/useSkills";
-import { useAllMcpServers } from "@/hooks/useMcp";
+import { useAllMcpServers, useUpsertMcpServer } from "@/hooks/useMcp";
+import {
+  BLENDER_MCP_VERSION,
+  getMcpPresetWithDescription,
+  mcpPresets,
+} from "@/config/mcpPresets";
 import { APP_ICON_MAP } from "@/config/appConfig";
 import { Button } from "@/components/ui/button";
 import { PageHeader } from "./PageHeader";
@@ -38,6 +44,7 @@ export function CapabilityCenter({ activeApp, onOpen }: CapabilityCenterProps) {
   const { data: skills = [] } = useInstalledSkills();
   const installImagegen = useInstallBuiltinImagegen();
   const { data: mcpServers = {} } = useAllMcpServers();
+  const upsertMcp = useUpsertMcpServer();
   const { data: prompts = {} } = useQuery({
     queryKey: ["prompts", activeApp],
     queryFn: () => promptsApi.getPrompts(activeApp),
@@ -46,6 +53,18 @@ export function CapabilityCenter({ activeApp, onOpen }: CapabilityCenterProps) {
     (skill) => skill.directory.toLowerCase() === "meta-api-imagegen",
   );
   const imagegenEnabled = Boolean(imagegenSkill?.apps.codex);
+  const blenderPreset = mcpPresets.find(
+    (preset) => preset.id === "blender-mcp",
+  );
+  const blenderServer = Object.entries(mcpServers).find(
+    ([id, server]) =>
+      id === "blender-mcp" ||
+      server.docs?.includes("ahujasid/blender-mcp") ||
+      server.server.args?.some((arg) => arg === "blender-mcp"),
+  )?.[1];
+  const blenderEnabledApps = blenderServer
+    ? Object.values(blenderServer.apps).filter(Boolean).length
+    : 0;
 
   const handleInstallImagegen = async () => {
     try {
@@ -59,6 +78,32 @@ export function CapabilityCenter({ activeApp, onOpen }: CapabilityCenterProps) {
       toast.error(dt("图像生成能力安装失败"), {
         description: String(error),
       });
+    }
+  };
+
+  const handleAddBlenderMcp = async () => {
+    if (blenderServer) {
+      onOpen("mcp");
+      return;
+    }
+    if (!blenderPreset) return;
+    try {
+      await upsertMcp.mutateAsync(
+        getMcpPresetWithDescription(blenderPreset, t),
+      );
+      toast.success(t("mcp.presets.blender-mcp.added"));
+      onOpen("mcp");
+    } catch (error) {
+      toast.error(t("mcp.presets.blender-mcp.addFailed"), {
+        description: String(error),
+      });
+    }
+  };
+  const handleOpenBlenderDocs = async () => {
+    try {
+      await settingsApi.openExternal("https://github.com/ahujasid/blender-mcp");
+    } catch (error) {
+      toast.error(t("common.error"), { description: String(error) });
     }
   };
   const cards = [
@@ -183,6 +228,64 @@ export function CapabilityCenter({ activeApp, onOpen }: CapabilityCenterProps) {
                   <Sparkles className="h-4 w-4" />
                 )}
                 {imagegenEnabled ? dt("更新能力") : dt("启用到 Codex")}
+              </Button>
+            </div>
+          </div>
+        </section>
+
+        <section className="mt-4 overflow-hidden rounded-lg border border-orange-500/20 bg-card">
+          <div className="flex flex-wrap items-center gap-4 px-5 py-4">
+            <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-orange-500/10 text-orange-600">
+              <Boxes className="h-5 w-5" />
+            </span>
+            <div className="min-w-[240px] flex-1">
+              <div className="flex flex-wrap items-center gap-2">
+                <h2 className="font-display text-sm font-semibold">
+                  Blender MCP
+                </h2>
+                <span className="rounded bg-orange-500/10 px-2 py-0.5 text-[9px] font-semibold text-orange-700 dark:text-orange-300">
+                  {t("mcp.presets.blender-mcp.community")}
+                </span>
+                <span className="rounded bg-muted px-2 py-0.5 text-[9px] font-medium text-muted-foreground">
+                  MIT · PyPI · v{BLENDER_MCP_VERSION}
+                </span>
+              </div>
+              <p className="mt-1 text-[11px] leading-5 text-muted-foreground">
+                {t("mcp.presets.blender-mcp.description")}
+              </p>
+              <p className="mt-1 flex items-center gap-1.5 text-[9.5px] text-amber-700 dark:text-amber-300">
+                <ShieldCheck className="h-3 w-3 shrink-0" />
+                {t("mcp.presets.blender-mcp.safety")}
+              </p>
+            </div>
+            <div className="flex items-center gap-2">
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={() => void handleOpenBlenderDocs()}
+              >
+                <BookOpenText className="h-4 w-4" />
+                {t("mcp.presets.docs")}
+              </Button>
+              <Button
+                size="sm"
+                disabled={upsertMcp.isPending}
+                onClick={() => void handleAddBlenderMcp()}
+              >
+                {upsertMcp.isPending ? (
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                ) : blenderServer ? (
+                  <CheckCircle2 className="h-4 w-4" />
+                ) : (
+                  <Sparkles className="h-4 w-4" />
+                )}
+                {blenderServer
+                  ? blenderEnabledApps > 0
+                    ? t("mcp.presets.blender-mcp.enabledCount", {
+                        count: blenderEnabledApps,
+                      })
+                    : t("mcp.presets.blender-mcp.configure")
+                  : t("mcp.presets.blender-mcp.add")}
               </Button>
             </div>
           </div>

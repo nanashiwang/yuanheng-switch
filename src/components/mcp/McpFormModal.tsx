@@ -197,6 +197,17 @@ const McpFormModal: React.FC<McpFormModalProps> = ({
     setFormHomepage(presetWithDesc.homepage || "");
     setFormDocs(presetWithDesc.docs || "");
     setFormTags(presetWithDesc.tags?.join(", ") || "");
+    if (presetWithDesc.apps) {
+      setEnabledApps({
+        claude: Boolean(presetWithDesc.apps.claude),
+        codex: Boolean(presetWithDesc.apps.codex),
+        gemini: Boolean(presetWithDesc.apps.gemini),
+        grokbuild: Boolean(presetWithDesc.apps.grokbuild),
+        opencode: Boolean(presetWithDesc.apps.opencode),
+        openclaw: Boolean(presetWithDesc.apps.openclaw),
+        hermes: Boolean(presetWithDesc.apps.hermes),
+      });
+    }
 
     if (useToml) {
       const toml = mcpServerToToml(presetWithDesc.server);

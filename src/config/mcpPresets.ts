@@ -23,12 +23,58 @@ const createNpxCommand = (
   }
 };
 
+const createUvxCommand = (
+  packageName: string,
+  extraArgs: string[] = [],
+): { command: string; args: string[] } => {
+  if (isWindows()) {
+    return {
+      command: "cmd",
+      args: ["/c", "uvx", ...extraArgs, packageName],
+    };
+  }
+  return {
+    command: "uvx",
+    args: [...extraArgs, packageName],
+  };
+};
+
+export const BLENDER_MCP_VERSION = "1.9.1";
+
 // 预设 MCP（逻辑简化版）：
 // - 仅包含最常用、可快速落地的 stdio 模式示例
 // - 不涉及分类/模板/测速等复杂逻辑，默认以 disabled 形式"回种"到 config.json
 // - 用户可在 MCP 面板中一键启用/编辑
 // - description 字段使用国际化 key，在使用时通过 t() 函数获取翻译
 export const mcpPresets: McpPreset[] = [
+  {
+    id: "blender-mcp",
+    name: "Blender MCP",
+    tags: ["stdio", "blender", "3d", "community", "single-client"],
+    server: {
+      type: "stdio",
+      ...createUvxCommand(`blender-mcp==${BLENDER_MCP_VERSION}`, [
+        "--python",
+        "3.11",
+      ]),
+      env: {
+        UV_PYTHON_PREFERENCE: "only-managed",
+        BLENDER_MCP_SAFE_MODE: "1",
+        DISABLE_TELEMETRY: "true",
+      },
+    } as McpServerSpec,
+    apps: {
+      claude: false,
+      codex: false,
+      gemini: false,
+      grokbuild: false,
+      opencode: false,
+      openclaw: false,
+      hermes: false,
+    },
+    homepage: "https://mcp-for-blender.com/",
+    docs: "https://github.com/ahujasid/blender-mcp",
+  },
   {
     id: "fetch",
     name: "mcp-server-fetch",

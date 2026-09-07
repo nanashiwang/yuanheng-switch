@@ -12,8 +12,14 @@ pub struct DiagnosticSnapshot {
 
 impl DiagnosticSnapshot {
     pub fn matches(&self, owner: &str, id: &str) -> bool {
+        self.matches_at(owner, id, Instant::now())
+    }
+
+    fn matches_at(&self, owner: &str, id: &str, now: Instant) -> bool {
         self.owner == owner
-            && self.captured.elapsed().as_secs() < SNAPSHOT_TTL_SECS
+            && now
+                .checked_duration_since(self.captured)
+                .is_some_and(|age| age.as_secs() < SNAPSHOT_TTL_SECS)
             && self.report.snapshot_id.as_deref() == Some(id)
     }
 }
@@ -346,9 +352,10 @@ mod tests {
 
     #[test]
     fn snapshots_reject_wrong_owner_id_and_expiry() {
-        let mut snapshot = DiagnosticSnapshot {
+        let captured = Instant::now();
+        let snapshot = DiagnosticSnapshot {
             owner: "session-one".into(),
-            captured: Instant::now(),
+            captured,
             report: YuanhengDiagnosticReport {
                 status: "ok".into(),
                 checked_at: 1,
@@ -362,8 +369,8 @@ mod tests {
         assert!(snapshot.matches("session-one", "one"));
         assert!(!snapshot.matches("session-two", "one"));
         assert!(!snapshot.matches("session-one", "other"));
-        snapshot.captured = Instant::now() - std::time::Duration::from_secs(SNAPSHOT_TTL_SECS + 1);
-        assert!(!snapshot.matches("session-one", "one"));
+        let after_expiry = captured + std::time::Duration::from_secs(SNAPSHOT_TTL_SECS + 1);
+        assert!(!snapshot.matches_at("session-one", "one", after_expiry));
     }
 
     #[test]
