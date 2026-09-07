@@ -1,5 +1,4 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { useQuery } from "@tanstack/react-query";
 import {
   Check,
   CheckCircle2,
@@ -50,11 +49,8 @@ import {
   markRestartRequired,
 } from "./desktopRestartState";
 import { useDesktopInstallFlow } from "./useDesktopInstallFlow";
-import {
-  clearToolInventoryCache,
-  TOOL_INVENTORY_CACHE_TTL_MS,
-  writeToolInventoryCache,
-} from "./toolInventoryCache";
+import { clearToolInventoryCache } from "./toolInventoryCache";
+import { useToolInventory } from "@/lib/query/toolInventory";
 
 export const DESKTOP_TOOLS: YuanhengToolId[] = [
   "claude",
@@ -85,8 +81,6 @@ export const TOOL_VERSION_TARGETS: Partial<Record<YuanhengToolId, string>> = {
   ...TOOL_COMMANDS,
   "claude-desktop": "claude-desktop",
 };
-
-const TOOL_SETUP_TARGETS = Object.values(TOOL_VERSION_TARGETS);
 
 export const DESKTOP_DOWNLOAD_URLS: Partial<Record<YuanhengToolId, string>> = {
   "claude-desktop": "https://claude.ai/download",
@@ -168,17 +162,7 @@ export function ToolSetupGrid({
   const preflight = usePreflightYuanhengTool();
   const desktopInstall = useDesktopInstallFlow();
   const launchDirectoryState = useToolLaunchDirectories();
-  const versions = useQuery({
-    queryKey: ["desktop", "tool-versions"],
-    queryFn: async () => {
-      const data = await settingsApi.getToolVersions(TOOL_SETUP_TARGETS);
-      writeToolInventoryCache(TOOL_SETUP_TARGETS, data);
-      return data;
-    },
-    staleTime: TOOL_INVENTORY_CACHE_TTL_MS,
-    refetchOnMount: "always",
-    refetchOnWindowFocus: false,
-  });
+  const versions = useToolInventory();
   const [selected, setSelected] = useState<YuanhengToolId[]>([]);
   const [models, setModels] = useState<Partial<Record<YuanhengToolId, string>>>(
     {},
@@ -591,13 +575,8 @@ export function ToolSetupGrid({
 
   const refresh = async () => {
     clearToolInventoryCache();
-    if (connection?.connected) {
-      try {
-        await refreshConnection.mutateAsync();
-      } catch (error) {
-        toast.error(extractErrorMessage(error) || dt("网站模型同步失败"));
-      }
-    }
+    // Local re-detection must not wait on the model directory/network.
+    // Models retain their own explicit refresh action.
     await Promise.all([versions.refetch(), statuses.refetch()]);
   };
 

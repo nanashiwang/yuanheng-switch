@@ -208,6 +208,8 @@ export interface YuanhengDiagnosticReport {
   readyTools: number;
   attentionTools: YuanhengToolId[];
   checks: YuanhengDiagnosticCheck[];
+  supportJson?: string | null;
+  snapshotId?: string | null;
 }
 
 export const yuanhengApi = {
@@ -304,8 +306,12 @@ export const yuanhengApi = {
     return invoke("get_yuanheng_diagnostics");
   },
 
-  exportDiagnostics(filePath: string): Promise<string> {
-    return invoke("export_yuanheng_diagnostics", { filePath });
+  getDiagnosticSnapshot(snapshotId: string): Promise<string> {
+    return invoke("get_yuanheng_diagnostic_snapshot", { snapshotId });
+  },
+
+  exportDiagnostics(filePath: string, snapshotId: string): Promise<string> {
+    return invoke("export_yuanheng_diagnostics", { filePath, snapshotId });
   },
 
   configureTools(

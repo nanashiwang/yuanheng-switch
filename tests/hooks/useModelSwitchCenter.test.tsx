@@ -315,7 +315,10 @@ describe("useModelSwitchCenter", () => {
     statuses = [toolStatus("codex", "model-b")];
     act(() => {
       queryClient.setQueryData(["yuanheng", "connection"], connection);
-      queryClient.setQueryData(["yuanheng", "tools"], statuses);
+      queryClient.setQueryData(
+        ["yuanheng", "tools", connection.userId, connection.lastSyncedAt],
+        statuses,
+      );
     });
 
     await waitFor(() => {

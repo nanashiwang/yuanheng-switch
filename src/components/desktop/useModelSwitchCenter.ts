@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import {
   type CodexAccountMode,
@@ -42,14 +42,8 @@ import {
   useToolLaunchDirectories,
 } from "./useToolLaunchDirectories";
 import { useDesktopInstallFlow } from "./useDesktopInstallFlow";
-import {
-  clearToolInventoryCache,
-  readToolInventoryCache,
-  TOOL_INVENTORY_CACHE_TTL_MS,
-  writeToolInventoryCache,
-} from "./toolInventoryCache";
-
-const TOOL_INVENTORY_TARGETS = Object.values(TOOL_VERSION_TARGETS);
+import { clearToolInventoryCache } from "./toolInventoryCache";
+import { useToolInventory } from "@/lib/query/toolInventory";
 
 export const providerIconOf = (app: YuanhengToolId) =>
   app === "codex" || app === "chatgpt-desktop"
@@ -76,26 +70,7 @@ export function useModelSwitchCenter() {
   const switchCodexAccountMode = useSwitchCodexAccountMode();
   const codexBridge = useCodexSessionBridgeStatus();
   const desktopInstall = useDesktopInstallFlow();
-  const cachedInventory = useMemo(
-    () => readToolInventoryCache(TOOL_INVENTORY_TARGETS),
-    [],
-  );
-  const inventory = useQuery({
-    queryKey: ["desktop", "tool-inventory"],
-    queryFn: async () => {
-      const data = await settingsApi.getInstalledToolVersions(
-        TOOL_INVENTORY_TARGETS,
-      );
-      writeToolInventoryCache(TOOL_INVENTORY_TARGETS, data);
-      return data;
-    },
-    initialData: cachedInventory?.data,
-    initialDataUpdatedAt: cachedInventory?.savedAt,
-    staleTime: TOOL_INVENTORY_CACHE_TTL_MS,
-    retry: false,
-    refetchOnMount: true,
-    refetchOnWindowFocus: false,
-  });
+  const inventory = useToolInventory();
   const [models, setModels] = useState<Partial<Record<YuanhengToolId, string>>>(
     {},
   );
@@ -263,7 +238,7 @@ export function useModelSwitchCenter() {
   const hasInventory = inventory.data !== undefined;
   const hasStatuses = statuses.data !== undefined;
   const bootstrapPhase: ModelSwitchBootstrapPhase =
-    inventory.isError || statuses.isError
+    (!hasInventory && inventory.isError) || statuses.isError
       ? "error"
       : !hasInventory || !hasStatuses
         ? (!hasInventory && inventory.isError) ||
@@ -734,6 +709,7 @@ export function useModelSwitchCenter() {
     modelMeta,
     bootstrapPhase,
     bootstrapRefreshing: inventory.isFetching || statuses.isFetching,
+    inventoryRefreshFailed: inventory.isError && hasInventory,
     retryBootstrap,
     rows,
     runnableRows,
