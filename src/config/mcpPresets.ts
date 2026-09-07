@@ -40,6 +40,16 @@ const createUvxCommand = (
 };
 
 export const BLENDER_MCP_VERSION = "1.9.1";
+export const BLENDER_DOWNLOAD_URL = "https://www.blender.org/download/";
+export const UV_INSTALLATION_DOCS_URL =
+  "https://docs.astral.sh/uv/getting-started/installation/";
+
+export const BLENDER_MCP_UV_INSTALL_COMMANDS = {
+  windows: 'powershell -c "irm https://astral.sh/uv/install.ps1 | iex"',
+  macos: "brew install uv",
+} as const;
+
+export const BLENDER_MCP_ADDON_INSTALL_COMMAND = `uvx --python 3.11 blender-mcp==${BLENDER_MCP_VERSION} install-addon`;
 
 // 预设 MCP（逻辑简化版）：
 // - 仅包含最常用、可快速落地的 stdio 模式示例
