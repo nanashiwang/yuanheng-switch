@@ -1957,6 +1957,16 @@
       "installed": "インストール済み",
       "docs": "ドキュメント",
       "requiresEnv": "環境変数が必要",
+      "blender-mcp": {
+        "description": "MCP経由でBlenderのシーン、オブジェクト、マテリアル、レンダリングを操作します。先にuvを導入し、BlenderでMCP for Blenderアドオンを有効にしてください。",
+        "community": "厳選コミュニティMCP",
+        "safety": "YuanHengは安全モードを有効にし、匿名テレメトリを無効にします。使用前にBlenderプロジェクトを保存してください。",
+        "add": "プラグインを追加",
+        "configure": "Agentを選択",
+        "enabledCount": "{{count}}件で有効",
+        "added": "Blender MCPを追加しました。1つのAgentで有効にしてください。",
+        "addFailed": "Blender MCPを追加できませんでした"
+      },
       "fetch": {
         "name": "mcp-server-fetch",
         "description": "汎用 HTTP リクエストツール。GET/POST などに対応し、API テストや Web データ取得に最適です"
@@ -1977,6 +1987,10 @@
         "name": "@upstash/context7-mcp",
         "description": "最新のライブラリドキュメントとコード例を提供する Context7 ドキュメント検索ツール。キー設定で上限が拡張されます"
       }
+    },
+    "singleClient": {
+      "title": "このMCPは一度に1つのAgentで使用できます",
+      "description": "Blenderのポート競合を避けるため、{{app}}を無効にしてから別のAgentを有効にしてください。"
     }
   },
   "prompts": {

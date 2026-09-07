@@ -1959,6 +1959,16 @@
       "installed": "已安裝",
       "docs": "文件",
       "requiresEnv": "需要環境變數",
+      "blender-mcp": {
+        "description": "透過 MCP 讓 AI 操作 Blender 場景、物件、材質與渲染。需要先安裝 uv，並在 Blender 中安裝及啟用 MCP for Blender Add-on。",
+        "community": "精選社群 MCP",
+        "safety": "元衡預設開啟安全模式並關閉匿名遙測；使用前請儲存 Blender 專案。",
+        "add": "新增外掛",
+        "configure": "選擇 Agent",
+        "enabledCount": "已啟用 {{count}} 個",
+        "added": "Blender MCP 已新增，請選擇一個 Agent 啟用",
+        "addFailed": "新增 Blender MCP 失敗"
+      },
       "fetch": {
         "name": "mcp-server-fetch",
         "description": "通用 HTTP 請求工具，支援 GET/POST 等 HTTP 方法，適合快速請求 API / 抓取網頁資料"
@@ -1979,6 +1989,10 @@
         "name": "@upstash/context7-mcp",
         "description": "Context7 文件搜尋工具，提供最新的函式庫文件和程式碼範例，設定 key 會有更高限額"
       }
+    },
+    "singleClient": {
+      "title": "此 MCP 一次只能啟用一個 Agent",
+      "description": "請先關閉 {{app}}，再啟用新的 Agent，避免 Blender 連接埠衝突。"
     }
   },
   "prompts": {
