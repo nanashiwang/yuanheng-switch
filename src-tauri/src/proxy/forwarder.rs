@@ -1761,6 +1761,11 @@ impl RequestForwarder {
                 }
             }
         }
+        if codex_responses_to_chat {
+            // Validate the final target after user body overrides too. Do not let
+            // an override reintroduce incompatible declaration-level metadata.
+            super::providers::codex_target_tools::adapt_chat_tools(&mut filtered_body)?;
+        }
         if is_context_compaction && lower_compaction_reasoning_effort(&mut filtered_body) {
             log::info!(
                 "[claude-desktop] [Context] Lowered reasoning effort for auto-compaction request"
