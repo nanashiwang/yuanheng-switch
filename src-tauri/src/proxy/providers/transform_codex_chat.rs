@@ -60,6 +60,7 @@ pub(crate) struct CodexToolSpec {
 
 #[derive(Debug, Clone, Default)]
 pub(crate) struct CodexToolContext {
+    preserve_function_root: bool,
     chat_tools: Vec<Value>,
     seen_chat_names: HashSet<String>,
     chat_name_to_spec: HashMap<String, CodexToolSpec>,
@@ -119,7 +120,9 @@ impl CodexToolContext {
             .map(|namespace| flatten_namespace_tool_name(namespace, &original_name))
             .unwrap_or_else(|| original_name.clone());
 
-        let Some(chat_tool) = responses_function_tool_to_chat_tool(tool, &chat_name) else {
+        let Some(chat_tool) =
+            responses_function_tool_to_chat_tool(tool, &chat_name, self.preserve_function_root)
+        else {
             return;
         };
         let spec = CodexToolSpec {
@@ -234,7 +237,13 @@ impl CodexToolContext {
 }
 
 pub(crate) fn build_codex_tool_context_from_request(body: &Value) -> CodexToolContext {
-    let mut context = CodexToolContext::default();
+    let mut context = CodexToolContext {
+        preserve_function_root: body
+            .get("model")
+            .and_then(Value::as_str)
+            .is_some_and(super::codex_target_tools::is_grok_model),
+        ..Default::default()
+    };
 
     if let Some(tools) = body.get("tools").and_then(|v| v.as_array()) {
         for tool in tools {
@@ -342,6 +351,7 @@ pub fn responses_to_chat_completions_with_reasoning(
     // token/成本/缓存命中率全部漏记（input/output/cache 全为 0）。
     // 与 Claude→openai_chat 路径共用同一 helper，保证两个客户端方向一致。
     super::transform::inject_openai_stream_include_usage(&mut result);
+    super::codex_target_tools::adapt_chat_tools(&mut result)?;
 
     Ok(result)
 }
@@ -1254,7 +1264,11 @@ fn normalize_function_parameters(params: Option<&Value>) -> Value {
     params
 }
 
-fn responses_function_tool_to_chat_tool(tool: &Value, chat_name: &str) -> Option<Value> {
+fn responses_function_tool_to_chat_tool(
+    tool: &Value,
+    chat_name: &str,
+    preserve_root: bool,
+) -> Option<Value> {
     if tool.get("type").and_then(|v| v.as_str()) != Some("function") {
         return None;
     }
@@ -1269,7 +1283,14 @@ fn responses_function_tool_to_chat_tool(tool: &Value, chat_name: &str) -> Option
             .and_then(|value| value.as_object_mut())
         {
             // Ensure parameters.type is "object" for strict OpenAI-compatible providers
-            let parameters = normalize_function_parameters(obj.get("parameters"));
+            let parameters = if preserve_root {
+                obj.get("parameters")
+                    .cloned()
+                    .filter(|value| !value.is_null())
+                    .unwrap_or_else(|| json!({"type":"object","properties":{}}))
+            } else {
+                normalize_function_parameters(obj.get("parameters"))
+            };
             obj.insert("parameters".to_string(), parameters);
 
             obj.insert("name".to_string(), json!(chat_name));
@@ -1283,7 +1304,10 @@ fn responses_function_tool_to_chat_tool(tool: &Value, chat_name: &str) -> Option
     let mut function = json!({
         "name": chat_name,
         "description": tool.get("description").cloned().unwrap_or(Value::Null),
-        "parameters": normalize_function_parameters(tool.get("parameters"))
+        "parameters": if preserve_root {
+            tool.get("parameters").cloned().filter(|value| !value.is_null())
+                .unwrap_or_else(|| json!({"type":"object","properties":{}}))
+        } else { normalize_function_parameters(tool.get("parameters")) }
     });
     if let Some(strict) = tool.get("strict") {
         function["strict"] = strict.clone();
