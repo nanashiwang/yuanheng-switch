@@ -2,9 +2,9 @@
   "schemaVersion": 1,
   "releases": [
     {
-      "version": "0.1.49",
-      "publishedAt": "2026-09-08T09:47:02Z",
-      "content": "【元衡客户端更新公告｜v0.1.49】\n\n• 优化 Codex 通过元衡接入 Gemini 的工具声明兼容性，处理 strict 字段引起的 400 报错。\n• 优化 Codex 接入 Grok 时复杂工具参数的对象类型与联合分支适配，保留参数约束和多轮工具调用对应关系。\n• 不支持安全转换的参数结构会明确提示，不静默删除工具；GPT 和其他厂商的请求保持原逻辑。\n\n更新后请完全退出并重新打开 Codex，用原分组和模型新建会话测试。\n本次仅更新客户端，不包含 Gemini CLI 的上游模型停用处理，也不包含 CPA 的 Claude Code 版本识别修复。"
+      "version": "0.1.50",
+      "publishedAt": "2026-09-09T12:00:00Z",
+      "content": "【元衡客户端更新公告｜v0.1.50】\n\n• 修复 Codex Desktop 接入 Grok 时复杂工具参数导致的 400 报错。\n• 同步完善原生 Responses 与 Chat 两种请求路径的工具兼容处理。\n• 保留工具参数约束、命名空间和多轮调用关系，不影响 GPT、Gemini、DeepSeek 等其他模型。\n\n更新后请完全退出并重新打开 Codex，再用原分组和模型新建会话测试。"
     },
     {
       "version": "0.1.48",
