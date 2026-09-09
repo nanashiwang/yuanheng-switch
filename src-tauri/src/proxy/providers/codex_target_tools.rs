@@ -49,18 +49,91 @@ pub(crate) fn adapt_chat_tools(body: &mut Value) -> Result<(), ProxyError> {
             function.remove("strict");
         }
         if grok {
-            let Some(schema) = function.get_mut("parameters") else {
-                continue;
-            };
-            let mut reference_budget = MAX_SCHEMA_NODES;
-            check_schema_references(schema, 0, &mut reference_budget)?;
-            let mut budget = MAX_SCHEMA_NODES;
-            if !constrain_object(schema, 0, &mut budget)? {
-                return Err(schema_error("工具根参数不允许对象，无法安全适配 Grok"));
-            }
+            adapt_grok_parameters(function)?;
         }
     }
     body["tools"] = Value::Array(adapted);
+    Ok(())
+}
+
+/// Native Responses uses flat function declarations (and may retain namespaces).
+/// Do not rely on the configured OAuth provider: managed desktop providers can
+/// select Grok via a model catalog while keeping the native Responses wire API.
+/// Only commit after all declarations have passed; never partially drop tools.
+pub(crate) fn adapt_responses_tools(body: &mut Value) -> Result<(), ProxyError> {
+    if !body
+        .get("model")
+        .and_then(Value::as_str)
+        .is_some_and(is_grok_model)
+    {
+        return Ok(());
+    }
+    let Some(tools) = body.get("tools").and_then(Value::as_array) else {
+        return Ok(());
+    };
+    let mut adapted = tools.clone();
+    let mut budget = MAX_SCHEMA_NODES;
+    adapt_responses_declarations(&mut adapted, 0, &mut budget)?;
+    body["tools"] = Value::Array(adapted);
+    Ok(())
+}
+
+fn adapt_responses_declarations(
+    tools: &mut [Value],
+    depth: usize,
+    budget: &mut usize,
+) -> Result<(), ProxyError> {
+    if depth > MAX_SCHEMA_DEPTH {
+        return Err(schema_error("工具命名空间嵌套过深"));
+    }
+    for tool in tools {
+        if *budget == 0 {
+            return Err(schema_error("工具定义数量过多"));
+        }
+        *budget -= 1;
+        match tool.get("type").and_then(Value::as_str) {
+            Some("function") => {
+                // Accept the nested Chat-style carrier used by some clients too.
+                let declaration = if tool.get("function").is_some() {
+                    tool.get_mut("function").and_then(Value::as_object_mut)
+                } else {
+                    tool.as_object_mut()
+                };
+                if let Some(declaration) = declaration {
+                    adapt_grok_parameters(declaration)?;
+                }
+            }
+            Some("namespace") => {
+                let key = if tool.get("tools").is_some() {
+                    "tools"
+                } else {
+                    "children"
+                };
+                if let Some(children) = tool.get_mut(key).and_then(Value::as_array_mut) {
+                    adapt_responses_declarations(children, depth + 1, budget)?;
+                }
+            }
+            _ => {}
+        }
+    }
+    Ok(())
+}
+
+fn adapt_grok_parameters(
+    declaration: &mut serde_json::Map<String, Value>,
+) -> Result<(), ProxyError> {
+    let schema = declaration
+        .entry("parameters")
+        .or_insert_with(|| json!({"type":"object","properties":{}}));
+    if schema.is_null() {
+        *schema = json!({"type":"object","properties":{}});
+    }
+    let mut reference_budget = MAX_SCHEMA_NODES;
+    check_schema_references(schema, 0, &mut reference_budget)?;
+    let mut budget = MAX_SCHEMA_NODES;
+    if !constrain_object(schema, 0, &mut budget)? {
+        return Err(schema_error("工具根参数不允许对象，无法安全适配 Grok"));
+    }
     Ok(())
 }
 
@@ -211,6 +284,159 @@ mod tests {
             "name":"mcp__codex_app__automation_update","strict":false,"parameters":schema
         }}],"tool_choice":{"type":"function","function":{"name":"mcp__codex_app__automation_update"}},
         "messages":[{"role":"tool","tool_call_id":"call_1","content":"private-result"}]})
+    }
+
+    #[test]
+    fn native_responses_and_chat_have_identical_grok_schema_constraints() {
+        // Synthetic automation shape: a base object intersected with a union
+        // of view/create/delete actions. No user arguments or credentials.
+        let schema = json!({
+            "allOf":[
+                {"type":"object"},
+                {"anyOf":[
+                    {"properties":{"mode":{"const":"view"},"id":{"type":"string"}},
+                     "required":["mode","id"],"additionalProperties":false},
+                    {"allOf":[
+                        {"properties":{"mode":{"const":"create"}},"required":["mode"]},
+                        {"oneOf":[
+                            {"properties":{"kind":{"const":"cron"}},"required":["kind"]},
+                            {"properties":{"kind":{"const":"heartbeat"}},"required":["kind"]}
+                        ]}
+                    ]},
+                    {"type":"null"}
+                ]}
+            ]
+        });
+        for model in ["grok-4.5", "grok-4.6", "xai/grok-4.6"] {
+            let mut chat = request(model, schema.clone());
+            adapt_chat_tools(&mut chat).unwrap();
+            for carrier in ["tools", "children"] {
+                let mut namespace = json!({"type":"namespace","name":"mcp__codex_app"});
+                namespace[carrier] = json!([{
+                    "type":"function","name":"automation_update","parameters":schema,"strict":false
+                }]);
+                let mut native = json!({
+                    "model":model,"tools":[
+                        {"type":"function","name":"flat","parameters":schema},
+                        {"type":"function","function":{"name":"nested","parameters":schema}},
+                        namespace,
+                        {"type":"custom","name":"custom","parameters":{"type":"string"}}
+                    ],
+                    "tool_choice":{"type":"function","name":"flat"},
+                    "input":[{"type":"function_call","name":"flat","call_id":"call_1",
+                              "arguments":"{\"mode\":\"view\",\"id\":\"example\"}"},
+                             {"type":"function_call_output","call_id":"call_1","output":"result"}]
+                });
+                let before = native.clone();
+                adapt_responses_tools(&mut native).unwrap();
+                let expected = &chat["tools"][0]["function"]["parameters"];
+                assert_eq!(&native["tools"][0]["parameters"], expected);
+                assert_eq!(&native["tools"][1]["function"]["parameters"], expected);
+                assert_eq!(&native["tools"][2][carrier][0]["parameters"], expected);
+                assert_eq!(native["tools"][3], before["tools"][3]);
+                assert_eq!(native["input"], before["input"]);
+                assert_eq!(native["tool_choice"], before["tool_choice"]);
+                for value in [
+                    json!({}),
+                    json!({"mode":"view","id":"example"}),
+                    json!({"mode":"create","kind":"heartbeat"}),
+                    json!({"mode":"create","kind":"invalid"}),
+                    json!({"mode":"view","id":false}),
+                    json!({"mode":"delete"}),
+                ] {
+                    assert_eq!(accepts(&schema, &value), accepts(expected, &value));
+                }
+                let once = native.clone();
+                adapt_responses_tools(&mut native).unwrap();
+                assert_eq!(native, once);
+            }
+        }
+    }
+
+    #[test]
+    fn native_responses_validation_is_atomic_and_does_not_touch_other_models() {
+        let mut body = json!({"model":"grok-4.6","tools":[
+            {"type":"function","name":"ok","parameters":{"anyOf":[{"required":["id"]}]}},
+            {"type":"namespace","name":"ns","tools":[
+                {"type":"function","name":"invalid","parameters":{"type":"string"}}
+            ]}
+        ]});
+        let before = body.clone();
+        assert!(adapt_responses_tools(&mut body).is_err());
+        assert_eq!(body, before);
+        for model in [
+            "gpt-5.6-sol",
+            "gemini-3.7-flash",
+            "deepseek-v4-pro",
+            "claude-opus-4-6",
+        ] {
+            body["model"] = json!(model);
+            let before = body.clone();
+            adapt_responses_tools(&mut body).unwrap();
+            assert_eq!(body, before);
+        }
+        let mut namespace = json!({"type":"function","name":"leaf"});
+        for _ in 0..60 {
+            namespace = json!({"type":"namespace","name":"ns","tools":[namespace]});
+        }
+        let mut deep = json!({"model":"grok-4.6","tools":[namespace]});
+        let before = deep.clone();
+        assert!(adapt_responses_tools(&mut deep).is_err());
+        assert_eq!(deep, before);
+    }
+
+    #[test]
+    fn native_responses_defaults_only_absent_or_null_parameters() {
+        let mut body = json!({"model":"grok-4.6","tools":[
+            {"type":"function","name":"missing"},
+            {"type":"function","name":"null","parameters":null},
+            {"type":"function","name":"empty","parameters":{}}
+        ]});
+        adapt_responses_tools(&mut body).unwrap();
+        assert_eq!(
+            body["tools"][0]["parameters"],
+            json!({"type":"object","properties":{}})
+        );
+        assert_eq!(
+            body["tools"][1]["parameters"],
+            body["tools"][0]["parameters"]
+        );
+        assert_eq!(body["tools"][2]["parameters"], json!({"type":"object"}));
+    }
+
+    #[test]
+    fn native_schema_fix_preserves_namespace_call_round_trip() {
+        use super::super::transform_codex_responses_namespace::{
+            flatten_request_namespaces, namespace_restore_map, restore_response_namespaces,
+        };
+        let mut request = json!({
+            "model":"grok-4.6",
+            "tools":[{"type":"namespace","name":"mcp__codex_app","tools":[{
+                "type":"function","name":"automation_update",
+                "parameters":{"anyOf":[
+                    {"properties":{"mode":{"const":"view"},"id":{"type":"string"}},
+                     "required":["mode","id"]},
+                    {"type":"null"}
+                ]}
+            }]}],
+            "input":[{"type":"function_call","name":"automation_update",
+                      "namespace":"mcp__codex_app","call_id":"call_123",
+                      "arguments":"{\"mode\":\"view\",\"id\":\"example\"}"},
+                     {"type":"function_call_output","call_id":"call_123","output":"result"}]
+        });
+        let original_call = request["input"][0].clone();
+        let restore_map = namespace_restore_map(&request);
+        flatten_request_namespaces(&mut request).unwrap();
+        let input_before_adaptation = request["input"].clone();
+        adapt_responses_tools(&mut request).unwrap();
+        assert_eq!(request["input"], input_before_adaptation);
+        assert_eq!(
+            request["tools"][0]["parameters"]["anyOf"][0]["type"],
+            "object"
+        );
+        let mut response = json!({"output":[request["input"][0].clone()]});
+        assert!(restore_response_namespaces(&mut response, &restore_map));
+        assert_eq!(response["output"][0], original_call);
     }
 
     #[test]

@@ -1765,6 +1765,12 @@ impl RequestForwarder {
             // Validate the final target after user body overrides too. Do not let
             // an override reintroduce incompatible declaration-level metadata.
             super::providers::codex_target_tools::adapt_chat_tools(&mut filtered_body)?;
+        } else if matches!(app_type, AppType::Codex | AppType::GrokBuild)
+            && !codex_responses_to_anthropic
+        {
+            // Native Responses needs the same root-schema contract as converted
+            // Chat. Run after overrides and filtering, using the final model.
+            super::providers::codex_target_tools::adapt_responses_tools(&mut filtered_body)?;
         }
         if is_context_compaction && lower_compaction_reasoning_effort(&mut filtered_body) {
             log::info!(
