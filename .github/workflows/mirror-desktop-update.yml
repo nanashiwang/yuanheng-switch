@@ -1,0 +1,32 @@
+name: Resume Desktop Update Mirror
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: Published stable version to mirror (for example 0.1.51)
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: desktop-update-mirror
+  cancel-in-progress: false
+
+jobs:
+  mirror:
+    name: Resume signed updater mirror
+    runs-on: ubuntu-22.04
+    timeout-minutes: 120
+    env:
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      DESKTOP_UPDATE_PUBLISH_URL: ${{ secrets.DESKTOP_UPDATE_PUBLISH_URL }}
+      DESKTOP_UPDATE_PUBLISH_TOKEN: ${{ secrets.DESKTOP_UPDATE_PUBLISH_TOKEN }}
+      RELEASE_VERSION: ${{ inputs.version }}
+    steps:
+      - name: Checkout mirror script
+        uses: actions/checkout@v7
+      - name: Resume verified release assets
+        run: bash scripts/mirror-desktop-update.sh "$RELEASE_VERSION"
