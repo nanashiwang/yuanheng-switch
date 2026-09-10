@@ -131,6 +131,8 @@ export interface CodexAccountModeStatus {
   officialLoginAvailable: boolean;
   yuanhengAvailable: boolean;
   restartRequired: boolean;
+  historyRepairNeeded?: boolean;
+  historyConflicts?: string[];
   message: string | null;
 }
 

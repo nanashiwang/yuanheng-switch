@@ -1,3 +1,4 @@
+import { CodexHistoryHint } from "./CodexHistoryHint";
 import { useMemo, useState } from "react";
 import {
   AlertTriangle,
@@ -356,6 +357,7 @@ export function FocusToolCard({
                 ? dt("使用 Codex 中已登录的 OpenAI 官方账号")
                 : dt("使用元衡模型、分组与本地安全路由")}
             </p>
+            <CodexHistoryHint status={codexAccountMode.data} />
           </div>
           <div className="flex shrink-0 rounded-lg border border-white/10 bg-black/15 p-0.5">
             {(["yuanheng", "official"] as const).map((mode) => {

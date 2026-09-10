@@ -1,0 +1,20 @@
+model_provider = "custom"
+model = "gpt-5.4"
+[model_providers.custom]
+name = "YuanHeng"
+base_url = "http://127.0.0.1:1/chatgpt-desktop/v1"
+wire_api = "responses"
+requires_openai_auth = true
+experimental_bearer_token = "PROXY_MANAGED"
+[model_providers.yuanheng-switch-official]
+name = "YuanHeng"
+base_url = "http://127.0.0.1:1/chatgpt-desktop/v1"
+wire_api = "responses"
+requires_openai_auth = true
+experimental_bearer_token = "PROXY_MANAGED"
+[model_providers.yuanheng]
+name = "YuanHeng"
+base_url = "http://127.0.0.1:1/chatgpt-desktop/v1"
+wire_api = "responses"
+requires_openai_auth = true
+experimental_bearer_token = "PROXY_MANAGED"

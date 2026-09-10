@@ -1,5 +1,12 @@
 // Generated from the desktop Simplified Chinese source strings, then normalized for Taiwan terminology.
 export const DESKTOP_ZH_TW: Record<string, string> = {
+  "历史会话配置与自定义供应商冲突（{{providers}}），已保留原配置，请检查供应商设置。":
+    "歷史對話設定與自訂供應商衝突（{{providers}}），已保留原設定，請檢查供應商設定。",
+  "历史会话配置需要修复，请再次点击当前使用方式。":
+    "歷史對話設定需要修復，請再次點擊目前的使用方式。",
+  "历史对话沿用当前使用方式；旧模型不可用时，请在 Codex 中重新选择模型。":
+    "歷史對話沿用目前的使用方式；舊模型無法使用時，請在 Codex 中重新選擇模型。",
+
   检查通过: "檢查通過",
   "配置检查已通过，实际调用以请求记录为准。":
     "設定檢查已通過，實際呼叫以請求紀錄為準。",

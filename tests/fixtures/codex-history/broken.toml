@@ -1,0 +1,8 @@
+model_provider = "yuanheng-switch-official"
+model = "gpt-5.4"
+[model_providers.yuanheng-switch-official]
+name = "OpenAI"
+base_url = "http://127.0.0.1:1/v1"
+wire_api = "responses"
+requires_openai_auth = true
+supports_websockets = false

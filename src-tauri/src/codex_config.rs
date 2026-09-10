@@ -399,21 +399,19 @@ pub fn write_codex_live_atomic(
     } else {
         None
     };
-    let _old_config = if config_path.exists() {
-        Some(fs::read(&config_path).map_err(|e| AppError::io(&config_path, e))?)
-    } else {
-        None
-    };
+    let previous = read_codex_config_text()?;
 
     // 准备写入内容
-    let cfg_text = match config_text_opt {
-        Some(s) => s.to_string(),
-        None => String::new(),
-    };
+    let cfg_text = prepare_codex_history_live_write(&previous, config_text_opt.unwrap_or(""))?;
     if !cfg_text.trim().is_empty() {
         toml::from_str::<toml::Table>(&cfg_text).map_err(|e| AppError::toml(&config_path, e))?;
     }
 
+    if read_codex_config_text()? != previous {
+        return Err(AppError::Message(
+            "Codex 配置刚刚被其他程序修改，请重试".into(),
+        ));
+    }
     // 第一步：写 auth.json
     write_json_file(&auth_path, auth)?;
 
@@ -481,16 +479,54 @@ pub(crate) fn is_custom_codex_model_provider_id(id: &str) -> bool {
 /// should not overwrite the user's ChatGPT login cache.
 pub fn write_codex_live_config_atomic(config_text_opt: Option<&str>) -> Result<(), AppError> {
     let config_path = get_codex_config_path();
-    let cfg_text = match config_text_opt {
-        Some(config_text) => config_text.to_string(),
-        None => String::new(),
-    };
+    let previous = read_codex_config_text()?;
+    let cfg_text = prepare_codex_history_live_write(&previous, config_text_opt.unwrap_or(""))?;
+    if previous == cfg_text {
+        return Ok(());
+    }
 
     if !cfg_text.trim().is_empty() {
         toml::from_str::<toml::Table>(&cfg_text).map_err(|e| AppError::toml(&config_path, e))?;
     }
 
+    if read_codex_config_text()? != previous {
+        return Err(AppError::Message(
+            "Codex 配置刚刚被其他程序修改，请重试".into(),
+        ));
+    }
     write_text_file(&config_path, &cfg_text)
+}
+
+fn prepare_codex_history_live_write(previous: &str, next: &str) -> Result<String, AppError> {
+    let prepared = crate::codex_history_routes::prepare(previous, next)?;
+    if prepared != previous
+        && !previous.is_empty()
+        && (crate::codex_history_routes::manages(&prepared)?
+            || crate::codex_history_routes::manages(previous)?)
+    {
+        use std::io::Write;
+        let root = crate::config::get_app_config_dir().join("backups/codex-history-routes");
+        fs::create_dir_all(&root).map_err(|e| AppError::io(&root, e))?;
+        let stamp = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_nanos();
+        let backup = root.join(format!("config-{stamp}.toml"));
+        let mut options = fs::OpenOptions::new();
+        options.write(true).create_new(true);
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::OpenOptionsExt;
+            options.mode(0o600);
+        }
+        let mut file = options
+            .open(&backup)
+            .map_err(|e| AppError::io(&backup, e))?;
+        file.write_all(previous.as_bytes())
+            .map_err(|e| AppError::io(&backup, e))?;
+        file.sync_all().map_err(|e| AppError::io(&backup, e))?;
+    }
+    Ok(prepared)
 }
 
 pub fn extract_codex_auth_api_key(auth: &Value) -> Option<String> {
@@ -1934,7 +1970,7 @@ pub fn apply_codex_official_proxy_route(
         toml_edit::Item::Table(table),
     );
     doc["model_providers"] = toml_edit::Item::Table(providers);
-    Ok(doc.to_string())
+    crate::codex_history_routes::prepare(config_text, &doc.to_string())
 }
 
 /// Whether a live Codex config is the official route projected by YuanHeng Switch.
@@ -1957,29 +1993,7 @@ pub fn codex_config_has_official_proxy_route(config_text: &str) -> bool {
 /// Remove only the official takeover route owned by YuanHeng Switch. This is a
 /// last-resort crash cleanup when no live backup or provider SSOT is usable.
 pub fn remove_codex_official_proxy_route(config_text: &str) -> Result<String, AppError> {
-    let mut doc = config_text
-        .parse::<DocumentMut>()
-        .map_err(|e| AppError::Message(format!("Invalid Codex config.toml: {e}")))?;
-    if doc.get("model_provider").and_then(|item| item.as_str())
-        != Some(CC_SWITCH_CODEX_OFFICIAL_PROXY_PROVIDER_ID)
-    {
-        return Ok(config_text.to_string());
-    }
-
-    doc.as_table_mut().remove("model_provider");
-    if let Some(item) = doc.as_table_mut().remove("model_providers") {
-        let mut providers = item.into_table().map_err(|_| {
-            AppError::Message(
-                "Invalid Codex config.toml: model_providers must be a table".to_string(),
-            )
-        })?;
-        providers.remove(CC_SWITCH_CODEX_OFFICIAL_PROXY_PROVIDER_ID);
-        remove_codex_proxy_placeholders_from_providers(&mut providers);
-        if !providers.is_empty() {
-            doc["model_providers"] = toml_edit::Item::Table(providers);
-        }
-    }
-    Ok(doc.to_string())
+    crate::codex_history_routes::release_official(config_text)
 }
 
 fn table_matches_codex_unified_official_provider(table: &toml_edit::Table) -> bool {
@@ -2528,14 +2542,24 @@ command = "example"
     }
 
     #[test]
-    fn official_proxy_route_cleanup_only_removes_owned_provider() {
+    fn official_proxy_route_cleanup_retains_native_history_aliases() {
         let projected =
             apply_codex_official_proxy_route("model = \"gpt-5.4\"\n", "http://127.0.0.1:15721/v1")
                 .expect("project");
         let cleaned = remove_codex_official_proxy_route(&projected).expect("clean");
         let doc: toml::Value = toml::from_str(&cleaned).expect("parse cleaned");
         assert!(doc.get("model_provider").is_none());
-        assert!(doc.get("model_providers").is_none());
+        for alias in [
+            "custom",
+            "yuanheng",
+            CC_SWITCH_CODEX_OFFICIAL_PROXY_PROVIDER_ID,
+        ] {
+            assert!(doc["model_providers"][alias].get("base_url").is_none());
+            assert_eq!(
+                doc["model_providers"][alias]["requires_openai_auth"].as_bool(),
+                Some(true)
+            );
+        }
         assert_eq!(
             doc.get("model").and_then(toml::Value::as_str),
             Some("gpt-5.4")
@@ -2572,9 +2596,11 @@ model_providers = { rightcode = { name = "RightCode", experimental_bearer_token 
         let cleaned_doc: toml::Value = toml::from_str(&cleaned).expect("parse cleaned");
         assert!(cleaned_doc.get("model_provider").is_none());
         assert!(cleaned_doc["model_providers"].get("rightcode").is_some());
-        assert!(cleaned_doc["model_providers"]
-            .get(CC_SWITCH_CODEX_OFFICIAL_PROXY_PROVIDER_ID)
-            .is_none());
+        assert!(
+            cleaned_doc["model_providers"][CC_SWITCH_CODEX_OFFICIAL_PROXY_PROVIDER_ID]
+                .get("base_url")
+                .is_none()
+        );
     }
 
     #[test]

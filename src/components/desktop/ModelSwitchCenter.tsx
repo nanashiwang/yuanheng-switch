@@ -1,3 +1,4 @@
+import { CodexHistoryHint } from "./CodexHistoryHint";
 import {
   AlertTriangle,
   ArrowRight,
@@ -377,6 +378,7 @@ export function ModelSwitchCenter({
                           ? dt("使用 Codex 中已登录的 OpenAI 官方账号")
                           : dt("使用元衡模型与令牌分组")}
                       </p>
+                      <CodexHistoryHint status={codexAccountMode.data} />
                     </div>
                     <div className="flex shrink-0 rounded-md border bg-background p-0.5">
                       {(["yuanheng", "official"] as const).map((mode) => {

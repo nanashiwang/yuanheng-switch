@@ -6,6 +6,13 @@ import { DESKTOP_ZH_TW } from "./desktopI18n.zhTW";
 type Values = Record<string, string | number | null | undefined>;
 
 export const DESKTOP_EN: Record<string, string> = {
+  "历史会话配置与自定义供应商冲突（{{providers}}），已保留原配置，请检查供应商设置。":
+    "History settings conflict with custom providers ({{providers}}). Your settings were preserved; review the provider configuration.",
+  "历史会话配置需要修复，请再次点击当前使用方式。":
+    "History settings need repair. Click the currently selected account mode again.",
+  "历史对话沿用当前使用方式；旧模型不可用时，请在 Codex 中重新选择模型。":
+    "Past conversations use the current account mode. If an old model is unavailable, select another model in Codex.",
+
   检查通过: "Checks Passed",
   "配置检查已通过，实际调用以请求记录为准。":
     "Configuration checks passed. Request records determine actual call results.",

@@ -172,6 +172,10 @@ pub struct CodexAccountModeStatus {
     pub official_login_available: bool,
     pub yuanheng_available: bool,
     pub restart_required: bool,
+    #[serde(default)]
+    pub history_repair_needed: bool,
+    #[serde(default)]
+    pub history_conflicts: Vec<String>,
     pub message: Option<String>,
 }
 
@@ -1770,11 +1774,17 @@ fn codex_account_mode_status_inner(state: &AppState) -> Result<CodexAccountModeS
         "yuanheng" => Some("Codex CLI 与 Codex App 当前使用元衡中转".to_string()),
         _ => Some("Codex CLI 与 Codex App 的配置状态不一致，请重新选择使用方式".to_string()),
     };
+    let history = crate::codex_history_routes::health(
+        &crate::codex_config::read_codex_config_text().map_err(|error| error.to_string())?,
+    )
+    .map_err(|error| error.to_string())?;
     Ok(CodexAccountModeStatus {
         mode: mode.to_string(),
         official_login_available: codex_official_login_available().unwrap_or(false),
         yuanheng_available: yuanheng_codex_mode_available(state),
         restart_required: false,
+        history_repair_needed: history.needs_repair,
+        history_conflicts: history.conflicts,
         message,
     })
 }
@@ -1900,6 +1910,29 @@ fn set_codex_current_provider(state: &AppState, provider_id: &str) -> Result<(),
         .map_err(|error| error.to_string())
 }
 
+/// Called after Core starts/restarts and by diagnostics. A concurrent account
+/// switch owns the same lock and will write its own complete projection.
+pub(crate) fn refresh_codex_history_routes_at_port(port: u16) -> Result<bool, String> {
+    if port == 0 {
+        return Ok(false);
+    }
+    let Ok(_guard) = codex_account_mode_switch_lock().try_lock() else {
+        return Ok(false);
+    };
+    let current = crate::codex_config::read_codex_config_text().map_err(|e| e.to_string())?;
+    let refreshed =
+        crate::codex_history_routes::refresh(&current, Some(port)).map_err(|e| e.to_string())?;
+    if refreshed == current {
+        return Ok(false);
+    }
+    if crate::codex_config::read_codex_config_text().map_err(|e| e.to_string())? != current {
+        return Err("Codex 配置刚刚被其他程序修改，请重试".into());
+    }
+    crate::codex_config::write_codex_live_config_atomic(Some(&refreshed))
+        .map_err(|e| e.to_string())?;
+    Ok(true)
+}
+
 fn build_codex_official_mode_config(
     current_live: &str,
     proxy_origin: &str,
@@ -1909,11 +1942,12 @@ fn build_codex_official_mode_config(
         &json!({ "config": current_live }),
     )
     .map_err(|error| error.to_string())?;
-    crate::codex_config::apply_codex_official_proxy_route(
+    let config = crate::codex_config::apply_codex_official_proxy_route(
         &common,
         &format!("{}/v1", proxy_origin.trim_end_matches('/')),
     )
-    .map_err(|error| error.to_string())
+    .map_err(|error| error.to_string())?;
+    crate::codex_history_routes::prepare(current_live, &config).map_err(|error| error.to_string())
 }
 
 fn switch_codex_account_mode_at_origin(
@@ -1931,11 +1965,35 @@ fn switch_codex_account_mode_at_origin(
             return Err("Codex 配置刚刚被其他程序修改，请重新检测后再切换".to_string());
         }
     }
-    if before.mode == target_mode {
-        return Ok(before);
-    }
 
     let snapshot = capture_codex_mode_switch_snapshot(state)?;
+    if before.mode == target_mode {
+        let current = snapshot.live_config.as_deref().unwrap_or_default();
+        let port = url::Url::parse(proxy_origin)
+            .ok()
+            .and_then(|url| url.port_or_known_default());
+        let mut repaired = crate::codex_history_routes::refresh(current, port)
+            .map_err(|error| error.to_string())?;
+        if before.history_repair_needed && repaired == current && target_mode == "official" {
+            repaired = crate::codex_config::apply_codex_official_proxy_route(
+                current,
+                &format!("{}/v1", proxy_origin.trim_end_matches('/')),
+            )
+            .map_err(|error| error.to_string())?;
+        }
+        if repaired != current {
+            crate::codex_config::write_codex_live_config_atomic(Some(&repaired))
+                .map_err(|error| error.to_string())?;
+        }
+        let mut status = codex_account_mode_status_inner(state)?;
+        status.restart_required = repaired != current;
+        status.message = Some(if status.restart_required {
+            "历史会话配置已修复，请重新打开对话；若仍未生效，请重启 Codex".into()
+        } else {
+            "当前使用方式与历史会话配置已检查".into()
+        });
+        return Ok(status);
+    }
     let official_seed_existed = state
         .db
         .get_provider_by_id(CODEX_OFFICIAL_PROVIDER_ID, AppType::Codex.as_str())
@@ -2142,6 +2200,7 @@ fn write_codex_surface_config_at_origin(
             } else {
                 merged
             };
+
             crate::codex_config::write_codex_live_config_atomic(Some(&merged))
                 .map_err(|error| format!("写入 ChatGPT Desktop 独立配置失败: {error}"))?;
             log::info!("ChatGPT Desktop Live 路由已更新");
@@ -3911,9 +3970,6 @@ pub async fn switch_codex_account_mode(
     {
         return Err("Codex 配置刚刚被其他程序修改，请重新检测后再切换".to_string());
     }
-    if current.mode == mode {
-        return Ok(current);
-    }
 
     // 先完成所有只读前置校验，再启动 Core。这样登录缺失、配置冲突或
     // 非法参数不会留下一个本次操作并不需要的后台服务。
@@ -4257,6 +4313,64 @@ pub async fn get_yuanheng_diagnostics(
             snapshot_id: None,
         },
     };
+    let history_repaired = if let Ok(proxy) = state.proxy_service.get_status().await {
+        if proxy.running {
+            refresh_codex_history_routes_at_port(proxy.port)
+        } else {
+            Ok(false)
+        }
+    } else {
+        Ok(false)
+    };
+    let history_check = (|| -> Result<YuanhengDiagnosticCheck, String> {
+        let repaired = history_repaired?;
+        let config = crate::codex_config::read_codex_config_text().map_err(|e| e.to_string())?;
+        let health = crate::codex_history_routes::health(&config).map_err(|e| e.to_string())?;
+        Ok(YuanhengDiagnosticCheck {
+            id: "codex_history".into(),
+            status: if health.needs_repair || !health.conflicts.is_empty() {
+                "warning"
+            } else {
+                "ok"
+            }
+            .into(),
+            title: "Codex 历史会话兼容性".into(),
+            message: if !health.conflicts.is_empty() {
+                format!(
+                    "{} 使用了自定义供应商配置，已保留；请检查旧对话所需的供应商。",
+                    health.conflicts.join("、")
+                )
+            } else if repaired {
+                "历史会话配置已修复，请重新打开对话；旧模型不可用时，请在 Codex 中重新选择模型。"
+                    .into()
+            } else if health.needs_repair {
+                "历史会话配置需要修复，请在工作台重新选择当前使用方式。".into()
+            } else {
+                "未发现元衡历史供应商配置缺失。旧模型是否可用，以当前账号为准。".into()
+            },
+            action: None,
+        })
+    })();
+    match history_check {
+        Ok(check) => {
+            if check.status == "warning" && report.status == "ok" {
+                report.status = "warning".into();
+            }
+            report.checks.push(check);
+        }
+        Err(_) => {
+            if report.status == "ok" {
+                report.status = "warning".into();
+            }
+            report.checks.push(YuanhengDiagnosticCheck {
+                id: "codex_history".into(),
+                status: "warning".into(),
+                title: "Codex 历史会话兼容性".into(),
+                message: "配置检查未完成，原配置已保留；请检查 Codex 配置后重新检测。".into(),
+                action: None,
+            });
+        }
+    }
     let now = chrono::Utc::now().timestamp();
     // Do not export historical traffic from before the current account's sync.
     let since = connection
@@ -6387,6 +6501,19 @@ mod tests {
         assert!(crate::codex_config::codex_config_has_official_proxy_route(
             &official_live
         ));
+        let official_doc: toml::Value = toml::from_str(&official_live).unwrap();
+        let routes = &official_doc["model_providers"];
+        assert_eq!(
+            routes["yuanheng"],
+            routes[crate::codex_config::CC_SWITCH_CODEX_OFFICIAL_PROXY_PROVIDER_ID]
+        );
+        assert_eq!(
+            routes["yuanheng"]["requires_openai_auth"].as_bool(),
+            Some(true)
+        );
+        assert!(routes["yuanheng"]
+            .get("experimental_bearer_token")
+            .is_none());
         assert!(managed_codex_routes_require_core(state.db.as_ref()));
         let auth_after: Value =
             crate::config::read_json_file(&crate::codex_config::get_codex_auth_path()).unwrap();
@@ -6414,11 +6541,157 @@ mod tests {
         let desktop_live = crate::codex_config::read_codex_config_text().unwrap();
         assert!(terminal_profile.contains("/codex/v1"));
         assert!(terminal_profile.contains("model = \"gpt-5.6-sol\""));
+        let desktop_doc: toml::Value = toml::from_str(&desktop_live).unwrap();
+        let active = desktop_doc["model_provider"].as_str().unwrap();
+        assert_eq!(
+            desktop_doc["model_providers"]["yuanheng"],
+            desktop_doc["model_providers"][active]
+        );
+        assert_eq!(
+            desktop_doc["model_providers"]
+                [crate::codex_config::CC_SWITCH_CODEX_OFFICIAL_PROXY_PROVIDER_ID],
+            desktop_doc["model_providers"][active]
+        );
         assert!(desktop_live.contains("/chatgpt-desktop/v1"));
         assert!(desktop_live.contains("model = \"k3\""));
         let auth_final: Value =
             crate::config::read_json_file(&crate::codex_config::get_codex_auth_path()).unwrap();
         assert_eq!(auth_final, auth_before, "切回元衡也不能覆盖官方 OAuth");
+    }
+
+    #[test]
+    #[serial]
+    fn codex_account_mode_repairs_same_mode_without_changing_model_or_history() {
+        let (_home, state) = isolated_state();
+        prepare_managed_codex_mode(&state, true);
+        switch_codex_account_mode_at_origin(
+            &state,
+            "official",
+            Some("yuanheng"),
+            "http://127.0.0.1:15721",
+        )
+        .unwrap();
+        let auth = std::fs::read(crate::codex_config::get_codex_auth_path()).unwrap();
+        let sessions = crate::codex_config::get_codex_config_dir().join("sessions");
+        std::fs::create_dir_all(&sessions).unwrap();
+        let history_path = sessions.join("legacy.jsonl");
+        let history = "{\"type\":\"session_meta\",\"payload\":{\"model_provider\":\"yuanheng\"}}\n";
+        std::fs::write(&history_path, history).unwrap();
+        let path = crate::codex_config::get_codex_config_path();
+        let mut doc = std::fs::read_to_string(&path)
+            .unwrap()
+            .parse::<toml_edit::DocumentMut>()
+            .unwrap();
+        doc["model"] = toml_edit::value("gpt-existing-selection");
+        doc["model_providers"]
+            .as_table_mut()
+            .unwrap()
+            .remove("custom");
+        doc["model_providers"]
+            .as_table_mut()
+            .unwrap()
+            .remove("yuanheng");
+        // Simulate a config produced by the old application, bypassing new writers.
+        std::fs::write(&path, doc.to_string()).unwrap();
+        assert!(
+            codex_account_mode_status_inner(&state)
+                .unwrap()
+                .history_repair_needed
+        );
+        let repaired = switch_codex_account_mode_at_origin(
+            &state,
+            "official",
+            Some("official"),
+            "http://127.0.0.1:18888",
+        )
+        .unwrap();
+        assert!(repaired.restart_required);
+        assert!(!repaired.history_repair_needed);
+        let live = std::fs::read_to_string(&path).unwrap();
+        let parsed: toml::Value = toml::from_str(&live).unwrap();
+        assert_eq!(parsed["model"].as_str(), Some("gpt-existing-selection"));
+        assert_eq!(
+            parsed["model_providers"]["custom"]["base_url"].as_str(),
+            Some("http://127.0.0.1:18888/v1")
+        );
+        assert_eq!(std::fs::read_to_string(&history_path).unwrap(), history);
+        assert_eq!(
+            std::fs::read(crate::codex_config::get_codex_auth_path()).unwrap(),
+            auth
+        );
+        let backups = crate::config::get_app_config_dir().join("backups/codex-history-routes");
+        let backup_count = std::fs::read_dir(&backups).unwrap().count();
+        assert!(std::fs::read_dir(&backups)
+            .unwrap()
+            .any(
+                |entry| std::fs::read_to_string(entry.unwrap().path()).unwrap() == doc.to_string()
+            ));
+        let unchanged = switch_codex_account_mode_at_origin(
+            &state,
+            "official",
+            Some("official"),
+            "http://127.0.0.1:18888",
+        )
+        .unwrap();
+        assert!(!unchanged.restart_required);
+        assert_eq!(std::fs::read_to_string(&path).unwrap(), live);
+        assert_eq!(std::fs::read_dir(backups).unwrap().count(), backup_count);
+    }
+
+    #[test]
+    #[serial]
+    fn codex_account_mode_keeps_files_and_mode_when_history_backup_fails() {
+        let (_home, state) = isolated_state();
+        prepare_managed_codex_mode(&state, true);
+        let before = capture_codex_mode_switch_snapshot(&state).unwrap();
+        let auth = std::fs::read(crate::codex_config::get_codex_auth_path()).unwrap();
+        let backup = crate::config::get_app_config_dir().join("backups/codex-history-routes");
+        std::fs::create_dir_all(backup.parent().unwrap()).unwrap();
+        std::fs::write(&backup, "simulate unavailable backup directory").unwrap();
+        assert!(switch_codex_account_mode_at_origin(
+            &state,
+            "official",
+            Some("yuanheng"),
+            "http://127.0.0.1:15721"
+        )
+        .is_err());
+        let after = capture_codex_mode_switch_snapshot(&state).unwrap();
+        assert_eq!(after.live_config, before.live_config);
+        assert_eq!(after.terminal_profile, before.terminal_profile);
+        assert_eq!(after.database_current, before.database_current);
+        assert_eq!(after.local_current, before.local_current);
+        assert_eq!(
+            std::fs::read(crate::codex_config::get_codex_auth_path()).unwrap(),
+            auth
+        );
+    }
+
+    #[test]
+    #[serial]
+    fn codex_account_mode_repairs_missing_active_official_definition() {
+        let (_home, state) = isolated_state();
+        prepare_managed_codex_mode(&state, true);
+        switch_codex_account_mode_at_origin(
+            &state,
+            "official",
+            Some("yuanheng"),
+            "http://127.0.0.1:15721",
+        )
+        .unwrap();
+        std::fs::write(
+            crate::codex_config::get_codex_config_path(),
+            "model_provider = \"yuanheng-switch-official\"\nmodel = \"gpt-existing\"\n",
+        )
+        .unwrap();
+        let fixed = switch_codex_account_mode_at_origin(
+            &state,
+            "official",
+            Some("official"),
+            "http://127.0.0.1:15721",
+        )
+        .unwrap();
+        assert!(fixed.restart_required);
+        assert!(!fixed.history_repair_needed);
     }
 
     #[test]

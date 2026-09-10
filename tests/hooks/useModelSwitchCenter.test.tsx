@@ -575,6 +575,40 @@ describe("useModelSwitchCenter", () => {
     });
   });
 
+  it("checks the selected mode again to repair historical providers", async () => {
+    const { wrapper } = createWrapper();
+    const { result } = renderHook(() => useModelSwitchCenter(), { wrapper });
+    await waitFor(() =>
+      expect(result.current.codexAccountMode.data?.mode).toBe("yuanheng"),
+    );
+    await act(async () => {
+      await result.current.switchCodexMode("yuanheng");
+    });
+    expect(invokeMock).toHaveBeenCalledWith("switch_codex_account_mode", {
+      mode: "yuanheng",
+      expectedMode: "yuanheng",
+    });
+  });
+
+  it("does not require a restart when checking an already healthy mode", async () => {
+    const original = invokeMock.getMockImplementation()!;
+    invokeMock.mockImplementation(async (command, payload) => {
+      const response = await original(command, payload);
+      return command === "switch_codex_account_mode"
+        ? { ...response, restartRequired: false }
+        : response;
+    });
+    const { wrapper } = createWrapper();
+    const { result } = renderHook(() => useModelSwitchCenter(), { wrapper });
+    await waitFor(() =>
+      expect(result.current.codexAccountMode.data?.mode).toBe("yuanheng"),
+    );
+    await act(async () => {
+      await result.current.switchCodexMode("yuanheng");
+    });
+    expect(result.current.restartRequiredApps.size).toBe(0);
+  });
+
   it("switches Codex to official mode without reapplying Yuanheng on launch", async () => {
     const { wrapper } = createWrapper();
     const { result } = renderHook(() => useModelSwitchCenter(), { wrapper });

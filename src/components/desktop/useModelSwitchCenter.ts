@@ -585,14 +585,16 @@ export function useModelSwitchCenter() {
     mode: Exclude<CodexAccountMode, "unknown">,
   ) => {
     const expectedMode = codexAccountMode.data?.mode;
-    if (expectedMode === mode || switchCodexAccountMode.isPending) return;
+    if (switchCodexAccountMode.isPending) return;
     try {
       const result = await switchCodexAccountMode.mutateAsync({
         mode,
         expectedMode,
       });
-      markRestartRequired("codex");
-      markRestartRequired("chatgpt-desktop");
+      if (result.restartRequired) {
+        markRestartRequired("codex");
+        markRestartRequired("chatgpt-desktop");
+      }
       toast.success(
         result.message ??
           (mode === "official"
