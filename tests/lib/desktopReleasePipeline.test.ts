@@ -13,6 +13,7 @@ import {
   assembleRelease,
   collectTarget,
   publishRelease,
+  prepareRecoveryContext,
   releaseContext,
   TARGETS,
   type ReleaseContext,
@@ -138,7 +139,13 @@ function fakeGithub(
   const calls: string[][] = [];
   const gh = (args: string[]) => {
     calls.push(args);
+    if (args[0] === "release" && args[1] === "view") {
+      if (!release) throw new Error("release not found");
+      return JSON.stringify({ databaseId: 42 });
+    }
     if (args[0] === "api") {
+      if (args[1].includes("/releases/tags/") && release?.draft)
+        throw new Error("gh: HTTP 404");
       if (args[1].includes("/git/ref/tags/")) {
         if (!plan.stable) throw new Error("gh: HTTP 404");
         return JSON.stringify({ object: { type: "tag", sha: "b".repeat(40) } });
@@ -258,6 +265,14 @@ describe("single release publisher", () => {
     const fake = fakeGithub(plan, f.outputDir);
     const result = publishRelease({ ...f, gh: fake.gh });
     expect(result.draft).toBe(false);
+    expect(fake.calls.some((c) => c[0] === "release" && c[1] === "view")).toBe(
+      true,
+    );
+    expect(
+      fake.calls.some(
+        (c) => c[0] === "api" && c[1].includes("/releases/tags/"),
+      ),
+    ).toBe(false);
     expect(fake.calls.find((c) => c[1] === "create")).toContain("--draft");
     const uploads = fake.calls.filter((c) => c[1] === "upload");
     expect(uploads).toHaveLength(2);
@@ -286,7 +301,11 @@ describe("single release publisher", () => {
     // GitHub may retain a branch name in target_commitish for an existing tag.
     fake.current().target_commitish = "main";
     publishRelease({ ...f, gh: fake.gh });
-    expect(fake.calls.every((c) => c[0] === "api")).toBe(true);
+    expect(
+      fake.calls.every(
+        (c) => c[0] === "api" || (c[0] === "release" && c[1] === "view"),
+      ),
+    ).toBe(true);
   });
   it("keeps manual runs as complete prerelease drafts", () => {
     const ctx = releaseContext(
@@ -328,5 +347,87 @@ describe("single release publisher", () => {
     expect(fake.calls.find((c) => c.includes("--draft=false"))).toContain(
       "--latest=false",
     );
+  });
+});
+
+describe("release recovery provenance", () => {
+  function sourceFixture() {
+    const run = {
+      id: 123,
+      repository: { full_name: context.repo },
+      path: ".github/workflows/release.yml",
+      event: "push",
+      status: "completed",
+      head_sha: context.sha,
+      head_branch: context.tag,
+    };
+    const jobs = ["validate", ...TARGETS.map((t) => `Build ${t}`)].map(
+      (name, id) => ({
+        name,
+        id,
+        run_attempt: 1,
+        status: "completed",
+        conclusion: "success",
+      }),
+    );
+    const gh = (args: string[]) => {
+      const path = args[1];
+      if (path.includes("/jobs?")) return JSON.stringify({ jobs });
+      if (path.endsWith("/actions/runs/123")) return JSON.stringify(run);
+      if (path.includes("/git/ref/tags/"))
+        return JSON.stringify({ object: { type: "commit", sha: context.sha } });
+      if (path.includes("/contents/")) {
+        expect(path).toContain(`?ref=${context.sha}`);
+        const data = path.includes("tauri.conf.json")
+          ? { version, productName: "YuanHeng Desktop" }
+          : feed;
+        return JSON.stringify({
+          encoding: "base64",
+          content: Buffer.from(JSON.stringify(data)).toString("base64"),
+        });
+      }
+      throw new Error(`Unexpected API ${path}`);
+    };
+    return { run, jobs, gh };
+  }
+  it("reuses the original successful build commit, run and announcement metadata", () => {
+    const f = sourceFixture();
+    const recovered = prepareRecoveryContext({
+      runId: "123",
+      repo: context.repo,
+      gh: f.gh,
+    });
+    expect(recovered.context).toEqual(context);
+    expect(recovered.config.version).toBe(version);
+    expect(recovered.feed).toEqual(feed);
+  });
+  it("cannot bypass an active source run or a failed build retry", () => {
+    const f = sourceFixture();
+    f.run.status = "in_progress";
+    expect(() =>
+      prepareRecoveryContext({ runId: "123", repo: context.repo, gh: f.gh }),
+    ).toThrow(/已结束/);
+    f.run.status = "completed";
+    f.jobs.push({
+      ...f.jobs[1],
+      id: 99,
+      run_attempt: 2,
+      conclusion: "failure",
+    });
+    expect(() =>
+      prepareRecoveryContext({ runId: "123", repo: context.repo, gh: f.gh }),
+    ).toThrow(/未全部通过/);
+  });
+  it("rejects unrelated repositories or workflows", () => {
+    const f = sourceFixture();
+    f.run.repository.full_name = "other/repo";
+    expect(() =>
+      prepareRecoveryContext({ runId: "123", repo: context.repo, gh: f.gh }),
+    ).toThrow(/本仓库/);
+    f.run.repository.full_name = context.repo;
+    f.run.path = ".github/workflows/unrelated.yml";
+    expect(() =>
+      prepareRecoveryContext({ runId: "123", repo: context.repo, gh: f.gh }),
+    ).toThrow(/正式发布/);
   });
 });

@@ -47,3 +47,13 @@
 构建 job 可单独重跑：artifact 名按 target 唯一，覆盖同一 run 的同名产物；不同成功 target 不互相覆盖。统一收尾只在整个矩阵成功后运行，下载时同时校验 workflow artifact 的摘要。artifact 保留 7 天，过期后需重新构建。
 
 发布脚本回归测试：`pnpm test:unit tests/lib/desktopReleasePipeline.test.ts`。修改 workflow 时另用 actionlint 检查。GitHub Release 上传与跨站镜像 PUT 是两个独立阶段，应分别记录耗时。
+
+## 只恢复收尾，不重新编译
+
+当三个构建任务成功、但集中发布步骤失败时，可以从 `main` 运行 `Resume Desktop Release Finalization`，传入原 `Desktop Release` 的 run ID。
+
+恢复任务要求原 run 已结束、版本校验和三平台最新构建尝试全部成功；校验原提交对应的远端标签，从原提交读取版本配置与中文公告，再下载原 run 的独立 artifacts。提交、run、文件摘要校验均沿用正常发布规则，完成后继续原有镜像同步。
+
+恢复执行当前分支修正后的发布脚本，但安装包、声明版本和公告仍绑定原构建提交；不会移动版本标签，也不会把另一次构建的文件混入发布。原始构建未通过时不能使用此入口，artifact 过期时需要重新构建。
+
+GitHub REST 的 `GET /releases/tags/:tag` 不返回草稿。发布脚本先使用 `gh release view --json databaseId` 查找已发布版本或待发布草稿，再按 Release ID 读取完整附件摘要，避免创建草稿后因按标签查询得到 404 而中断。

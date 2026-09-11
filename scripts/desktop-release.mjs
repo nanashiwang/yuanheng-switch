@@ -273,6 +273,32 @@ function optionalRelease(gh, path) {
     throw error;
   }
 }
+function findRelease(gh, context) {
+  // REST /releases/tags/:tag excludes drafts. gh resolves a pending draft tag
+  // through GraphQL; read the full REST asset/digest metadata by that ID.
+  let id;
+  try {
+    id = JSON.parse(
+      gh([
+        "release",
+        "view",
+        context.tag,
+        "--repo",
+        context.repo,
+        "--json",
+        "databaseId",
+      ]),
+    ).databaseId;
+  } catch (error) {
+    if (
+      /^release not found$/i.test(String(error.stderr ?? error.message).trim())
+    )
+      return null;
+    throw error;
+  }
+  check(Number.isSafeInteger(id) && id > 0, "GitHub 未返回有效 Release ID");
+  return JSON.parse(gh(["api", `repos/${context.repo}/releases/${id}`]));
+}
 function verifyTagCommit(gh, context) {
   const ref = optionalRelease(
     gh,
@@ -320,6 +346,77 @@ function compareVersions(left, right) {
   return a[0] - b[0] || a[1] - b[1] || a[2] - b[2];
 }
 
+export function prepareRecoveryContext({ runId, repo, gh = defaultGh }) {
+  check(/^\d+$/.test(runId) && /^[\w.-]+\/[\w.-]+$/.test(repo), "无效恢复来源");
+  const run = JSON.parse(gh(["api", `repos/${repo}/actions/runs/${runId}`]));
+  check(
+    String(run.id) === runId &&
+      run.repository?.full_name === repo &&
+      run.path === ".github/workflows/release.yml" &&
+      run.event === "push" &&
+      run.status === "completed",
+    "来源必须是本仓库已结束的正式发布任务",
+  );
+  const latestJobs = new Map();
+  let exhausted = false;
+  for (let page = 1; page <= 20; page++) {
+    const result = JSON.parse(
+      gh([
+        "api",
+        `repos/${repo}/actions/runs/${runId}/jobs?filter=all&per_page=100&page=${page}`,
+      ]),
+    );
+    check(Array.isArray(result.jobs), "无法读取构建任务状态");
+    for (const job of result.jobs) {
+      const previous = latestJobs.get(job.name);
+      if (
+        !previous ||
+        (job.run_attempt ?? 0) > (previous.run_attempt ?? 0) ||
+        ((job.run_attempt ?? 0) === (previous.run_attempt ?? 0) &&
+          job.id > previous.id)
+      )
+        latestJobs.set(job.name, job);
+    }
+    if (result.jobs.length < 100) {
+      exhausted = true;
+      break;
+    }
+  }
+  check(exhausted, "来源任务记录过多，无法确认完整状态");
+  for (const name of ["validate", ...TARGETS.map((t) => `Build ${t}`)]) {
+    const job = latestJobs.get(name);
+    check(
+      job?.status === "completed" && job.conclusion === "success",
+      `来源构建未全部通过：${name}`,
+    );
+  }
+  check(/^[0-9a-f]{40}$/.test(run.head_sha), "无效来源提交");
+  function sourceJson(path) {
+    const file = JSON.parse(
+      gh(["api", `repos/${repo}/contents/${path}?ref=${run.head_sha}`]),
+    );
+    check(
+      file.encoding === "base64" && typeof file.content === "string",
+      "无法读取来源版本文件",
+    );
+    return JSON.parse(Buffer.from(file.content, "base64").toString("utf8"));
+  }
+  const config = sourceJson("src-tauri/tauri.conf.json");
+  const context = releaseContext(
+    {
+      GITHUB_SHA: run.head_sha,
+      GITHUB_RUN_ID: runId,
+      GITHUB_REPOSITORY: repo,
+      GITHUB_REF: `refs/tags/${run.head_branch}`,
+    },
+    config.version,
+  );
+  verifyTagCommit(gh, context);
+  const feed = sourceJson("src/data/desktop-release-notes.json");
+  validateReleaseNotes(feed, context.version);
+  return { context, config, feed };
+}
+
 export function publishRelease({
   outputDir,
   context,
@@ -358,9 +455,8 @@ export function publishRelease({
     json(join(outputDir, "latest.json")).notes === notes.trim(),
     "发布说明与清单不一致",
   );
-  const releasePath = `repos/${context.repo}/releases/tags/${context.tag}`;
   const tagVerified = verifyTagCommit(gh, context);
-  let release = optionalRelease(gh, releasePath);
+  let release = findRelease(gh, context);
   if (release) {
     check(
       release.tag_name === context.tag &&
@@ -425,9 +521,9 @@ export function publishRelease({
     "--clobber",
     join(outputDir, "latest.json"),
   ]);
-  release = JSON.parse(gh(["api", releasePath]));
+  release = findRelease(gh, context);
   check(
-    release.draft &&
+    release?.draft &&
       release.tag_name === context.tag &&
       (tagVerified || release.target_commitish === context.sha),
     "发布过程中的 Release 状态不一致",
@@ -450,8 +546,11 @@ export function publishRelease({
       "--prerelease=false",
       `--latest=${Boolean(makeLatest)}`,
     ]);
-    release = JSON.parse(gh(["api", releasePath]));
-    check(!release.draft && !release.prerelease, "正式 Release 尚未公开");
+    release = findRelease(gh, context);
+    check(
+      release && !release.draft && !release.prerelease,
+      "正式 Release 尚未公开",
+    );
     verifyReleaseAssets(release, plan.assets, notes);
   }
   return release;
@@ -462,44 +561,84 @@ if (
   resolve(process.argv[1]) === fileURLToPath(import.meta.url)
 ) {
   try {
-    const config = json(join(root, "src-tauri/tauri.conf.json"));
-    const context = releaseContext(process.env, config.version);
     const [command, input, output] = process.argv.slice(2);
-    if (command === "collect") {
-      const receipt = collectTarget({
-        repoRoot: root,
-        target: input,
-        outputDir: resolve(output),
-        artifactPaths: JSON.parse(process.env.ARTIFACT_PATHS ?? "null"),
-        appVersion: process.env.BUILT_APP_VERSION,
-        context,
-        productName: config.productName,
+    if (command === "recover-context") {
+      const source = prepareRecoveryContext({
+        runId: input,
+        repo: process.env.GITHUB_REPOSITORY,
       });
+      mkdirSync(dirname(resolve(output)), { recursive: true });
+      writeJson(resolve(output), source);
+      if (process.env.GITHUB_OUTPUT)
+        writeFileSync(
+          process.env.GITHUB_OUTPUT,
+          `version=${source.context.version}\n`,
+          { flag: "a" },
+        );
       console.log(
-        `已收集 ${receipt.target}：${receipt.files.length} 个发布文件（含更新签名）`,
+        `已验证来源 ${source.context.tag} / ${source.context.sha} / run ${source.context.runId}`,
       );
-    } else if (command === "assemble") {
-      const plan = assembleRelease({
-        inputDir: resolve(input),
-        outputDir: resolve(output),
-        context,
-        productName: config.productName,
-        feed: json(join(root, "src/data/desktop-release-notes.json")),
-      });
-      console.log(`三平台校验通过，已统一生成 ${plan.tag} 的 latest.json`);
-    } else if (command === "publish") {
-      const release = publishRelease({
-        outputDir: resolve(input),
-        context,
-        productName: config.productName,
-      });
-      console.log(
-        `${release.draft ? "已准备完整草稿" : "已发布正式版本"}：${release.html_url}`,
-      );
-    } else
-      throw new Error(
-        "用法：desktop-release.mjs collect <target> <out> | assemble <in> <out> | publish <out>",
-      );
+    } else {
+      let recovery;
+      if (process.env.DESKTOP_RELEASE_CONTEXT) {
+        const saved = json(resolve(process.env.DESKTOP_RELEASE_CONTEXT));
+        check(
+          saved.context.repo === process.env.GITHUB_REPOSITORY,
+          "恢复上下文仓库不一致",
+        );
+        recovery = prepareRecoveryContext({
+          runId: saved.context.runId,
+          repo: process.env.GITHUB_REPOSITORY,
+        });
+        for (const key of ["version", "tag", "stable", "sha", "runId", "repo"])
+          check(
+            saved.context[key] === recovery.context[key],
+            "恢复来源发生变化",
+          );
+      }
+      const config =
+        recovery?.config ?? json(join(root, "src-tauri/tauri.conf.json"));
+      const context =
+        recovery?.context ?? releaseContext(process.env, config.version);
+      if (command === "collect") {
+        check(!recovery, "恢复发布只能复用已验证产物");
+        const receipt = collectTarget({
+          repoRoot: root,
+          target: input,
+          outputDir: resolve(output),
+          artifactPaths: JSON.parse(process.env.ARTIFACT_PATHS ?? "null"),
+          appVersion: process.env.BUILT_APP_VERSION,
+          context,
+          productName: config.productName,
+        });
+        console.log(
+          `已收集 ${receipt.target}：${receipt.files.length} 个发布文件（含更新签名）`,
+        );
+      } else if (command === "assemble") {
+        const plan = assembleRelease({
+          inputDir: resolve(input),
+          outputDir: resolve(output),
+          context,
+          productName: config.productName,
+          feed:
+            recovery?.feed ??
+            json(join(root, "src/data/desktop-release-notes.json")),
+        });
+        console.log(`三平台校验通过，已统一生成 ${plan.tag} 的 latest.json`);
+      } else if (command === "publish") {
+        const release = publishRelease({
+          outputDir: resolve(input),
+          context,
+          productName: config.productName,
+        });
+        console.log(
+          `${release.draft ? "已准备完整草稿" : "已发布正式版本"}：${release.html_url}`,
+        );
+      } else
+        throw new Error(
+          "用法：desktop-release.mjs collect <target> <out> | assemble <in> <out> | publish <out>",
+        );
+    }
   } catch (error) {
     console.error(error.message);
     process.exitCode = 1;

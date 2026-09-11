@@ -1,0 +1,73 @@
+name: Resume Desktop Release Finalization
+
+on:
+  workflow_dispatch:
+    inputs:
+      source_run_id:
+        description: Completed Desktop Release run with all three successful build artifacts
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: desktop-release-recovery-${{ inputs.source_run_id }}
+  cancel-in-progress: false
+
+jobs:
+  finalize:
+    name: Recover verified release without rebuilding
+    runs-on: ubuntu-22.04
+    timeout-minutes: 20
+    permissions:
+      contents: write
+      actions: read
+    outputs:
+      version: ${{ steps.source.outputs.version }}
+    env:
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      DESKTOP_RELEASE_CONTEXT: release/context.json
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ github.sha }}
+      - uses: actions/setup-node@v7
+        with:
+          node-version: "20"
+      - name: Verify source run, builds, tag and metadata
+        id: source
+        env:
+          SOURCE_RUN_ID: ${{ inputs.source_run_id }}
+        run: node scripts/desktop-release.mjs recover-context "$SOURCE_RUN_ID" release/context.json
+      - uses: actions/download-artifact@v8
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          repository: ${{ github.repository }}
+          run-id: ${{ inputs.source_run_id }}
+          pattern: desktop-*
+          path: release/downloads
+          merge-multiple: false
+          digest-mismatch: error
+      - run: node scripts/desktop-release.mjs assemble release/downloads release/final
+      - run: node scripts/desktop-release.mjs publish release/final
+
+  mirror:
+    name: Mirror recovered release
+    needs: finalize
+    runs-on: ubuntu-22.04
+    timeout-minutes: 120
+    concurrency:
+      group: desktop-update-mirror
+      cancel-in-progress: false
+    env:
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      DESKTOP_UPDATE_PUBLISH_URL: ${{ secrets.DESKTOP_UPDATE_PUBLISH_URL }}
+      DESKTOP_UPDATE_PUBLISH_TOKEN: ${{ secrets.DESKTOP_UPDATE_PUBLISH_TOKEN }}
+      RELEASE_VERSION: ${{ needs.finalize.outputs.version }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ github.sha }}
+      - name: Resume signed updater mirror
+        run: bash scripts/mirror-desktop-update.sh "$RELEASE_VERSION"

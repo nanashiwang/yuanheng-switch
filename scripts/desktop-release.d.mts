@@ -55,3 +55,12 @@ export function publishRelease(args: {
   productName?: string;
   gh?: (args: string[]) => string;
 }): { draft: boolean; prerelease: boolean; html_url: string };
+export function prepareRecoveryContext(args: {
+  runId: string;
+  repo: string;
+  gh?: (args: string[]) => string;
+}): {
+  context: ReleaseContext;
+  config: { version: string; productName: string };
+  feed: unknown;
+};
