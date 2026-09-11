@@ -7,8 +7,9 @@
 
 1. 调整应用版本号时，在公告文件最前面加入同版本公告，删除最旧一条。
 2. 执行 `pnpm check:release-version`；遗漏公告、版本不匹配或不是两条时会阻止发布。
-3. 发布流水线在三平台构建完成后，将本版正文写入 `latest.json.notes`，
-   将两版记录写入 `latest.json.release_notes`，并同步 GitHub 发布说明。
+3. 三平台并行构建，只上传各自的 workflow artifact。统一收尾任务核对完整性后，
+   将本版正文写入唯一的 `latest.json.notes`，将两版记录写入 `latest.json.release_notes`，
+   并同步 GitHub 发布说明。
 4. 镜像仍先上传安装包、最后发布清单；不新增服务器接口、不修改更新签名和下载地址。
 5. 客户端工作台与「设置 → 关于 → 更新日志」都在内部公告窗口查看。
    更新弹窗展示同一份本版说明，不打开外部网页。
@@ -28,3 +29,21 @@
 慢速线路下任务上限为 120 分钟，支持重试并输出单文件进度。恢复前应停止旧版发布流程中仍在运行的镜像任务，避免并发上传。发布凭据仅在 GitHub Actions secrets 中使用。
 
 本机可执行 `python3 scripts/test_mirror_desktop_update.py` 验证断点恢复逻辑；测试使用模拟工具，不访问网络或真实凭据。
+
+## 并行构建与集中发布
+
+`.github/workflows/release.yml` 的构建矩阵允许三个任务同时运行。构建任务仅有 `contents:read` 权限，不传入 tauri-action 的 Release 标签/ID，并禁用该 action 的 updater JSON 上传。
+
+`scripts/desktop-release.mjs` 提供三个阶段：
+
+1. `collect`：从 tauri-action 输出收集指定 target 的必需安装包和更新签名，统一附件名称；附带版本、提交 SHA、run ID、文件大小和 SHA-256 receipt。
+2. `assemble`：只接受当前 run 的三个独立 artifact，核验 target、版本、提交、文件列表和摘要，再一次性生成 `latest.json`，保留原有六个平台键与下载文件名。
+3. `publish`：核实远端标签仍指向构建提交；先创建或恢复草稿，上传安装包，再上传唯一清单。核对 GitHub 返回的附件大小、SHA-256 和中文说明后才公开正式版。
+
+缺少目标、签名、版本或摘要不一致时，不会公开部分版本。已公开且内容一致的重试只验证，不重写发布资产；已公开内容不一致则拒绝覆盖。延迟发布旧版本不会把 GitHub 的 Latest 降级。
+
+手动从分支运行仍产生完整的预发布草稿；只有稳定标签触发的正式版才进入原有镜像同步步骤。镜像仍逐文件上传、校验，最后更新平台清单，并保留断点恢复能力。
+
+构建 job 可单独重跑：artifact 名按 target 唯一，覆盖同一 run 的同名产物；不同成功 target 不互相覆盖。统一收尾只在整个矩阵成功后运行，下载时同时校验 workflow artifact 的摘要。artifact 保留 7 天，过期后需重新构建。
+
+发布脚本回归测试：`pnpm test:unit tests/lib/desktopReleasePipeline.test.ts`。修改 workflow 时另用 actionlint 检查。GitHub Release 上传与跨站镜像 PUT 是两个独立阶段，应分别记录耗时。

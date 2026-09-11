@@ -32,4 +32,4 @@ Schema v19 为请求明细添加 `declared_provider`、`provider_attribution`，
 - 2287 项后端测试通过，2 项按项目配置忽略；新增覆盖声明优先级、旧记录补齐幂等、字段顺序不同的数据库升级、日汇总来源隔离及重建保护。
 - TypeScript、生产目标 Clippy（禁止警告）、前端构建通过。
 - Playwright 使用隔离演示数据，验证最近 24 小时切换到 7 天时金额/范围同步，并检查 1280px 和 390px 窗口布局。截图位于 `output/playwright/usage-summary-desktop.png` 和 `output/playwright/usage-summary-narrow.png`，未提交演示页面。
-- 验证没有迁移或改写实际用户数据库。本次为代码提交，尚未发布新的安装包。
+- 验证没有迁移或改写实际用户数据库。本功能随 v0.1.53 安装包发布。

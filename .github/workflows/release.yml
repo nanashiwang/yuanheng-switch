@@ -7,7 +7,7 @@ on:
       - "v*"
 
 permissions:
-  contents: write
+  contents: read
 
 concurrency:
   group: desktop-release-${{ github.ref }}
@@ -20,6 +20,8 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v7
+        with:
+          ref: ${{ github.sha }}
 
       - name: Setup Node.js
         uses: actions/setup-node@v7
@@ -42,12 +44,15 @@ jobs:
           pnpm test:unit
 
   build:
+    name: Build ${{ matrix.target }}
     needs: validate
+    permissions:
+      contents: read
     timeout-minutes: 75
     strategy:
       fail-fast: false
-      # tauri-action 会增量合并同一份 latest.json，串行可避免多个平台互相覆盖。
-      max-parallel: 1
+      # 三个平台只构建并上传独立 artifact；Release 和 latest.json 由 finalize 独占。
+      max-parallel: 3
       matrix:
         include:
           - platform: macos-15
@@ -62,6 +67,7 @@ jobs:
 
     runs-on: ${{ matrix.platform }}
     env:
+      # Only contents:read in this job; no build worker can publish a Release.
       GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
       TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
@@ -70,6 +76,8 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v7
+        with:
+          ref: ${{ github.sha }}
 
       - name: Setup Node.js
         uses: actions/setup-node@v7
@@ -106,24 +114,6 @@ jobs:
         run: |
           test -n "$TAURI_SIGNING_PRIVATE_KEY"
           test -n "$TAURI_SIGNING_PRIVATE_KEY_PASSWORD"
-
-      - name: Resolve release metadata
-        id: release
-        shell: bash
-        run: |
-          VERSION="$(node -p "require('./package.json').version")"
-          if [[ "$GITHUB_REF" == refs/tags/* ]]; then
-            TAG="$GITHUB_REF_NAME"
-            DRAFT=false
-            PRERELEASE=false
-          else
-            TAG="v${VERSION}-build.${GITHUB_RUN_NUMBER}"
-            DRAFT=true
-            PRERELEASE=true
-          fi
-          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
-          echo "draft=$DRAFT" >> "$GITHUB_OUTPUT"
-          echo "prerelease=$PRERELEASE" >> "$GITHUB_OUTPUT"
 
       - name: Configure optional Apple signing
         if: runner.os == 'macOS'
@@ -168,70 +158,65 @@ jobs:
             write_env APPLE_TEAM_ID "$NOTARIZATION_TEAM_ID"
           fi
 
-      - name: Build and publish signed updater artifacts
+      - name: Build signed bundles without publishing
+        id: tauri
         uses: tauri-apps/tauri-action@v1
         with:
-          tagName: ${{ steps.release.outputs.tag }}
-          releaseName: YuanHeng Desktop ${{ steps.release.outputs.tag }}
-          releaseBody: |
-            YuanHeng Desktop ${{ steps.release.outputs.tag }}
-
-            安装后可在应用内直接检查、下载并安装后续更新。
-          releaseDraft: ${{ steps.release.outputs.draft }}
-          prerelease: ${{ steps.release.outputs.prerelease }}
-          generateReleaseNotes: true
-          updaterJsonPreferNsis: true
+          uploadUpdaterJson: false
           args: --target ${{ matrix.target }} --bundles ${{ matrix.bundles }}
 
+      - name: Stage target artifacts and receipt
+        shell: bash
+        env:
+          ARTIFACT_PATHS: ${{ steps.tauri.outputs.artifactPaths }}
+          BUILT_APP_VERSION: ${{ steps.tauri.outputs.appVersion }}
+          BUILD_TARGET: ${{ matrix.target }}
+        run: node scripts/desktop-release.mjs collect "$BUILD_TARGET" "release/targets/$BUILD_TARGET"
+
+      - name: Upload target artifacts
+        uses: actions/upload-artifact@v7
+        with:
+          name: desktop-${{ matrix.target }}
+          path: release/targets/${{ matrix.target }}/*
+          if-no-files-found: error
+          compression-level: 0
+          retention-days: 7
+          overwrite: true
+
   finalize-updater-manifest:
-    name: Publish updater manifest
+    name: Publish complete release and updater manifest
     needs: build
-    if: startsWith(github.ref, 'refs/tags/')
     runs-on: ubuntu-22.04
-    timeout-minutes: 10
+    timeout-minutes: 20
+    permissions:
+      contents: write
+      actions: read
     env:
       GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
     steps:
-      - name: Checkout release announcements
+      - name: Checkout release scripts and announcements
         uses: actions/checkout@v7
+        with:
+          ref: ${{ github.sha }}
 
       - name: Setup Node.js
         uses: actions/setup-node@v7
         with:
           node-version: "20"
 
-      - name: Replace rate-limited API asset URLs
-        shell: bash
-        run: |
-          set -euo pipefail
-          mkdir -p release-assets
-          gh release download "$GITHUB_REF_NAME" \
-            --repo "$GITHUB_REPOSITORY" \
-            --pattern latest.json \
-            --dir release-assets
-          gh api "repos/$GITHUB_REPOSITORY/releases/tags/$GITHUB_REF_NAME" \
-            > release-assets/release.json
+      - name: Download this run's target artifacts
+        uses: actions/download-artifact@v8
+        with:
+          pattern: desktop-*
+          path: release/downloads
+          merge-multiple: false
+          digest-mismatch: error
 
-          jq --slurpfile release release-assets/release.json '
-            ($release[0].assets
-              | map({ key: .url, value: .browser_download_url })
-              | from_entries) as $asset_urls
-            | .platforms |= with_entries(
-                .value.url = ($asset_urls[.value.url] // .value.url)
-              )
-          ' release-assets/latest.json > release-assets/latest.rewritten.json
+      - name: Verify all targets and generate the single manifest
+        run: node scripts/desktop-release.mjs assemble release/downloads release/final
 
-          test "$(jq -r '.version' release-assets/latest.rewritten.json)" = "${GITHUB_REF_NAME#v}"
-          jq -e 'all(.platforms[].url; contains("/releases/download/"))' \
-            release-assets/latest.rewritten.json > /dev/null
-          mv release-assets/latest.rewritten.json release-assets/latest.json
-          node scripts/release-notes.mjs release-assets/latest.json release-assets/notes.txt
-          gh release upload "$GITHUB_REF_NAME" release-assets/latest.json \
-            --repo "$GITHUB_REPOSITORY" \
-            --clobber
-          gh release edit "$GITHUB_REF_NAME" \
-            --repo "$GITHUB_REPOSITORY" \
-            --notes-file release-assets/notes.txt
+      - name: Upload and verify draft, then publish stable tags
+        run: node scripts/desktop-release.mjs publish release/final
 
   mirror-desktop-update:
     name: Mirror release to YuanHeng platform
@@ -249,6 +234,8 @@ jobs:
     steps:
       - name: Checkout mirror script
         uses: actions/checkout@v7
+        with:
+          ref: ${{ github.sha }}
       - name: Mirror signed updater assets
         shell: bash
         run: |
