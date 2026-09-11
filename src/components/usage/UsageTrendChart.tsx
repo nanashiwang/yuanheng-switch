@@ -13,7 +13,7 @@ import { useUsageTrends } from "@/lib/query/usage";
 import { Loader2 } from "lucide-react";
 import {
   fmtInt,
-  fmtUsd,
+  fmtCredits,
   getLocaleFromLanguage,
   parseFiniteNumber,
 } from "./format";
@@ -105,7 +105,7 @@ export function UsageTrendChart({
               <span className="font-medium">{entry.name}:</span>
               <span>
                 {entry.dataKey === "cost"
-                  ? fmtUsd(entry.value, 6)
+                  ? fmtCredits(entry.value, 6, trends?.[0]?.costSymbol)
                   : fmtInt(entry.value, dateLocale)}
               </span>
             </div>
@@ -181,7 +181,9 @@ export function UsageTrendChart({
               axisLine={false}
               tickLine={false}
               tick={{ fill: "hsl(var(--muted-foreground))", fontSize: 12 }}
-              tickFormatter={(value) => `$${value}`}
+              tickFormatter={(value) =>
+                `${trends?.[0]?.costSymbol ?? "⚡️"}${value}`
+              }
             />
             <Tooltip content={<CustomTooltip />} />
             <Legend />

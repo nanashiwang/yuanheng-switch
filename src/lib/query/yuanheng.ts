@@ -1,3 +1,5 @@
+import { platformPricingKey, usePlatformPricing } from "./platformPricing";
+import { usageKeys } from "./usage";
 import { useEffect } from "react";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
@@ -19,6 +21,7 @@ export const yuanhengKeys = {
 };
 
 export function useYuanhengConnection() {
+  usePlatformPricing();
   return useQuery({
     queryKey: yuanhengKeys.connection,
     queryFn: () => yuanhengApi.getConnection(),
@@ -51,6 +54,8 @@ export function useLoginYuanheng() {
     }) => yuanhengApi.login(username, password),
     onSuccess: (result) => {
       if (result.connection) {
+        queryClient.invalidateQueries({ queryKey: platformPricingKey });
+        queryClient.invalidateQueries({ queryKey: usageKeys.all });
         queryClient.setQueryData(yuanhengKeys.connection, result.connection);
         queryClient.invalidateQueries({ queryKey: yuanhengKeys.tools });
         queryClient.invalidateQueries({ queryKey: yuanhengKeys.diagnostics });
@@ -71,6 +76,8 @@ export function useRegisterYuanheng() {
     }) => yuanhengApi.register(username, password),
     onSuccess: (result) => {
       if (result.connection) {
+        queryClient.invalidateQueries({ queryKey: platformPricingKey });
+        queryClient.invalidateQueries({ queryKey: usageKeys.all });
         queryClient.setQueryData(yuanhengKeys.connection, result.connection);
         queryClient.invalidateQueries({ queryKey: yuanhengKeys.tools });
         queryClient.invalidateQueries({ queryKey: yuanhengKeys.diagnostics });
@@ -85,6 +92,8 @@ export function useVerifyYuanhengTwoFactor() {
     mutationFn: (code: string) => yuanhengApi.verifyTwoFactor(code),
     onSuccess: (result) => {
       if (result.connection) {
+        queryClient.invalidateQueries({ queryKey: platformPricingKey });
+        queryClient.invalidateQueries({ queryKey: usageKeys.all });
         queryClient.setQueryData(yuanhengKeys.connection, result.connection);
         queryClient.invalidateQueries({ queryKey: yuanhengKeys.tools });
         queryClient.invalidateQueries({ queryKey: yuanhengKeys.diagnostics });
@@ -98,6 +107,8 @@ export function useRefreshYuanheng() {
   return useMutation({
     mutationFn: () => yuanhengApi.refresh(),
     onSuccess: (status) => {
+      queryClient.invalidateQueries({ queryKey: platformPricingKey });
+      queryClient.invalidateQueries({ queryKey: usageKeys.all });
       queryClient.setQueryData(yuanhengKeys.connection, status);
       queryClient.invalidateQueries({ queryKey: yuanhengKeys.tools });
       queryClient.invalidateQueries({ queryKey: yuanhengKeys.diagnostics });
@@ -117,6 +128,8 @@ export function useSignOutYuanheng() {
   return useMutation({
     mutationFn: () => yuanhengApi.signOut(),
     onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: platformPricingKey });
+      queryClient.invalidateQueries({ queryKey: usageKeys.all });
       queryClient.setQueryData(yuanhengKeys.connection, {
         connected: false,
         baseUrl: "https://cn.meta-api.vip",
@@ -310,6 +323,8 @@ export function useRepairYuanheng() {
       return { connection, repairedTools: apps };
     },
     onSuccess: ({ connection }) => {
+      queryClient.invalidateQueries({ queryKey: platformPricingKey });
+      queryClient.invalidateQueries({ queryKey: usageKeys.all });
       queryClient.setQueryData(yuanhengKeys.connection, connection);
       queryClient.invalidateQueries({ queryKey: yuanhengKeys.tools });
       queryClient.invalidateQueries({ queryKey: yuanhengKeys.diagnostics });
@@ -345,6 +360,8 @@ export function useRotateYuanhengCredential() {
       return { connection, updatedTools: apps };
     },
     onSuccess: ({ connection }) => {
+      queryClient.invalidateQueries({ queryKey: platformPricingKey });
+      queryClient.invalidateQueries({ queryKey: usageKeys.all });
       queryClient.setQueryData(yuanhengKeys.connection, connection);
       queryClient.invalidateQueries({ queryKey: yuanhengKeys.tools });
       queryClient.invalidateQueries({ queryKey: yuanhengKeys.diagnostics });

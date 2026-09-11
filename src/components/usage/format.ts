@@ -95,3 +95,13 @@ export function formatTokensShort(
   if (value >= 1e3) return `${(value / 1e3).toFixed(decimals)}K`;
   return value.toLocaleString();
 }
+
+/** Only format amounts supplied by the platform quote API, never legacy USD. */
+export function fmtCredits(
+  value: unknown,
+  digits: number,
+  symbol = "⚡️",
+): string {
+  const num = parseFiniteNumber(value);
+  return num == null ? "—" : `≈ ${symbol}${num.toFixed(digits)}`;
+}

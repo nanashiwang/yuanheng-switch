@@ -1571,6 +1571,8 @@ pub fn run() {
             commands::get_request_logs,
             commands::get_request_detail,
             commands::get_model_pricing,
+            commands::get_platform_pricing,
+            commands::set_platform_quote_group,
             commands::update_model_pricing,
             commands::delete_model_pricing,
             commands::check_provider_limits,

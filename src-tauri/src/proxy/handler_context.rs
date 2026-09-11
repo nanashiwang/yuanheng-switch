@@ -48,6 +48,8 @@ pub struct RequestContext {
     pub current_provider_id: String,
     /// 请求中的模型名称
     pub request_model: String,
+    /// Used only when the upstream omits its response media type.
+    pub requested_streaming: bool,
     /// 实际发往上游的模型名（路由接管/模型映射后的真值，forward 成功后回填）。
     ///
     /// usage 归因的兜底顺序：上游响应回显 → outbound_model → request_model。
@@ -164,6 +166,10 @@ impl RequestContext {
             providers,
             current_provider_id,
             request_model,
+            requested_streaming: body
+                .get("stream")
+                .and_then(serde_json::Value::as_bool)
+                .unwrap_or(false),
             outbound_model: None,
             tag,
             app_type_str,

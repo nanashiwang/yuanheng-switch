@@ -3,7 +3,7 @@ import { Coins, Database, DatabaseBackup, Zap } from "lucide-react";
 import { useUsageSummary } from "@/lib/query/usage";
 import {
   fmtInt,
-  fmtUsd,
+  fmtCredits,
   formatTokensShort,
   getResolvedLang,
 } from "@/components/usage/format";
@@ -14,7 +14,7 @@ import { dt } from "./desktopI18n";
  * 数据与「会话与用量」页同源（useUsageSummary）。
  */
 export function TodayStatsBand() {
-  const { i18n } = useTranslation();
+  const { t, i18n } = useTranslation();
   const lang = getResolvedLang(i18n);
   const { data: summary } = useUsageSummary({ preset: "today" }, undefined, {
     refetchInterval: 60_000,
@@ -36,8 +36,10 @@ export function TodayStatsBand() {
     {
       icon: Coins,
       iconClass: "bg-amber-500/10 text-amber-600",
-      value: summary ? fmtUsd(summary.totalCost, 2) : "--",
-      label: dt("今日成本"),
+      value: summary
+        ? fmtCredits(summary.totalCost, 2, summary.costSymbol)
+        : "--",
+      label: t("usage.referenceCost"),
     },
     {
       icon: DatabaseBackup,

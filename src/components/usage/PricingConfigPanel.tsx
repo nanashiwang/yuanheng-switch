@@ -1,3 +1,4 @@
+import { PlatformPricingPanel } from "./PlatformPricingPanel";
 import { useState, useEffect } from "react";
 import { useTranslation } from "react-i18next";
 import {
@@ -44,7 +45,7 @@ interface AppConfig {
 
 type AppConfigState = Record<PricingApp, AppConfig>;
 
-export function PricingConfigPanel() {
+function LegacyPricingConfigPanel() {
   const { t } = useTranslation();
   const { data: pricing, isLoading, error } = useModelPricing();
   const deleteMutation = useDeleteModelPricing();
@@ -342,9 +343,16 @@ export function PricingConfigPanel() {
       {/* 模型定价配置 */}
       <div className="space-y-4">
         <div className="flex items-center justify-between">
-          <h4 className="text-sm font-medium text-muted-foreground">
-            {t("usage.modelPricingDesc")} {t("usage.perMillion")}
-          </h4>
+          <div className="min-w-0">
+            <h4 className="text-sm font-medium text-muted-foreground">
+              {t("usage.modelPricingDesc")} {t("usage.perMillion")}
+            </h4>
+            {pricing?.some((item) => item.modelId === "gpt-6-astra") && (
+              <p className="mt-1 max-w-3xl text-xs text-muted-foreground">
+                {t("usage.gpt6PricingHint")}
+              </p>
+            )}
+          </div>
           <Button
             onClick={(e) => {
               e.stopPropagation();
@@ -477,6 +485,24 @@ export function PricingConfigPanel() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+    </div>
+  );
+}
+
+export function PricingConfigPanel() {
+  const { t } = useTranslation();
+  return (
+    <div className="space-y-4">
+      <PlatformPricingPanel catalog />
+      <details className="rounded-lg border p-3">
+        <summary className="cursor-pointer text-sm text-muted-foreground">
+          {t("usage.platformPricing.legacy")}
+        </summary>
+        <p className="my-3 text-xs text-muted-foreground">
+          {t("usage.platformPricing.legacyHelp")}
+        </p>
+        <LegacyPricingConfigPanel />
+      </details>
     </div>
   );
 }

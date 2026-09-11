@@ -1,3 +1,5 @@
+import { PlatformQuote } from "./PlatformQuote";
+import { isCodexSessionImport, isUsageUnavailable } from "./usagePresentation";
 import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 import {
@@ -20,18 +22,12 @@ import {
 import { useRequestLogs } from "@/lib/query/usage";
 import {
   getFreshInputTokens,
-  isUnpricedUsage,
   type LogFilters,
   type UsageRangeSelection,
 } from "@/types/usage";
 import { ChevronLeft, ChevronRight } from "lucide-react";
 import { UsageDateRangePicker } from "./UsageDateRangePicker";
-import {
-  fmtInt,
-  fmtUsd,
-  getLocaleFromLanguage,
-  parseFiniteNumber,
-} from "./format";
+import { fmtInt, getLocaleFromLanguage } from "./format";
 
 interface RequestLogTableProps {
   range: UsageRangeSelection;
@@ -195,7 +191,8 @@ export function RequestLogTable({
                   </TableRow>
                 ) : (
                   logs.map((log) => {
-                    const unpriced = isUnpricedUsage(log);
+                    const unavailable = isUsageUnavailable(log);
+                    const imported = isCodexSessionImport(log);
                     return (
                       <TableRow key={log.requestId}>
                         <TableCell className="text-center whitespace-nowrap text-xs px-1.5">
@@ -210,7 +207,17 @@ export function RequestLogTable({
                           )}
                         </TableCell>
                         <TableCell className="text-center">
-                          {log.providerName || t("usage.unknownProvider")}
+                          <span
+                            title={
+                              imported
+                                ? t("usage.sessionAttributionHelp")
+                                : undefined
+                            }
+                          >
+                            {log.providerId === "_codex_session"
+                              ? t("usage.sessionProviderUnknown")
+                              : log.providerName || t("usage.unknownProvider")}
+                          </span>
                         </TableCell>
                         <TableCell className="text-center font-mono text-xs max-w-[200px]">
                           <div
@@ -249,7 +256,7 @@ export function RequestLogTable({
                                     : undefined
                                 }
                               >
-                                {fmtInt(freshInput, locale)}
+                                {unavailable ? "—" : fmtInt(freshInput, locale)}
                               </div>
                             );
                           })()}
@@ -268,30 +275,25 @@ export function RequestLogTable({
                           )}
                         </TableCell>
                         <TableCell className="text-center">
-                          {fmtInt(log.outputTokens, locale)}
+                          <span
+                            title={
+                              unavailable
+                                ? t("usage.usageUnavailableHelp")
+                                : undefined
+                            }
+                          >
+                            {unavailable
+                              ? "—"
+                              : fmtInt(log.outputTokens, locale)}
+                          </span>
                         </TableCell>
                         <TableCell className="text-center px-1.5">
-                          <div
-                            className={`font-medium tabular-nums ${
-                              unpriced ? "text-muted-foreground" : ""
-                            }`}
-                          >
-                            {unpriced
-                              ? t("usage.unpriced", "未定价")
-                              : fmtUsd(log.totalCostUsd, 4)}
-                          </div>
-                          {parseFiniteNumber(log.costMultiplier) != null &&
-                            parseFiniteNumber(log.costMultiplier) !== 1 && (
-                              <div className="text-[11px] text-muted-foreground">
-                                ×
-                                {parseFiniteNumber(log.costMultiplier)?.toFixed(
-                                  2,
-                                )}
-                              </div>
-                            )}
+                          <PlatformQuote log={log} />
                         </TableCell>
                         <TableCell className="text-center whitespace-nowrap text-xs tabular-nums">
-                          {(log.latencyMs / 1000).toFixed(1)}s
+                          {imported && log.latencyMs === 0
+                            ? "—"
+                            : `${(log.latencyMs / 1000).toFixed(1)}s`}
                           {log.firstTokenMs != null && (
                             <span className="text-muted-foreground">
                               /{(log.firstTokenMs / 1000).toFixed(1)}s
@@ -301,16 +303,28 @@ export function RequestLogTable({
                         <TableCell className="text-center">
                           <span
                             className={
-                              log.statusCode >= 200 && log.statusCode < 300
-                                ? "text-green-600"
-                                : "text-red-600"
+                              imported
+                                ? "text-muted-foreground"
+                                : log.statusCode >= 200 && log.statusCode < 300
+                                  ? "text-green-600"
+                                  : "text-red-600"
                             }
                           >
-                            {log.statusCode}
+                            {imported ? "—" : log.statusCode}
                           </span>
                         </TableCell>
                         <TableCell className="text-center text-xs text-muted-foreground">
-                          {log.dataSource || "proxy"}
+                          <span
+                            title={
+                              imported
+                                ? t("usage.sessionAttributionHelp")
+                                : undefined
+                            }
+                          >
+                            {imported
+                              ? t("usage.codexSessionSource")
+                              : log.dataSource || "proxy"}
+                          </span>
                         </TableCell>
                       </TableRow>
                     );

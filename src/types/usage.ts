@@ -26,6 +26,15 @@ export interface RequestLog {
   cacheReadCostUsd: string;
   cacheCreationCostUsd: string;
   totalCostUsd: string;
+  platformQuote?: {
+    amount: string | null;
+    symbol: string;
+    reason: string;
+    group?: string;
+    groupRatio?: string;
+    quotedAt?: number;
+    stale?: boolean;
+  };
   isStreaming: boolean;
   latencyMs: number;
   firstTokenMs?: number;
@@ -69,7 +78,10 @@ export interface ModelPricing {
 
 export interface UsageSummary {
   totalRequests: number;
-  totalCost: string;
+  totalCost: string | null;
+  pricedRequests?: number;
+  unpricedRequests?: number;
+  costSymbol?: string;
   totalInputTokens: number;
   totalOutputTokens: number;
   totalCacheCreationTokens: number;
@@ -89,7 +101,10 @@ export interface UsageSummaryByApp {
 export interface DailyStats {
   date: string;
   requestCount: number;
-  totalCost: string;
+  totalCost: string | null;
+  pricedRequests?: number;
+  unpricedRequests?: number;
+  costSymbol?: string;
   totalTokens: number;
   totalInputTokens: number;
   totalOutputTokens: number;
@@ -98,11 +113,15 @@ export interface DailyStats {
 }
 
 export interface ProviderStats {
+  appType?: string;
   providerId: string;
   providerName: string;
   requestCount: number;
   totalTokens: number;
-  totalCost: string;
+  totalCost: string | null;
+  pricedRequests?: number;
+  unpricedRequests?: number;
+  costSymbol?: string;
   successRate: number;
   avgLatencyMs: number;
 }
@@ -111,8 +130,11 @@ export interface ModelStats {
   model: string;
   requestCount: number;
   totalTokens: number;
-  totalCost: string;
-  avgCostPerRequest: string;
+  totalCost: string | null;
+  pricedRequests?: number;
+  unpricedRequests?: number;
+  costSymbol?: string;
+  avgCostPerRequest: string | null;
 }
 
 export interface LogFilters {

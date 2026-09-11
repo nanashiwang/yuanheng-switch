@@ -145,6 +145,20 @@ export const handlers = [
   http.post(`${TAURI_ENDPOINT}/verify_yuanheng_two_factor`, () =>
     success(authenticateYuanheng("twofactor")),
   ),
+  http.post(`${TAURI_ENDPOINT}/get_platform_pricing`, () =>
+    success({
+      fetchedAt: 1789080000,
+      symbol: "⚡️",
+      displayRate: "1",
+      quotaPerUnit: "500000",
+      selectedGroup: null,
+      stale: false,
+      syncError: null,
+      groups: {},
+      models: {},
+    }),
+  ),
+  http.post(`${TAURI_ENDPOINT}/set_platform_quote_group`, () => success(null)),
   http.post(`${TAURI_ENDPOINT}/refresh_yuanheng_connection`, () =>
     success(getYuanhengConnection()),
   ),

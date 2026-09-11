@@ -1,9 +1,11 @@
 //! 使用统计相关命令
 
 use crate::error::AppError;
+use crate::services::platform_pricing;
 use crate::services::usage_stats::*;
 use crate::store::AppState;
 use rust_decimal::Decimal;
+use serde_json::Value;
 use std::str::FromStr;
 use tauri::State;
 
@@ -16,8 +18,18 @@ pub fn get_usage_summary(
     app_type: Option<String>,
     provider_name: Option<String>,
     model: Option<String>,
-) -> Result<UsageSummary, AppError> {
-    state.db.get_usage_summary(
+) -> Result<Value, AppError> {
+    let data = state.db.get_usage_summary(
+        start_date,
+        end_date,
+        app_type.as_deref(),
+        provider_name.as_deref(),
+        model.as_deref(),
+    )?;
+    platform_pricing::decorate_stats(
+        &state.db,
+        serde_json::to_value(data).map_err(|e| AppError::Config(e.to_string()))?,
+        "summary",
         start_date,
         end_date,
         app_type.as_deref(),
@@ -34,10 +46,20 @@ pub fn get_usage_summary_by_app(
     end_date: Option<i64>,
     provider_name: Option<String>,
     model: Option<String>,
-) -> Result<Vec<UsageSummaryByApp>, AppError> {
-    state.db.get_usage_summary_by_app(
+) -> Result<Value, AppError> {
+    let data = state.db.get_usage_summary_by_app(
         start_date,
         end_date,
+        provider_name.as_deref(),
+        model.as_deref(),
+    )?;
+    platform_pricing::decorate_stats(
+        &state.db,
+        serde_json::to_value(data).map_err(|e| AppError::Config(e.to_string()))?,
+        "byApp",
+        start_date,
+        end_date,
+        None,
         provider_name.as_deref(),
         model.as_deref(),
     )
@@ -52,8 +74,25 @@ pub fn get_usage_trends(
     app_type: Option<String>,
     provider_name: Option<String>,
     model: Option<String>,
-) -> Result<Vec<DailyStats>, AppError> {
-    state.db.get_daily_trends(
+) -> Result<Value, AppError> {
+    let end = end_date.unwrap_or_else(|| chrono::Utc::now().timestamp());
+    let end_date = Some(end);
+    let start_date = Some(
+        start_date
+            .filter(|start| *start < end)
+            .unwrap_or(end - 86400),
+    );
+    let data = state.db.get_daily_trends(
+        start_date,
+        end_date,
+        app_type.as_deref(),
+        provider_name.as_deref(),
+        model.as_deref(),
+    )?;
+    platform_pricing::decorate_stats(
+        &state.db,
+        serde_json::to_value(data).map_err(|e| AppError::Config(e.to_string()))?,
+        "trends",
         start_date,
         end_date,
         app_type.as_deref(),
@@ -71,8 +110,18 @@ pub fn get_provider_stats(
     app_type: Option<String>,
     provider_name: Option<String>,
     model: Option<String>,
-) -> Result<Vec<ProviderStats>, AppError> {
-    state.db.get_provider_stats(
+) -> Result<Value, AppError> {
+    let data = state.db.get_provider_stats(
+        start_date,
+        end_date,
+        app_type.as_deref(),
+        provider_name.as_deref(),
+        model.as_deref(),
+    )?;
+    platform_pricing::decorate_stats(
+        &state.db,
+        serde_json::to_value(data).map_err(|e| AppError::Config(e.to_string()))?,
+        "providers",
         start_date,
         end_date,
         app_type.as_deref(),
@@ -90,8 +139,18 @@ pub fn get_model_stats(
     app_type: Option<String>,
     provider_name: Option<String>,
     model: Option<String>,
-) -> Result<Vec<ModelStats>, AppError> {
-    state.db.get_model_stats(
+) -> Result<Value, AppError> {
+    let data = state.db.get_model_stats(
+        start_date,
+        end_date,
+        app_type.as_deref(),
+        provider_name.as_deref(),
+        model.as_deref(),
+    )?;
+    platform_pricing::decorate_stats(
+        &state.db,
+        serde_json::to_value(data).map_err(|e| AppError::Config(e.to_string()))?,
+        "models",
         start_date,
         end_date,
         app_type.as_deref(),
@@ -107,8 +166,19 @@ pub fn get_request_logs(
     filters: LogFilters,
     page: u32,
     page_size: u32,
-) -> Result<PaginatedLogs, AppError> {
-    state.db.get_request_logs(&filters, page, page_size)
+) -> Result<Value, AppError> {
+    let logs = state.db.get_request_logs(&filters, page, page_size)?;
+    let book = platform_pricing::load(&state.db)?;
+    let mut value = serde_json::to_value(&logs).map_err(|e| AppError::Config(e.to_string()))?;
+    for (row, log) in value["data"]
+        .as_array_mut()
+        .into_iter()
+        .flatten()
+        .zip(&logs.data)
+    {
+        row["platformQuote"] = platform_pricing::log_quote(book.as_ref(), log);
+    }
+    Ok(value)
 }
 
 /// 获取单个请求详情
@@ -116,8 +186,14 @@ pub fn get_request_logs(
 pub fn get_request_detail(
     state: State<'_, AppState>,
     request_id: String,
-) -> Result<Option<RequestLogDetail>, AppError> {
-    state.db.get_request_detail(&request_id)
+) -> Result<Value, AppError> {
+    let log = state.db.get_request_detail(&request_id)?;
+    let book = platform_pricing::load(&state.db)?;
+    let mut value = serde_json::to_value(&log).map_err(|e| AppError::Config(e.to_string()))?;
+    if let Some(log) = log {
+        value["platformQuote"] = platform_pricing::log_quote(book.as_ref(), &log);
+    }
+    Ok(value)
 }
 
 /// 获取模型定价列表

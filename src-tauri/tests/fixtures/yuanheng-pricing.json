@@ -1,0 +1,1605 @@
+{
+  "source": "https://cn.meta-api.vip/api/pricing",
+  "capturedAt": "2026-09-11",
+  "pricing": {
+    "success": true,
+    "data": [
+      {
+        "model_name": "Qwen/Qwen3.5-4B",
+        "vendor_id": 16,
+        "quota_type": 0,
+        "model_ratio": 0.5,
+        "model_price": 0,
+        "audio_duration_price": 0,
+        "owner_by": "",
+        "completion_ratio": 3,
+        "supports_cache_read": false,
+        "cache_ratio": 0,
+        "supports_cache_creation": false,
+        "cache_creation_ratio": 0,
+        "enable_groups": [
+          "default"
+        ],
+        "supported_endpoint_types": [
+          "openai"
+        ],
+        "pricing_version": "4bb6660445d238d6528f8f0257307c1de706fe7ad132ee3faafef6c223607a80"
+      },
+      {
+        "model_name": "gemini-2.5-flash",
+        "vendor_id": 8,
+        "quota_type": 0,
+        "model_ratio": 37.5,
+        "model_price": 0,
+        "audio_duration_price": 0,
+        "owner_by": "",
+        "completion_ratio": 4,
+        "supports_cache_read": true,
+        "cache_ratio": 0.266666666667,
+        "supports_cache_creation": false,
+        "cache_creation_ratio": 0,
+        "enable_groups": [
+          "gemini",
+          "Gemini · 企业专属",
+          "Gemini · 优质",
+          "Gemini · 优质（第三方）"
+        ],
+        "supported_endpoint_types": [
+          "gemini",
+          "openai"
+        ]
+      },
+      {
+        "model_name": "gemini-3.1-pro-preview",
+        "description": "Gemini 3.1 Pro Preview is an AI model provided by vivgrid.",
+        "tags": "Reasoning,Tools,Files,Vision,Audio,1M",
+        "vendor_id": 8,
+        "quota_type": 0,
+        "model_ratio": 8,
+        "model_price": 0,
+        "audio_duration_price": 0,
+        "owner_by": "",
+        "completion_ratio": 6,
+        "supports_cache_read": true,
+        "cache_ratio": 0.0125,
+        "supports_cache_creation": true,
+        "cache_creation_ratio": 0.1125,
+        "enable_groups": [
+          "gemini",
+          "Gemini · 企业专属",
+          "Gemini · 优质",
+          "Gemini · 优质（第三方）"
+        ],
+        "supported_endpoint_types": [
+          "gemini",
+          "openai"
+        ]
+      },
+      {
+        "model_name": "gemini-omni-flash-preview",
+        "vendor_id": 8,
+        "quota_type": 0,
+        "model_ratio": 37.5,
+        "model_price": 0,
+        "audio_duration_price": 0,
+        "owner_by": "",
+        "completion_ratio": 4,
+        "supports_cache_read": false,
+        "cache_ratio": 0,
+        "supports_cache_creation": false,
+        "cache_creation_ratio": 0,
+        "enable_groups": [
+          "Gemini · 企业专属",
+          "Gemini · 优质",
+          "Gemini · 优质（第三方）",
+          "gemini"
+        ],
+        "supported_endpoint_types": [
+          "gemini",
+          "openai"
+        ]
+      },
+      {
+        "model_name": "gpt-5.6-sol",
+        "vendor_id": 1,
+        "quota_type": 0,
+        "model_ratio": 37.5,
+        "model_price": 0,
+        "audio_duration_price": 0,
+        "owner_by": "",
+        "completion_ratio": 6,
+        "supports_cache_read": false,
+        "cache_ratio": 0,
+        "supports_cache_creation": false,
+        "cache_creation_ratio": 0,
+        "enable_groups": [
+          "企业专属",
+          "测试",
+          "测试勿选",
+          "OpenAI · image",
+          "OpenAI · 企业专属",
+          "OpenAI · 优质",
+          "OpenAI · 优质（第三方）",
+          "OpenAI · 特价（第三方）"
+        ],
+        "supported_endpoint_types": [
+          "openai"
+        ],
+        "billing_mode": "tiered_expr",
+        "billing_expr": "len <= 272000 ? tier(\"base\", p * 25 + c * 150 + cr * 2.5 + cc * 31.25) : tier(\"第2档\", p * 50 + c * 225 + cr * 5 + cc * 62.5)"
+      },
+      {
+        "model_name": "claude-sonnet-5",
+        "vendor_id": 2,
+        "quota_type": 0,
+        "model_ratio": 7.5,
+        "model_price": 0,
+        "audio_duration_price": 0,
+        "owner_by": "",
+        "completion_ratio": 5,
+        "supports_cache_read": true,
+        "cache_ratio": 0.1,
+        "supports_cache_creation": true,
+        "cache_creation_ratio": 1.25,
+        "enable_groups": [
+          "Claude · 优质（第三方）",
+          "企业专属",
+          "claude",
+          "Claude · 企业专属",
+          "Claude · 优质"
+        ],
+        "supported_endpoint_types": [
+          "anthropic",
+          "openai"
+        ]
+      },
+      {
+        "model_name": "grok-4.5",
+        "vendor_id": 9,
+        "quota_type": 0,
+        "model_ratio": 5,
+        "model_price": 0,
+        "audio_duration_price": 0,
+        "owner_by": "",
+        "completion_ratio": 3,
+        "supports_cache_read": true,
+        "cache_ratio": 0.25,
+        "supports_cache_creation": false,
+        "cache_creation_ratio": 0,
+        "enable_groups": [
+          "Grok · 优质",
+          "Grok · 优质(第三方）",
+          "default",
+          "Grok · 企业专属"
+        ],
+        "supported_endpoint_types": [
+          "openai",
+          "openai-response"
+        ]
+      },
+      {
+        "model_name": "mimo-v2.5-tts",
+        "vendor_id": 20,
+        "quota_type": 0,
+        "model_ratio": 0,
+        "model_price": 0,
+        "audio_duration_price": 0,
+        "owner_by": "",
+        "completion_ratio": 1,
+        "supports_cache_read": false,
+        "cache_ratio": 0,
+        "supports_cache_creation": false,
+        "cache_creation_ratio": 0,
+        "enable_groups": [
+          "default",
+          "MiMo · 企业专属",
+          "MiMo · 优质",
+          "企业专属"
+        ],
+        "supported_endpoint_types": [
+          "openai"
+        ]
+      },
+      {
+        "model_name": "gemini-3.1-flash-lite",
+        "vendor_id": 8,
+        "quota_type": 0,
+        "model_ratio": 1,
+        "model_price": 0,
+        "audio_duration_price": 0,
+        "owner_by": "",
+        "completion_ratio": 3,
+        "supports_cache_read": true,
+        "cache_ratio": 0.05,
+        "supports_cache_creation": false,
+        "cache_creation_ratio": 0,
+        "enable_groups": [
+          "土豪组",
+          "gemini",
+          "Gemini · 优质（第三方）"
+        ],
+        "supported_endpoint_types": [
+          "gemini",
+          "openai"
+        ]
+      },
+      {
+        "model_name": "gemini-3.1-pro",
+        "vendor_id": 8,
+        "quota_type": 0,
+        "model_ratio": 15,
+        "model_price": 0,
+        "audio_duration_price": 0,
+        "owner_by": "",
+        "completion_ratio": 6,
+        "supports_cache_read": true,
+        "cache_ratio": 0.1,
+        "supports_cache_creation": false,
+        "cache_creation_ratio": 0,
+        "enable_groups": [
+          "gemini",
+          "Gemini · 企业专属",
+          "Gemini · 优质",
+          "Gemini · 优质（第三方）"
+        ],
+        "supported_endpoint_types": [
+          "gemini",
+          "openai"
+        ]
+      },
+      {
+        "model_name": "claude-haiku-4-5-20251001",
+        "description": "Claude Haiku 4.5 is an AI model provided by qihang-ai.",
+        "tags": "Reasoning,Tools,Files,Vision,200K",
+        "vendor_id": 2,
+        "quota_type": 0,
+        "model_ratio": 3,
+        "model_price": 0,
+        "audio_duration_price": 0,
+        "owner_by": "",
+        "completion_ratio": 5,
+        "supports_cache_read": true,
+        "cache_ratio": 0.1,
+        "supports_cache_creation": true,
+        "cache_creation_ratio": 1.25,
+        "enable_groups": [
+          "企业专属",
+          "claude",
+          "Claude · 企业专属",
+          "Claude · 优质",
+          "Claude · 优质（第三方）"
+        ],
+        "supported_endpoint_types": [
+          "anthropic",
+          "openai"
+        ]
+      },
+      {
+        "model_name": "Qwen/Qwen2.5-7B-Instruct",
+        "vendor_id": 16,
+        "quota_type": 0,
+        "model_ratio": 0.5,
+        "model_price": 0,
+        "audio_duration_price": 0,
+        "owner_by": "",
+        "completion_ratio": 3,
+        "supports_cache_read": false,
+        "cache_ratio": 0,
+        "supports_cache_creation": false,
+        "cache_creation_ratio": 0,
+        "enable_groups": [
+          "default"
+        ],
+        "supported_endpoint_types": [
+          "openai"
+        ]
+      },
+      {
+        "model_name": "THUDM/GLM-Z1-9B-0414",
+        "vendor_id": 18,
+        "quota_type": 0,
+        "model_ratio": 0.5,
+        "model_price": 0,
+        "audio_duration_price": 0,
+        "owner_by": "",
+        "completion_ratio": 3,
+        "supports_cache_read": false,
+        "cache_ratio": 0,
+        "supports_cache_creation": false,
+        "cache_creation_ratio": 0,
+        "enable_groups": [
+          "default"
+        ],
+        "supported_endpoint_types": [
+          "openai"
+        ]
+      },
+      {
+        "model_name": "gpt-image-2",
+        "vendor_id": 1,
+        "quota_type": 1,
+        "model_ratio": 0,
+        "model_price": 1.5,
+        "audio_duration_price": 0,
+        "owner_by": "",
+        "completion_ratio": 0,
+        "supports_cache_read": false,
+        "cache_ratio": 0,
+        "supports_cache_creation": false,
+        "cache_creation_ratio": 0,
+        "enable_groups": [
+          "OpenAI · 优质（第三方）",
+          "企业专属",
+          "OpenAI · image",
+          "OpenAI · 企业专属",
+          "OpenAI · 优质"
+        ],
+        "supported_endpoint_types": [
+          "image-generation",
+          "openai"
+        ]
+      },
+      {
+        "model_name": "kimi-k3",
+        "vendor_id": 19,
+        "quota_type": 0,
+        "model_ratio": 10,
+        "model_price": 0,
+        "audio_duration_price": 0,
+        "owner_by": "",
+        "completion_ratio": 5,
+        "supports_cache_read": true,
+        "cache_ratio": 0.1,
+        "supports_cache_creation": true,
+        "cache_creation_ratio": 1.25,
+        "enable_groups": [
+          "Kimi · 企业专属",
+          "Kimi · 优质",
+          "Kimi · 优质（第三方）",
+          "企业专属"
+        ],
+        "supported_endpoint_types": [
+          "openai"
+        ]
+      },
+      {
+        "model_name": "deepseek-v4-flash",
+        "vendor_id": 15,
+        "quota_type": 0,
+        "model_ratio": 37.5,
+        "model_price": 0,
+        "audio_duration_price": 0,
+        "owner_by": "",
+        "completion_ratio": 1,
+        "supports_cache_read": false,
+        "cache_ratio": 0,
+        "supports_cache_creation": false,
+        "cache_creation_ratio": 0,
+        "enable_groups": [
+          "Deepseek · 优质（第三方）",
+          "企业专属",
+          "官方渠道",
+          "Deepseek · 企业专属",
+          "Deepseek · 优质"
+        ],
+        "supported_endpoint_types": [
+          "openai"
+        ],
+        "billing_mode": "tiered_expr",
+        "billing_expr": "(\n  weekday(\"Asia/Shanghai\") >= 1 &&\n  weekday(\"Asia/Shanghai\") <= 5 &&\n  (\n    (hour(\"Asia/Shanghai\") >= 9 && hour(\"Asia/Shanghai\") < 12) ||\n    (hour(\"Asia/Shanghai\") >= 14 && hour(\"Asia/Shanghai\") < 18)\n  )\n)\n? tier(\"峰时\", p * 10 + c * 40 + cr * 0.2)\n: tier(\"谷时\", p * 5 + c * 20 + cr * 0.1)"
+      },
+      {
+        "model_name": "claude-fable-5",
+        "vendor_id": 2,
+        "quota_type": 0,
+        "model_ratio": 30,
+        "model_price": 0,
+        "audio_duration_price": 0,
+        "owner_by": "",
+        "completion_ratio": 5,
+        "supports_cache_read": true,
+        "cache_ratio": 0.1,
+        "supports_cache_creation": true,
+        "cache_creation_ratio": 1.208333333333,
+        "enable_groups": [
+          "claude",
+          "Claude · 企业专属",
+          "Claude · 优质",
+          "Claude · 优质（第三方）",
+          "Claude · 标准（第三方）",
+          "企业专属"
+        ],
+        "supported_endpoint_types": [
+          "anthropic",
+          "openai"
+        ]
+      },
+      {
+        "model_name": "claude-fable-5-1",
+        "vendor_id": 2,
+        "quota_type": 0,
+        "model_ratio": 30,
+        "model_price": 0,
+        "audio_duration_price": 0,
+        "owner_by": "",
+        "completion_ratio": 5,
+        "supports_cache_read": true,
+        "cache_ratio": 0.025,
+        "supports_cache_creation": true,
+        "cache_creation_ratio": 1.2,
+        "enable_groups": [
+          "claude",
+          "Claude · 企业专属",
+          "Claude · 优质",
+          "Claude · 优质（第三方）",
+          "Claude · 标准（第三方）",
+          "企业专属"
+        ],
+        "supported_endpoint_types": [
+          "anthropic",
+          "openai"
+        ]
+      },
+      {
+        "model_name": "claude-opus-4-6",
+        "description": "Claude Opus 4.6 is an AI model provided by venice.",
+        "tags": "Reasoning,Tools,Files,Vision,1M",
+        "vendor_id": 2,
+        "quota_type": 0,
+        "model_ratio": 15,
+        "model_price": 0,
+        "audio_duration_price": 0,
+        "owner_by": "",
+        "completion_ratio": 5,
+        "supports_cache_read": true,
+        "cache_ratio": 0.1,
+        "supports_cache_creation": true,
+        "cache_creation_ratio": 1.25,
+        "enable_groups": [
+          "Claude · 优质（第三方）",
+          "企业专属",
+          "claude",
+          "Claude · 企业专属",
+          "Claude · 优质"
+        ],
+        "supported_endpoint_types": [
+          "anthropic",
+          "openai"
+        ]
+      },
+      {
+        "model_name": "claude-sonnet-4-6",
+        "description": "Claude Sonnet 4.6 is an AI model provided by venice.",
+        "tags": "Reasoning,Tools,Files,Vision,1M",
+        "vendor_id": 2,
+        "quota_type": 0,
+        "model_ratio": 9,
+        "model_price": 0,
+        "audio_duration_price": 0,
+        "owner_by": "",
+        "completion_ratio": 5,
+        "supports_cache_read": true,
+        "cache_ratio": 0.1,
+        "supports_cache_creation": true,
+        "cache_creation_ratio": 1.25,
+        "enable_groups": [
+          "claude",
+          "Claude · 企业专属",
+          "Claude · 优质",
+          "Claude · 优质（第三方）",
+          "企业专属"
+        ],
+        "supported_endpoint_types": [
+          "anthropic",
+          "openai"
+        ]
+      },
+      {
+        "model_name": "FunAudioLLM/SenseVoiceSmall",
+        "quota_type": 0,
+        "model_ratio": 0.5,
+        "model_price": 0,
+        "audio_duration_price": 0,
+        "owner_by": "",
+        "completion_ratio": 3,
+        "supports_cache_read": false,
+        "cache_ratio": 0,
+        "supports_cache_creation": false,
+        "cache_creation_ratio": 0,
+        "enable_groups": [
+          "default"
+        ],
+        "supported_endpoint_types": [
+          "openai"
+        ]
+      },
+      {
+        "model_name": "deepseek-ai/DeepSeek-OCR",
+        "vendor_id": 15,
+        "quota_type": 0,
+        "model_ratio": 0.5,
+        "model_price": 0,
+        "audio_duration_price": 0,
+        "owner_by": "",
+        "completion_ratio": 3,
+        "supports_cache_read": false,
+        "cache_ratio": 0,
+        "supports_cache_creation": false,
+        "cache_creation_ratio": 0,
+        "enable_groups": [
+          "default"
+        ],
+        "supported_endpoint_types": [
+          "openai"
+        ]
+      },
+      {
+        "model_name": "gpt-5.3-codex-spark",
+        "description": "GPT-5.3 Codex Spark is an AI model provided by opencode.",
+        "tags": "Reasoning,Tools,128K",
+        "vendor_id": 1,
+        "quota_type": 0,
+        "model_ratio": 1.25,
+        "model_price": 0,
+        "audio_duration_price": 0,
+        "owner_by": "",
+        "completion_ratio": 10,
+        "supports_cache_read": true,
+        "cache_ratio": 0.1,
+        "supports_cache_creation": false,
+        "cache_creation_ratio": 0,
+        "enable_groups": [
+          "OpenAI · 优质（第三方）",
+          "企业专属",
+          "测试",
+          "OpenAI · image",
+          "OpenAI · 企业专属",
+          "OpenAI · 优质"
+        ],
+        "supported_endpoint_types": [
+          "openai"
+        ]
+      },
+      {
+        "model_name": "gpt-5.5",
+        "icon": "OpenAI",
+        "vendor_id": 1,
+        "quota_type": 0,
+        "model_ratio": 37.5,
+        "model_price": 0,
+        "audio_duration_price": 0,
+        "owner_by": "",
+        "completion_ratio": 6,
+        "supports_cache_read": false,
+        "cache_ratio": 0,
+        "supports_cache_creation": false,
+        "cache_creation_ratio": 0,
+        "enable_groups": [
+          "OpenAI · image",
+          "OpenAI · 企业专属",
+          "OpenAI · 优质",
+          "OpenAI · 优质（第三方）",
+          "OpenAI · 特价（第三方）",
+          "企业专属",
+          "测试",
+          "测试勿选"
+        ],
+        "supported_endpoint_types": [
+          "openai"
+        ],
+        "billing_mode": "tiered_expr",
+        "billing_expr": "len <= 272000 ? tier(\"base\", p * 25 + c * 150 + cr * 2.5 + cc * 31.25) : tier(\"第2档\", p * 50 + c * 225 + cr * 5 + cc * 62.5)"
+      },
+      {
+        "model_name": "claude-opus-5",
+        "vendor_id": 2,
+        "quota_type": 0,
+        "model_ratio": 15,
+        "model_price": 0,
+        "audio_duration_price": 0,
+        "owner_by": "",
+        "completion_ratio": 5,
+        "supports_cache_read": true,
+        "cache_ratio": 0.1,
+        "supports_cache_creation": true,
+        "cache_creation_ratio": 1.25,
+        "enable_groups": [
+          "Claude · 优质（第三方）",
+          "企业专属",
+          "claude",
+          "Claude · 企业专属",
+          "Claude · 优质"
+        ],
+        "supported_endpoint_types": [
+          "anthropic",
+          "openai"
+        ]
+      },
+      {
+        "model_name": "THUDM/GLM-4-9B-0414",
+        "vendor_id": 18,
+        "quota_type": 0,
+        "model_ratio": 0.5,
+        "model_price": 0,
+        "audio_duration_price": 0,
+        "owner_by": "",
+        "completion_ratio": 3,
+        "supports_cache_read": false,
+        "cache_ratio": 0,
+        "supports_cache_creation": false,
+        "cache_creation_ratio": 0,
+        "enable_groups": [
+          "default"
+        ],
+        "supported_endpoint_types": [
+          "openai"
+        ]
+      },
+      {
+        "model_name": "gemini-3.1-pro-low",
+        "vendor_id": 8,
+        "quota_type": 0,
+        "model_ratio": 8,
+        "model_price": 0,
+        "audio_duration_price": 0,
+        "owner_by": "",
+        "completion_ratio": 4.5,
+        "supports_cache_read": false,
+        "cache_ratio": 0,
+        "supports_cache_creation": false,
+        "cache_creation_ratio": 0,
+        "enable_groups": [
+          "gemini",
+          "Gemini · 优质（第三方）",
+          "土豪组"
+        ],
+        "supported_endpoint_types": [
+          "gemini",
+          "openai"
+        ]
+      },
+      {
+        "model_name": "gemini-3.6-flash",
+        "vendor_id": 8,
+        "quota_type": 0,
+        "model_ratio": 3.75,
+        "model_price": 0,
+        "audio_duration_price": 0,
+        "owner_by": "",
+        "completion_ratio": 5,
+        "supports_cache_read": false,
+        "cache_ratio": 0,
+        "supports_cache_creation": false,
+        "cache_creation_ratio": 0,
+        "enable_groups": [
+          "Gemini · 企业专属",
+          "Gemini · 优质",
+          "Gemini · 优质（第三方）"
+        ],
+        "supported_endpoint_types": [
+          "gemini",
+          "openai"
+        ]
+      },
+      {
+        "model_name": "claude-mythos-5-1",
+        "vendor_id": 2,
+        "quota_type": 0,
+        "model_ratio": 30,
+        "model_price": 0,
+        "audio_duration_price": 0,
+        "owner_by": "",
+        "completion_ratio": 5,
+        "supports_cache_read": true,
+        "cache_ratio": 0.025,
+        "supports_cache_creation": true,
+        "cache_creation_ratio": 1.2,
+        "enable_groups": [
+          "Claude · 优质",
+          "Claude · 优质（第三方）",
+          "企业专属",
+          "claude",
+          "Claude · 企业专属"
+        ],
+        "supported_endpoint_types": [
+          "anthropic",
+          "openai"
+        ]
+      },
+      {
+        "model_name": "mimo-v2.5-asr",
+        "vendor_id": 20,
+        "quota_type": 2,
+        "model_ratio": 0,
+        "model_price": 0,
+        "audio_duration_price": 2.5,
+        "owner_by": "",
+        "completion_ratio": 0,
+        "supports_cache_read": false,
+        "cache_ratio": 0,
+        "supports_cache_creation": false,
+        "cache_creation_ratio": 0,
+        "enable_groups": [
+          "default",
+          "MiMo · 企业专属",
+          "MiMo · 优质",
+          "企业专属"
+        ],
+        "supported_endpoint_types": [
+          "openai"
+        ]
+      },
+      {
+        "model_name": "gemini-3-flash",
+        "vendor_id": 8,
+        "quota_type": 0,
+        "model_ratio": 1,
+        "model_price": 0,
+        "audio_duration_price": 0,
+        "owner_by": "",
+        "completion_ratio": 6,
+        "supports_cache_read": true,
+        "cache_ratio": 0.1,
+        "supports_cache_creation": false,
+        "cache_creation_ratio": 0,
+        "enable_groups": [
+          "gemini",
+          "Gemini · 优质（第三方）",
+          "土豪组"
+        ],
+        "supported_endpoint_types": [
+          "gemini",
+          "openai"
+        ]
+      },
+      {
+        "model_name": "gemini-3-pro-image-preview",
+        "vendor_id": 8,
+        "quota_type": 1,
+        "model_ratio": 0,
+        "model_price": 5,
+        "audio_duration_price": 0,
+        "owner_by": "",
+        "completion_ratio": 0,
+        "supports_cache_read": false,
+        "cache_ratio": 0,
+        "supports_cache_creation": false,
+        "cache_creation_ratio": 0,
+        "enable_groups": [
+          "Gemini · 优质（第三方）",
+          "gemini",
+          "Gemini · 企业专属",
+          "Gemini · 优质"
+        ],
+        "supported_endpoint_types": [
+          "gemini",
+          "openai"
+        ]
+      },
+      {
+        "model_name": "gemini-3.1-flash-image-preview",
+        "vendor_id": 8,
+        "quota_type": 1,
+        "model_ratio": 0,
+        "model_price": 2,
+        "audio_duration_price": 0,
+        "owner_by": "",
+        "completion_ratio": 0,
+        "supports_cache_read": false,
+        "cache_ratio": 0,
+        "supports_cache_creation": false,
+        "cache_creation_ratio": 0,
+        "enable_groups": [
+          "gemini",
+          "Gemini · 企业专属",
+          "Gemini · 优质",
+          "Gemini · 优质（第三方）"
+        ],
+        "supported_endpoint_types": [
+          "gemini",
+          "openai"
+        ]
+      },
+      {
+        "model_name": "gemini-3.8-flash",
+        "vendor_id": 8,
+        "quota_type": 0,
+        "model_ratio": 3.75,
+        "model_price": 0,
+        "audio_duration_price": 0,
+        "owner_by": "",
+        "completion_ratio": 5,
+        "supports_cache_read": false,
+        "cache_ratio": 0,
+        "supports_cache_creation": false,
+        "cache_creation_ratio": 0,
+        "enable_groups": [
+          "Gemini · 优质",
+          "Gemini · 优质（第三方）",
+          "Gemini · 企业专属"
+        ],
+        "supported_endpoint_types": [
+          "gemini",
+          "openai"
+        ]
+      },
+      {
+        "model_name": "deepseek-v4-flash-vision-exp",
+        "vendor_id": 15,
+        "quota_type": 0,
+        "model_ratio": 37.5,
+        "model_price": 0,
+        "audio_duration_price": 0,
+        "owner_by": "",
+        "completion_ratio": 1,
+        "supports_cache_read": false,
+        "cache_ratio": 0,
+        "supports_cache_creation": false,
+        "cache_creation_ratio": 0,
+        "enable_groups": [
+          "Deepseek · 企业专属",
+          "Deepseek · 优质",
+          "企业专属",
+          "官方渠道"
+        ],
+        "supported_endpoint_types": [
+          "openai"
+        ],
+        "billing_mode": "tiered_expr",
+        "billing_expr": "(\n  weekday(\"Asia/Shanghai\") >= 1 &&\n  weekday(\"Asia/Shanghai\") <= 5 &&\n  (\n    (hour(\"Asia/Shanghai\") >= 9 && hour(\"Asia/Shanghai\") < 12) ||\n    (hour(\"Asia/Shanghai\") >= 14 && hour(\"Asia/Shanghai\") < 18)\n  )\n)\n? tier(\"峰时\", p * 15 + c * 45 + cr * 0.5)\n: tier(\"谷时\", p * 7.5 + c * 22.5 + cr * 0.25)"
+      },
+      {
+        "model_name": "deepseek-v4-pro",
+        "vendor_id": 15,
+        "quota_type": 0,
+        "model_ratio": 37.5,
+        "model_price": 0,
+        "audio_duration_price": 0,
+        "owner_by": "",
+        "completion_ratio": 1,
+        "supports_cache_read": false,
+        "cache_ratio": 0,
+        "supports_cache_creation": false,
+        "cache_creation_ratio": 0,
+        "enable_groups": [
+          "官方渠道",
+          "Deepseek · 企业专属",
+          "Deepseek · 优质",
+          "Deepseek · 优质（第三方）",
+          "企业专属"
+        ],
+        "supported_endpoint_types": [
+          "openai"
+        ],
+        "billing_mode": "tiered_expr",
+        "billing_expr": "(\n  weekday(\"Asia/Shanghai\") >= 1 &&\n  weekday(\"Asia/Shanghai\") <= 5 &&\n  (\n    (hour(\"Asia/Shanghai\") >= 9 && hour(\"Asia/Shanghai\") < 12) ||\n    (hour(\"Asia/Shanghai\") >= 14 && hour(\"Asia/Shanghai\") < 18)\n  )\n)\n? tier(\"峰时\", p * 10 + c * 40 + cr * 0.2)\n: tier(\"谷时\", p * 5 + c * 20 + cr * 0.1)"
+      },
+      {
+        "model_name": "gpt-5.6-luna",
+        "vendor_id": 1,
+        "quota_type": 0,
+        "model_ratio": 37.5,
+        "model_price": 0,
+        "audio_duration_price": 0,
+        "owner_by": "",
+        "completion_ratio": 6,
+        "supports_cache_read": false,
+        "cache_ratio": 0,
+        "supports_cache_creation": false,
+        "cache_creation_ratio": 0,
+        "enable_groups": [
+          "OpenAI · image",
+          "OpenAI · 企业专属",
+          "OpenAI · 优质",
+          "OpenAI · 优质（第三方）",
+          "OpenAI · 特价（第三方）",
+          "企业专属",
+          "测试勿选"
+        ],
+        "supported_endpoint_types": [
+          "openai"
+        ],
+        "billing_mode": "tiered_expr",
+        "billing_expr": "len <= 200000 ? tier(\"base\", p * 3 + c * 18 + cr * 0.3 + cc * 3.75) : tier(\"第2档\", p * 6 + c * 27 + cr * 0.6 + cc * 7.5)"
+      },
+      {
+        "model_name": "gpt-5.6-terra",
+        "vendor_id": 1,
+        "quota_type": 0,
+        "model_ratio": 37.5,
+        "model_price": 0,
+        "audio_duration_price": 0,
+        "owner_by": "",
+        "completion_ratio": 6,
+        "supports_cache_read": false,
+        "cache_ratio": 0,
+        "supports_cache_creation": false,
+        "cache_creation_ratio": 0,
+        "enable_groups": [
+          "OpenAI · 企业专属",
+          "OpenAI · 优质",
+          "OpenAI · 优质（第三方）",
+          "OpenAI · 特价（第三方）",
+          "企业专属",
+          "测试",
+          "测试勿选",
+          "OpenAI · image"
+        ],
+        "supported_endpoint_types": [
+          "openai"
+        ],
+        "billing_mode": "tiered_expr",
+        "billing_expr": "len <= 272000 ? tier(\"base\", p * 10 + c * 60 + cr * 1 + cc * 12.5) : tier(\"第2档\", p * 20 + c * 90 + cr * 2 + cc * 25)"
+      },
+      {
+        "model_name": "codex-auto-review",
+        "quota_type": 0,
+        "model_ratio": 2.8,
+        "model_price": 0,
+        "audio_duration_price": 0,
+        "owner_by": "",
+        "completion_ratio": 8,
+        "supports_cache_read": false,
+        "cache_ratio": 0,
+        "supports_cache_creation": false,
+        "cache_creation_ratio": 0,
+        "enable_groups": [
+          "OpenAI · image",
+          "OpenAI · 企业专属",
+          "OpenAI · 优质",
+          "OpenAI · 优质（第三方）",
+          "企业专属",
+          "测试"
+        ],
+        "supported_endpoint_types": [
+          "openai"
+        ]
+      },
+      {
+        "model_name": "deepseek-v4.1-flash-expires-on-0910",
+        "vendor_id": 15,
+        "quota_type": 0,
+        "model_ratio": 37.5,
+        "model_price": 0,
+        "audio_duration_price": 0,
+        "owner_by": "",
+        "completion_ratio": 1,
+        "supports_cache_read": false,
+        "cache_ratio": 0,
+        "supports_cache_creation": false,
+        "cache_creation_ratio": 0,
+        "enable_groups": [
+          "Deepseek · 企业专属",
+          "Deepseek · 优质",
+          "企业专属",
+          "官方渠道"
+        ],
+        "supported_endpoint_types": [
+          "openai"
+        ],
+        "billing_mode": "tiered_expr",
+        "billing_expr": "(\n  weekday(\"Asia/Shanghai\") >= 1 &&\n  weekday(\"Asia/Shanghai\") <= 5 &&\n  (\n    (hour(\"Asia/Shanghai\") >= 9 && hour(\"Asia/Shanghai\") < 12) ||\n    (hour(\"Asia/Shanghai\") >= 14 && hour(\"Asia/Shanghai\") < 18)\n  )\n)\n? tier(\"峰时\", p * 10 + c * 40 + cr * 0.2)\n: tier(\"谷时\", p * 5 + c * 20 + cr * 0.1)"
+      },
+      {
+        "model_name": "deepseek-ai/DeepSeek-R1-0528-Qwen3-8B",
+        "vendor_id": 16,
+        "quota_type": 0,
+        "model_ratio": 0.5,
+        "model_price": 0,
+        "audio_duration_price": 0,
+        "owner_by": "",
+        "completion_ratio": 3,
+        "supports_cache_read": false,
+        "cache_ratio": 0,
+        "supports_cache_creation": false,
+        "cache_creation_ratio": 0,
+        "enable_groups": [
+          "default"
+        ],
+        "supported_endpoint_types": [
+          "openai"
+        ]
+      },
+      {
+        "model_name": "mimo-v2.5-pro",
+        "vendor_id": 20,
+        "quota_type": 0,
+        "model_ratio": 7.5,
+        "model_price": 0,
+        "audio_duration_price": 0,
+        "owner_by": "",
+        "completion_ratio": 2,
+        "supports_cache_read": true,
+        "cache_ratio": 0.0084,
+        "supports_cache_creation": true,
+        "cache_creation_ratio": 0,
+        "enable_groups": [
+          "default",
+          "MiMo · 企业专属",
+          "MiMo · 优质",
+          "MiMo · 优质（第三方）",
+          "企业专属"
+        ],
+        "supported_endpoint_types": [
+          "openai"
+        ]
+      },
+      {
+        "model_name": "mimo-v2.5-tts-voicedesign",
+        "vendor_id": 20,
+        "quota_type": 0,
+        "model_ratio": 0,
+        "model_price": 0,
+        "audio_duration_price": 0,
+        "owner_by": "",
+        "completion_ratio": 1,
+        "supports_cache_read": false,
+        "cache_ratio": 0,
+        "supports_cache_creation": false,
+        "cache_creation_ratio": 0,
+        "enable_groups": [
+          "default",
+          "MiMo · 企业专属",
+          "MiMo · 优质",
+          "企业专属"
+        ],
+        "supported_endpoint_types": [
+          "openai"
+        ]
+      },
+      {
+        "model_name": "k3",
+        "vendor_id": 19,
+        "quota_type": 0,
+        "model_ratio": 10,
+        "model_price": 0,
+        "audio_duration_price": 0,
+        "owner_by": "",
+        "completion_ratio": 5,
+        "supports_cache_read": true,
+        "cache_ratio": 0.1,
+        "supports_cache_creation": true,
+        "cache_creation_ratio": 1.25,
+        "enable_groups": [
+          "Kimi · 企业专属",
+          "Kimi · 优质",
+          "Kimi · 优质（第三方）",
+          "企业专属"
+        ],
+        "supported_endpoint_types": [
+          "openai"
+        ]
+      },
+      {
+        "model_name": "gpt-5.4",
+        "description": "GPT-5.4 is an AI model provided by vivgrid.",
+        "tags": "Reasoning,Tools,Files,Vision,400K",
+        "vendor_id": 1,
+        "quota_type": 0,
+        "model_ratio": 6.25,
+        "model_price": 0,
+        "audio_duration_price": 0,
+        "owner_by": "",
+        "completion_ratio": 6,
+        "supports_cache_read": true,
+        "cache_ratio": 0.1,
+        "supports_cache_creation": true,
+        "cache_creation_ratio": 1.2,
+        "enable_groups": [
+          "OpenAI · 特价（第三方）"
+        ],
+        "supported_endpoint_types": [
+          "openai"
+        ]
+      },
+      {
+        "model_name": "deepseek-flash",
+        "vendor_id": 15,
+        "quota_type": 0,
+        "model_ratio": 37.5,
+        "model_price": 0,
+        "audio_duration_price": 0,
+        "owner_by": "",
+        "completion_ratio": 1,
+        "supports_cache_read": false,
+        "cache_ratio": 0,
+        "supports_cache_creation": false,
+        "cache_creation_ratio": 0,
+        "enable_groups": [
+          "官方渠道",
+          "Deepseek · 企业专属",
+          "Deepseek · 优质",
+          "企业专属"
+        ],
+        "supported_endpoint_types": [
+          "openai"
+        ],
+        "billing_mode": "tiered_expr",
+        "billing_expr": "(\n  weekday(\"Asia/Shanghai\") >= 1 &&\n  weekday(\"Asia/Shanghai\") <= 5 &&\n  (\n    (hour(\"Asia/Shanghai\") >= 9 && hour(\"Asia/Shanghai\") < 12) ||\n    (hour(\"Asia/Shanghai\") >= 14 && hour(\"Asia/Shanghai\") < 18)\n  )\n)\n? tier(\"峰时\", p * 10 + c * 40 + cr * 0.2)\n: tier(\"谷时\", p * 5 + c * 20 + cr * 0.1)"
+      },
+      {
+        "model_name": "grok-4.6",
+        "vendor_id": 9,
+        "quota_type": 0,
+        "model_ratio": 5,
+        "model_price": 0,
+        "audio_duration_price": 0,
+        "owner_by": "",
+        "completion_ratio": 3,
+        "supports_cache_read": true,
+        "cache_ratio": 0.25,
+        "supports_cache_creation": false,
+        "cache_creation_ratio": 0,
+        "enable_groups": [
+          "default",
+          "Grok · 企业专属",
+          "Grok · 优质",
+          "Grok · 优质(第三方）"
+        ],
+        "supported_endpoint_types": [
+          "openai",
+          "openai-response"
+        ]
+      },
+      {
+        "model_name": "Kwai-Kolors/Kolors",
+        "quota_type": 1,
+        "model_ratio": 0,
+        "model_price": 0.1,
+        "audio_duration_price": 0,
+        "owner_by": "",
+        "completion_ratio": 0,
+        "supports_cache_read": false,
+        "cache_ratio": 0,
+        "supports_cache_creation": false,
+        "cache_creation_ratio": 0,
+        "enable_groups": [
+          "default"
+        ],
+        "supported_endpoint_types": [
+          "openai"
+        ]
+      },
+      {
+        "model_name": "tencent/Hunyuan-MT-7B",
+        "vendor_id": 17,
+        "quota_type": 0,
+        "model_ratio": 0.5,
+        "model_price": 0,
+        "audio_duration_price": 0,
+        "owner_by": "",
+        "completion_ratio": 3,
+        "supports_cache_read": false,
+        "cache_ratio": 0,
+        "supports_cache_creation": false,
+        "cache_creation_ratio": 0,
+        "enable_groups": [
+          "default"
+        ],
+        "supported_endpoint_types": [
+          "openai"
+        ]
+      },
+      {
+        "model_name": "gemini-3.5-flash",
+        "vendor_id": 8,
+        "quota_type": 0,
+        "model_ratio": 6.5,
+        "model_price": 0,
+        "audio_duration_price": 0,
+        "owner_by": "",
+        "completion_ratio": 16.923076923077,
+        "supports_cache_read": false,
+        "cache_ratio": 0,
+        "supports_cache_creation": false,
+        "cache_creation_ratio": 0,
+        "enable_groups": [
+          "gemini",
+          "Gemini · 企业专属",
+          "Gemini · 优质",
+          "Gemini · 优质（第三方）"
+        ],
+        "supported_endpoint_types": [
+          "gemini",
+          "openai"
+        ]
+      },
+      {
+        "model_name": "claude-opus-4-8",
+        "vendor_id": 2,
+        "quota_type": 0,
+        "model_ratio": 15,
+        "model_price": 0,
+        "audio_duration_price": 0,
+        "owner_by": "",
+        "completion_ratio": 5,
+        "supports_cache_read": true,
+        "cache_ratio": 0.1,
+        "supports_cache_creation": true,
+        "cache_creation_ratio": 1.25,
+        "enable_groups": [
+          "claude",
+          "Claude · 企业专属",
+          "Claude · 优质",
+          "Claude · 优质（第三方）",
+          "Claude · 标准（第三方）",
+          "企业专属"
+        ],
+        "supported_endpoint_types": [
+          "anthropic",
+          "openai"
+        ]
+      },
+      {
+        "model_name": "grok-4.3",
+        "vendor_id": 9,
+        "quota_type": 0,
+        "model_ratio": 6.25,
+        "model_price": 0,
+        "audio_duration_price": 0,
+        "owner_by": "",
+        "completion_ratio": 2,
+        "supports_cache_read": false,
+        "cache_ratio": 0,
+        "supports_cache_creation": false,
+        "cache_creation_ratio": 0,
+        "enable_groups": [
+          "default"
+        ],
+        "supported_endpoint_types": [
+          "openai",
+          "openai-response"
+        ]
+      },
+      {
+        "model_name": "grok-imagine-image",
+        "vendor_id": 9,
+        "quota_type": 1,
+        "model_ratio": 0,
+        "model_price": 2,
+        "audio_duration_price": 0,
+        "owner_by": "",
+        "completion_ratio": 0,
+        "supports_cache_read": false,
+        "cache_ratio": 0,
+        "supports_cache_creation": false,
+        "cache_creation_ratio": 0,
+        "enable_groups": [
+          "default",
+          "Grok · 优质"
+        ],
+        "supported_endpoint_types": [
+          "image-generation",
+          "openai",
+          "openai-response"
+        ]
+      },
+      {
+        "model_name": "mimo-v2.5-tts-voiceclone",
+        "vendor_id": 20,
+        "quota_type": 0,
+        "model_ratio": 0,
+        "model_price": 0,
+        "audio_duration_price": 0,
+        "owner_by": "",
+        "completion_ratio": 1,
+        "supports_cache_read": false,
+        "cache_ratio": 0,
+        "supports_cache_creation": false,
+        "cache_creation_ratio": 0,
+        "enable_groups": [
+          "default",
+          "MiMo · 企业专属",
+          "MiMo · 优质",
+          "企业专属"
+        ],
+        "supported_endpoint_types": [
+          "openai"
+        ]
+      },
+      {
+        "model_name": "gemini-3.7-flash",
+        "vendor_id": 8,
+        "quota_type": 0,
+        "model_ratio": 3.75,
+        "model_price": 0,
+        "audio_duration_price": 0,
+        "owner_by": "",
+        "completion_ratio": 5,
+        "supports_cache_read": false,
+        "cache_ratio": 0,
+        "supports_cache_creation": false,
+        "cache_creation_ratio": 0,
+        "enable_groups": [
+          "Gemini · 优质",
+          "Gemini · 优质（第三方）",
+          "Gemini · 企业专属"
+        ],
+        "supported_endpoint_types": [
+          "gemini",
+          "openai"
+        ]
+      },
+      {
+        "model_name": "PaddlePaddle/PaddleOCR-VL-1.5",
+        "quota_type": 0,
+        "model_ratio": 0.5,
+        "model_price": 0,
+        "audio_duration_price": 0,
+        "owner_by": "",
+        "completion_ratio": 3,
+        "supports_cache_read": false,
+        "cache_ratio": 0,
+        "supports_cache_creation": false,
+        "cache_creation_ratio": 0,
+        "enable_groups": [
+          "default"
+        ],
+        "supported_endpoint_types": [
+          "openai"
+        ]
+      },
+      {
+        "model_name": "kimi-k2.5",
+        "vendor_id": 19,
+        "quota_type": 0,
+        "model_ratio": 2,
+        "model_price": 0,
+        "audio_duration_price": 0,
+        "owner_by": "",
+        "completion_ratio": 5,
+        "supports_cache_read": true,
+        "cache_ratio": 0.1675,
+        "supports_cache_creation": false,
+        "cache_creation_ratio": 0,
+        "enable_groups": [
+          "Kimi · 企业专属",
+          "Kimi · 优质",
+          "Kimi · 优质（第三方）",
+          "企业专属"
+        ],
+        "supported_endpoint_types": [
+          "openai"
+        ]
+      },
+      {
+        "model_name": "kimi-k2.6",
+        "vendor_id": 19,
+        "quota_type": 0,
+        "model_ratio": 3.17,
+        "model_price": 0,
+        "audio_duration_price": 0,
+        "owner_by": "",
+        "completion_ratio": 4.206624605678,
+        "supports_cache_read": true,
+        "cache_ratio": 0.168769716088,
+        "supports_cache_creation": false,
+        "cache_creation_ratio": 0,
+        "enable_groups": [
+          "Kimi · 优质（第三方）",
+          "企业专属",
+          "Kimi · 企业专属",
+          "Kimi · 优质"
+        ],
+        "supported_endpoint_types": [
+          "openai"
+        ]
+      },
+      {
+        "model_name": "mimo-v2.5",
+        "vendor_id": 20,
+        "quota_type": 0,
+        "model_ratio": 2.5,
+        "model_price": 0,
+        "audio_duration_price": 0,
+        "owner_by": "",
+        "completion_ratio": 2,
+        "supports_cache_read": true,
+        "cache_ratio": 0.02,
+        "supports_cache_creation": true,
+        "cache_creation_ratio": 0,
+        "enable_groups": [
+          "MiMo · 优质（第三方）",
+          "企业专属",
+          "default",
+          "MiMo · 企业专属",
+          "MiMo · 优质"
+        ],
+        "supported_endpoint_types": [
+          "openai"
+        ]
+      },
+      {
+        "model_name": "Qwen/Qwen3-8B",
+        "vendor_id": 16,
+        "quota_type": 0,
+        "model_ratio": 0.5,
+        "model_price": 0,
+        "audio_duration_price": 0,
+        "owner_by": "",
+        "completion_ratio": 3,
+        "supports_cache_read": false,
+        "cache_ratio": 0,
+        "supports_cache_creation": false,
+        "cache_creation_ratio": 0,
+        "enable_groups": [
+          "default"
+        ],
+        "supported_endpoint_types": [
+          "openai"
+        ]
+      },
+      {
+        "model_name": "kimi-k2.7-code",
+        "vendor_id": 19,
+        "quota_type": 0,
+        "model_ratio": 3.17,
+        "model_price": 0,
+        "audio_duration_price": 0,
+        "owner_by": "",
+        "completion_ratio": 4.206624605678,
+        "supports_cache_read": true,
+        "cache_ratio": 0.200315457413,
+        "supports_cache_creation": false,
+        "cache_creation_ratio": 0,
+        "enable_groups": [
+          "Kimi · 企业专属",
+          "Kimi · 优质",
+          "Kimi · 优质（第三方）",
+          "企业专属"
+        ],
+        "supported_endpoint_types": [
+          "openai"
+        ]
+      },
+      {
+        "model_name": "kimi-k2.7-code-highspeed",
+        "vendor_id": 19,
+        "quota_type": 0,
+        "model_ratio": 6.335,
+        "model_price": 0,
+        "audio_duration_price": 0,
+        "owner_by": "",
+        "completion_ratio": 4.209155485399,
+        "supports_cache_read": true,
+        "cache_ratio": 0.199684293607,
+        "supports_cache_creation": false,
+        "cache_creation_ratio": 0,
+        "enable_groups": [
+          "Kimi · 企业专属",
+          "Kimi · 优质",
+          "Kimi · 优质（第三方）",
+          "企业专属"
+        ],
+        "supported_endpoint_types": [
+          "openai"
+        ]
+      },
+      {
+        "model_name": "gpt-6-astra",
+        "vendor_id": 1,
+        "quota_type": 0,
+        "model_ratio": 37.5,
+        "model_price": 0,
+        "audio_duration_price": 0,
+        "owner_by": "",
+        "completion_ratio": 2,
+        "supports_cache_read": false,
+        "cache_ratio": 0,
+        "supports_cache_creation": false,
+        "cache_creation_ratio": 0,
+        "enable_groups": [
+          "测试",
+          "测试勿选",
+          "OpenAI · image",
+          "OpenAI · 企业专属",
+          "OpenAI · 优质",
+          "OpenAI · 优质（第三方）",
+          "OpenAI · 特价（第三方）",
+          "企业专属"
+        ],
+        "supported_endpoint_types": [
+          "openai"
+        ],
+        "billing_mode": "tiered_expr",
+        "billing_expr": "len <= 272000\n? tier(\"标准上下文\", p * 50 + c * 250 + cr * 5 + cc * 62.5)\n: tier(\"长上下文\", p * 100 + c * 375 + cr * 10 + cc * 125)"
+      },
+      {
+        "model_name": "claude-opus-4-7",
+        "vendor_id": 2,
+        "quota_type": 0,
+        "model_ratio": 15,
+        "model_price": 0,
+        "audio_duration_price": 0,
+        "owner_by": "",
+        "completion_ratio": 5,
+        "supports_cache_read": true,
+        "cache_ratio": 0.1,
+        "supports_cache_creation": true,
+        "cache_creation_ratio": 1.25,
+        "enable_groups": [
+          "claude",
+          "Claude · 企业专属",
+          "Claude · 优质",
+          "Claude · 优质（第三方）",
+          "企业专属"
+        ],
+        "supported_endpoint_types": [
+          "anthropic",
+          "openai"
+        ]
+      }
+    ],
+    "group_ratio": {
+      "Claude · 企业专属": 3,
+      "Claude · 优质": 1.6,
+      "Claude · 优质（第三方）": 1.2,
+      "Claude · 标准（第三方）": 0.5,
+      "Claude · 特价（第三方）": 0.3,
+      "Deepseek · 企业专属": 2,
+      "Deepseek · 优质": 1,
+      "Deepseek · 优质（第三方）": 0.8,
+      "Gemini · 企业专属": 2,
+      "Gemini · 优质": 1,
+      "Gemini · 优质（第三方）": 1,
+      "Gemini · 特价（第三方）": 1,
+      "Grok · 企业专属": 1,
+      "Grok · 优质": 0.35,
+      "Grok · 优质(第三方）": 1,
+      "Kimi · 企业专属": 2,
+      "Kimi · 优质": 1,
+      "Kimi · 优质（第三方）": 1,
+      "MiMo · 企业专属": 1,
+      "MiMo · 优质": 1,
+      "MiMo · 优质（第三方）": 0.8,
+      "OpenAI · image": 0.6,
+      "OpenAI · 企业专属": 1,
+      "OpenAI · 优质": 0.45,
+      "OpenAI · 优质（第三方）": 0.45,
+      "OpenAI · 特价（第三方）": 0.25,
+      "gemini": 1,
+      "企业专属": 3,
+      "测试": 3,
+      "测试勿选": 2
+    },
+    "usable_group": {
+      "Claude · 企业专属": "企业专属稳定渠道",
+      "Claude · 优质": "满血4.8，自建max号池",
+      "Claude · 优质（第三方）": "优质分组（第三方）",
+      "Claude · 标准（第三方）": "可用fable5",
+      "Claude · 特价（第三方）": "第三方claude  kiro高缓存分组",
+      "Deepseek · 企业专属": "企业专属",
+      "Deepseek · 优质": "优质官方",
+      "Deepseek · 优质（第三方）": "优质第三方",
+      "Gemini · 企业专属": "稳定",
+      "Gemini · 优质": "优质官方",
+      "Gemini · 优质（第三方）": "优质第三方",
+      "Gemini · 特价（第三方）": "特价第三方",
+      "Grok · 企业专属": "企业专属",
+      "Grok · 优质": "优质官方",
+      "Grok · 优质(第三方）": "优质第三方",
+      "Kimi · 企业专属": "企业专属",
+      "Kimi · 优质": "优质官方",
+      "Kimi · 优质（第三方）": "优质第三方",
+      "MiMo · 企业专属": "企业专属，超级稳",
+      "MiMo · 优质": "优质官方",
+      "MiMo · 优质（第三方）": "优质第三方",
+      "OpenAI · image": "生图",
+      "OpenAI · 企业专属": "企业专属稳定渠道",
+      "OpenAI · 优质": "满血pro推荐使用",
+      "OpenAI · 优质（第三方）": "优质分组",
+      "OpenAI · 特价（第三方）": "不稳定就用优质",
+      "gemini": "使用gemini选择该分组",
+      "企业专属": "超级稳定",
+      "测试": "ceshi",
+      "测试勿选": "测试"
+    },
+    "time_ratio": {}
+  },
+  "status": {
+    "quota_display_type": "CUSTOM",
+    "custom_currency_symbol": "⚡️",
+    "custom_currency_exchange_rate": 1,
+    "quota_per_unit": 500000
+  }
+}

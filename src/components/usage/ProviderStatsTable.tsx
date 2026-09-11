@@ -8,7 +8,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { useProviderStats } from "@/lib/query/usage";
-import { fmtUsd } from "./format";
+import { fmtCredits } from "./format";
 import type { UsageRangeSelection } from "@/types/usage";
 
 interface ProviderStatsTableProps {
@@ -74,9 +74,19 @@ export function ProviderStatsTable({
             </TableRow>
           ) : (
             stats?.map((stat) => (
-              <TableRow key={stat.providerId}>
+              <TableRow key={`${stat.appType}:${stat.providerId}`}>
                 <TableCell className="font-medium">
-                  {stat.providerName}
+                  <span
+                    title={
+                      stat.providerId === "_codex_session"
+                        ? t("usage.sessionAttributionHelp")
+                        : undefined
+                    }
+                  >
+                    {stat.providerId === "_codex_session"
+                      ? `${t("usage.codexSessionSource")} · ${t("usage.sessionProviderUnknown")}`
+                      : stat.providerName}
+                  </span>
                 </TableCell>
                 <TableCell className="text-right">
                   {stat.requestCount.toLocaleString()}
@@ -85,7 +95,14 @@ export function ProviderStatsTable({
                   {stat.totalTokens.toLocaleString()}
                 </TableCell>
                 <TableCell className="text-right">
-                  {fmtUsd(stat.totalCost, 4)}
+                  {fmtCredits(stat.totalCost, 4, stat.costSymbol)}
+                  {!!stat.unpricedRequests && (
+                    <div className="text-xs text-muted-foreground">
+                      {t("usage.platformPricing.uncovered", {
+                        count: stat.unpricedRequests,
+                      })}
+                    </div>
+                  )}
                 </TableCell>
                 <TableCell className="text-right">
                   {stat.successRate.toFixed(1)}%

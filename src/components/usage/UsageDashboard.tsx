@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
+import { PlatformPricingPanel } from "./PlatformPricingPanel";
 import { UsageHero } from "./UsageHero";
 import { UsageTrendChart } from "./UsageTrendChart";
 import { RequestLogTable } from "./RequestLogTable";
@@ -396,6 +397,8 @@ export function UsageDashboard({
           </div>
         </div>
       </div>
+
+      <PlatformPricingPanel />
 
       <UsageHero
         range={range}

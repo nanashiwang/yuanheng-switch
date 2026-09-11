@@ -539,7 +539,7 @@ describe("App integration with MSW", { timeout: 15_000 }, () => {
     expect(screen.getByText("账号用量")).toBeInTheDocument();
     expect(screen.getByText("128")).toBeInTheDocument();
     expect(screen.getByText("12.5 万")).toBeInTheDocument();
-    expect(screen.getByText("$3.45")).toBeInTheDocument();
+    expect(screen.getByText("≈ ⚡️3.45")).toBeInTheDocument();
     expect(screen.getByText("42%")).toBeInTheDocument();
   });
 

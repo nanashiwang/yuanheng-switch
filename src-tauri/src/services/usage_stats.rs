@@ -78,6 +78,7 @@ pub struct DailyStats {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ProviderStats {
+    pub app_type: String,
     pub provider_id: String,
     pub provider_name: String,
     pub request_count: u64,
@@ -207,7 +208,7 @@ fn row_to_request_log_detail(row: &rusqlite::Row<'_>) -> rusqlite::Result<Reques
 /// Session logs use placeholder provider_ids (e.g., `_session`, `_<app>_session`)
 /// that don't exist in the providers table — the CASE expression below is the
 /// authoritative mapping from placeholder to readable name.
-fn provider_name_coalesce(log_alias: &str, provider_alias: &str) -> String {
+pub(crate) fn provider_name_coalesce(log_alias: &str, provider_alias: &str) -> String {
     format!(
         "COALESCE({provider_alias}.name, CASE {log_alias}.provider_id \
          WHEN '_session' THEN 'Claude (Session)' \
@@ -244,7 +245,7 @@ fn data_source_expr(log_alias: &str) -> String {
 /// 注意：包裹后该列上的索引在此比较中失效，但这些都是已带时间过滤的聚合扫描，
 /// app_type 本就不是主访问路径，可接受。仅用于读侧；去重匹配（`has_matching_
 /// proxy_usage_log`）与额度检查（`check_provider_limits`）必须保留原始精确比较。
-fn folded_app_type_sql(column: &str) -> String {
+pub(crate) fn folded_app_type_sql(column: &str) -> String {
     format!("CASE WHEN {column} = 'claude-desktop' THEN 'claude' ELSE {column} END")
 }
 
@@ -263,7 +264,7 @@ fn providers_join(log_alias: &str, provider_alias: &str) -> String {
 /// SQL 标量表达式：行的「有效计价模型」—— pricing_model 非空优先，NULL/'' 回落
 /// model。这是 `get_model_stats` 的分组键，也是 Dashboard 模型筛选的匹配口径：
 /// 筛选值来自模型统计列表，两边必须用同一表达式才能选得中。
-fn effective_model_sql(alias: &str) -> String {
+pub(crate) fn effective_model_sql(alias: &str) -> String {
     format!("COALESCE(NULLIF({alias}.pricing_model, ''), {alias}.model)")
 }
 
@@ -1331,6 +1332,7 @@ impl Database {
             };
 
             Ok(ProviderStats {
+                app_type: row.get(1)?,
                 provider_id: row.get(0)?,
                 provider_name: row.get(2)?,
                 request_count: request_count as u64,
@@ -1648,10 +1650,10 @@ impl Database {
         let detail_sql = format!(
             "SELECT l.request_id, l.provider_id, {detail_pname} as provider_name, l.app_type, l.model,
                     l.request_model, l.cost_multiplier,
-                    input_tokens, output_tokens, cache_read_tokens, cache_creation_tokens,
-                    input_cost_usd, output_cost_usd, cache_read_cost_usd, cache_creation_cost_usd, total_cost_usd,
-                    is_streaming, latency_ms, first_token_ms, duration_ms,
-                    status_code, error_message, created_at, l.data_source, l.pricing_model,
+                    l.input_tokens, l.output_tokens, l.cache_read_tokens, l.cache_creation_tokens,
+                    l.input_cost_usd, l.output_cost_usd, l.cache_read_cost_usd, l.cache_creation_cost_usd, l.total_cost_usd,
+                    l.is_streaming, l.latency_ms, l.first_token_ms, l.duration_ms,
+                    l.status_code, l.error_message, l.created_at, l.data_source, l.pricing_model,
                     l.input_token_semantics
              FROM proxy_request_logs l
              LEFT JOIN providers p ON l.provider_id = p.id AND l.app_type = p.app_type
@@ -1773,13 +1775,7 @@ pub struct ProviderLimitStatus {
     pub monthly_exceeded: bool,
 }
 
-#[derive(Clone)]
-struct PricingInfo {
-    input: rust_decimal::Decimal,
-    output: rust_decimal::Decimal,
-    cache_read: rust_decimal::Decimal,
-    cache_creation: rust_decimal::Decimal,
-}
+type PricingInfo = ModelPricing;
 
 impl Database {
     /// Recalculate stored zero-cost usage rows once pricing becomes available.
@@ -1892,7 +1888,7 @@ impl Database {
         // 1. 历史 Codex/Gemini 行只包含 cache read；新 total 行还包含 cache write。
         // 2. Claude/Anthropic 的 input_tokens 已经是 fresh input，不能再次扣减
         // 3. 各项成本是基础成本（不含倍率），倍率只作用于最终总价
-        let cache_inclusive_app = matches!(log.app_type.as_str(), "codex" | "gemini");
+        let cache_inclusive_app = matches!(log.app_type.as_str(), "codex" | "gemini" | "grokbuild");
         let billable_input_tokens =
             if !cache_inclusive_app || log.input_token_semantics == INPUT_TOKEN_SEMANTICS_FRESH {
                 log.input_tokens as u64
@@ -1904,15 +1900,21 @@ impl Database {
                 // v12 and earlier: input included cache reads but excluded cache writes.
                 (log.input_tokens as u64).saturating_sub(log.cache_read_tokens as u64)
             };
-        let input_cost =
-            rust_decimal::Decimal::from(billable_input_tokens) * pricing.input / million;
-        let output_cost =
-            rust_decimal::Decimal::from(log.output_tokens as u64) * pricing.output / million;
+        let prompt_tokens = billable_input_tokens
+            + u64::from(log.cache_read_tokens)
+            + u64::from(log.cache_creation_tokens);
+        let pricing = pricing.for_input_tokens(prompt_tokens);
+        let input_cost = rust_decimal::Decimal::from(billable_input_tokens)
+            * pricing.input_cost_per_million
+            / million;
+        let output_cost = rust_decimal::Decimal::from(log.output_tokens as u64)
+            * pricing.output_cost_per_million
+            / million;
         let cache_read_cost = rust_decimal::Decimal::from(log.cache_read_tokens as u64)
-            * pricing.cache_read
+            * pricing.cache_read_cost_per_million
             / million;
         let cache_creation_cost = rust_decimal::Decimal::from(log.cache_creation_tokens as u64)
-            * pricing.cache_creation
+            * pricing.cache_creation_cost_per_million
             / million;
         // 总成本 = 基础成本之和 × 倍率
         let base_total = input_cost + output_cost + cache_read_cost + cache_creation_cost;
@@ -1960,16 +1962,11 @@ impl Database {
             return Ok(None);
         };
 
-        let pricing = PricingInfo {
-            input: rust_decimal::Decimal::from_str(&input)
-                .map_err(|e| AppError::Database(format!("解析输入价格失败: {e}")))?,
-            output: rust_decimal::Decimal::from_str(&output)
-                .map_err(|e| AppError::Database(format!("解析输出价格失败: {e}")))?,
-            cache_read: rust_decimal::Decimal::from_str(&cache_read)
-                .map_err(|e| AppError::Database(format!("解析缓存读取价格失败: {e}")))?,
-            cache_creation: rust_decimal::Decimal::from_str(&cache_creation)
-                .map_err(|e| AppError::Database(format!("解析缓存写入价格失败: {e}")))?,
-        };
+        let pricing = attach_builtin_pricing_rules(
+            ModelPricing::from_strings(&input, &output, &cache_read, &cache_creation)
+                .map_err(|e| AppError::Database(format!("Invalid model pricing: {e}")))?,
+            model,
+        );
 
         cache.insert(model.to_string(), pricing.clone());
         Ok(Some(pricing))
@@ -2022,8 +2019,33 @@ pub(crate) fn find_model_pricing(conn: &Connection, model_id: &str) -> Option<Mo
         .ok()
         .flatten()
         .and_then(|(input, output, cache_read, cache_creation)| {
-            ModelPricing::from_strings(&input, &output, &cache_read, &cache_creation).ok()
+            ModelPricing::from_strings(&input, &output, &cache_read, &cache_creation)
+                .ok()
+                .map(|pricing| attach_builtin_pricing_rules(pricing, model_id))
         })
+}
+
+/// OpenAI Standard reference rates. Attach the published context tier only
+/// when the complete rate tuple still matches the built-in price; preserve
+/// user-defined prices and the chosen billing-model identity.
+pub(crate) fn attach_builtin_pricing_rules(pricing: ModelPricing, model_id: &str) -> ModelPricing {
+    let astra = model_pricing_candidates(model_id)
+        .iter()
+        .any(|id| id == "gpt-6-astra");
+    let standard = ModelPricing::from_strings("10", "50", "1", "12.5").expect("static pricing");
+    if astra
+        && pricing.input_cost_per_million == standard.input_cost_per_million
+        && pricing.output_cost_per_million == standard.output_cost_per_million
+        && pricing.cache_read_cost_per_million == standard.cache_read_cost_per_million
+        && pricing.cache_creation_cost_per_million == standard.cache_creation_cost_per_million
+    {
+        pricing.with_long_context(
+            272_000,
+            ModelPricing::from_strings("20", "75", "2", "25").expect("static long-context pricing"),
+        )
+    } else {
+        pricing
+    }
 }
 
 pub(crate) fn find_model_pricing_row(
@@ -2417,6 +2439,63 @@ mod tests {
             )",
             [],
         )?;
+        Ok(())
+    }
+
+    #[test]
+    fn astra_missing_prices_are_seeded_and_historical_costs_use_context_tiers(
+    ) -> Result<(), AppError> {
+        let db = Database::memory()?;
+        {
+            let conn = lock_conn!(db.conn);
+            conn.execute(
+                "DELETE FROM model_pricing WHERE model_id = 'gpt-6-astra'",
+                [],
+            )?;
+            for (id, input, cached, output) in [
+                ("astra-short", 225330, 224256, 94),
+                ("astra-long", 272001, 270000, 2),
+            ] {
+                conn.execute("INSERT INTO proxy_request_logs (
+                    request_id, provider_id, app_type, model, request_model, pricing_model,
+                    input_tokens, output_tokens, cache_read_tokens, input_token_semantics,
+                    latency_ms, status_code, created_at, data_source
+                ) VALUES (?1, '_codex_session', 'codex', 'gpt-6-astra', 'gpt-6-astra', 'gpt-6-astra', ?2, ?3, ?4, 1, 0, 200, 1, 'codex_session')",
+                    params![id, input, output, cached])?;
+            }
+            assert!(find_model_pricing_row(&conn, "gpt-6-astra")?.is_none());
+        }
+        db.ensure_model_pricing_seeded()?;
+        assert_eq!(db.backfill_missing_usage_costs_for_model("gpt-6-astra")?, 2);
+        assert_eq!(db.backfill_missing_usage_costs_for_model("gpt-6-astra")?, 0);
+        let conn = lock_conn!(db.conn);
+        for (id, expected) in [("astra-short", "0.239696"), ("astra-long", "0.580170")] {
+            let actual: String = conn.query_row(
+                "SELECT total_cost_usd FROM proxy_request_logs WHERE request_id = ?1",
+                [id],
+                |row| row.get(0),
+            )?;
+            assert_eq!(actual, expected);
+        }
+        assert!(find_model_pricing_row(&conn, "codex-auto-review")?.is_none());
+        Ok(())
+    }
+
+    #[test]
+    fn astra_seed_keeps_user_prices_and_resolves_supported_model_aliases() -> Result<(), AppError> {
+        let db = Database::memory()?;
+        {
+            let conn = lock_conn!(db.conn);
+            let price = find_model_pricing_row(&conn, "OpenAI/GPT-6-Astra@high")?.unwrap();
+            assert_eq!(price, ("10".into(), "50".into(), "1".into(), "12.5".into()));
+            conn.execute("UPDATE model_pricing SET input_cost_per_million = '9' WHERE model_id = 'gpt-6-astra'", [])?;
+        }
+        db.ensure_model_pricing_seeded()?;
+        let conn = lock_conn!(db.conn);
+        assert_eq!(
+            find_model_pricing_row(&conn, "gpt-6-astra")?.unwrap().0,
+            "9"
+        );
         Ok(())
     }
 

@@ -23,6 +23,7 @@ pub struct ModelPricing {
     pub output_cost_per_million: Decimal,
     pub cache_read_cost_per_million: Decimal,
     pub cache_creation_cost_per_million: Decimal,
+    long_context: Option<(u64, Box<ModelPricing>)>,
 }
 
 /// 成本计算器
@@ -74,6 +75,15 @@ impl CostCalculator {
         cost_multiplier: Decimal,
         input_includes_cache_read: bool,
     ) -> CostBreakdown {
+        // Context tiers use the entire prompt, including cache reads/writes.
+        let prompt_tokens = if input_includes_cache_read {
+            u64::from(usage.input_tokens)
+        } else {
+            u64::from(usage.input_tokens)
+                + u64::from(usage.cache_read_tokens)
+                + u64::from(usage.cache_creation_tokens)
+        };
+        let pricing = pricing.for_input_tokens(prompt_tokens);
         let million = Decimal::from(1_000_000);
 
         // OpenAI/Gemini 风格的 input_tokens 包含缓存读取和写入，需要扣除后再按输入价计费；
@@ -132,6 +142,18 @@ impl CostCalculator {
 }
 
 impl ModelPricing {
+    pub(crate) fn with_long_context(mut self, threshold: u64, pricing: ModelPricing) -> Self {
+        self.long_context = Some((threshold, Box::new(pricing)));
+        self
+    }
+
+    pub(crate) fn for_input_tokens(&self, prompt_tokens: u64) -> &Self {
+        match &self.long_context {
+            Some((threshold, pricing)) if prompt_tokens > *threshold => pricing,
+            _ => self,
+        }
+    }
+
     /// 从字符串创建定价信息
     pub fn from_strings(
         input: &str,
@@ -144,6 +166,7 @@ impl ModelPricing {
             output_cost_per_million: Decimal::from_str(output)?,
             cache_read_cost_per_million: Decimal::from_str(cache_read)?,
             cache_creation_cost_per_million: Decimal::from_str(cache_creation)?,
+            long_context: None,
         })
     }
 }
@@ -151,6 +174,73 @@ impl ModelPricing {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn astra_standard_rates_include_cached_prompt_in_context_threshold() {
+        let pricing = crate::services::usage_stats::attach_builtin_pricing_rules(
+            ModelPricing::from_strings("10", "50", "1", "12.5").unwrap(),
+            "OpenAI/GPT-6-Astra@high",
+        );
+        let mut usage = TokenUsage {
+            input_tokens: 272_000,
+            cache_read_tokens: 270_000,
+            output_tokens: 2,
+            ..TokenUsage::default()
+        };
+        let short = CostCalculator::calculate_for_app("codex", &usage, &pricing, Decimal::ONE);
+        assert_eq!(short.total_cost, Decimal::from_str("0.2901").unwrap());
+        usage.input_tokens += 1;
+        let long = CostCalculator::calculate_for_app("codex", &usage, &pricing, Decimal::ONE);
+        assert_eq!(long.total_cost, Decimal::from_str("0.58017").unwrap());
+        // Fresh-input callers must reach the same tier and result.
+        usage.input_tokens -= usage.cache_read_tokens;
+        let fresh = CostCalculator::calculate_for_app("claude", &usage, &pricing, Decimal::ONE);
+        assert_eq!(fresh.total_cost, long.total_cost);
+    }
+
+    #[test]
+    fn astra_custom_prices_and_other_pricing_models_are_not_rewritten() {
+        let usage = TokenUsage {
+            input_tokens: 300_000,
+            ..TokenUsage::default()
+        };
+        for (model, input, expected) in [("gpt-6-astra", "9", "2.7"), ("another-model", "10", "3")]
+        {
+            let pricing = crate::services::usage_stats::attach_builtin_pricing_rules(
+                ModelPricing::from_strings(input, "50", "1", "12.5").unwrap(),
+                model,
+            );
+            assert_eq!(
+                CostCalculator::calculate_for_app("codex", &usage, &pricing, Decimal::ONE)
+                    .total_cost,
+                Decimal::from_str(expected).unwrap()
+            );
+        }
+    }
+
+    #[test]
+    fn astra_cache_writes_and_multiplier_use_the_full_long_context_rates() {
+        let pricing = crate::services::usage_stats::attach_builtin_pricing_rules(
+            ModelPricing::from_strings("10", "50", "1", "12.5").unwrap(),
+            "gpt-6-astra",
+        );
+        let usage = TokenUsage {
+            input_tokens: 300_000,
+            cache_read_tokens: 250_000,
+            cache_creation_tokens: 1_000,
+            output_tokens: 100,
+            ..TokenUsage::default()
+        };
+        let result = CostCalculator::calculate_for_app("codex", &usage, &pricing, Decimal::from(2));
+        assert_eq!(result.input_cost, Decimal::from_str("0.98").unwrap());
+        assert_eq!(result.cache_read_cost, Decimal::from_str("0.5").unwrap());
+        assert_eq!(
+            result.cache_creation_cost,
+            Decimal::from_str("0.025").unwrap()
+        );
+        assert_eq!(result.output_cost, Decimal::from_str("0.0075").unwrap());
+        assert_eq!(result.total_cost, Decimal::from_str("3.025").unwrap());
+    }
 
     #[test]
     fn test_cost_calculation() {

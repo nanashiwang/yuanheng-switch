@@ -21,7 +21,7 @@ import { useProxyStatus } from "@/hooks/useProxyStatus";
 import { useUsageSummary } from "@/lib/query/usage";
 import {
   fmtInt,
-  fmtUsd,
+  fmtCredits,
   formatTokensShort,
   getResolvedLang,
 } from "@/components/usage/format";
@@ -50,7 +50,7 @@ export function DesktopContextPanel({
   className,
   footer,
 }: DesktopContextPanelProps) {
-  const { i18n } = useTranslation();
+  const { t, i18n } = useTranslation();
   const lang = getResolvedLang(i18n);
   const { data: summary } = useUsageSummary({ preset: "today" }, undefined, {
     refetchInterval: 60_000,
@@ -74,9 +74,11 @@ export function DesktopContextPanel({
       icon: Database,
     },
     {
-      label: dt("估算成本"),
+      label: t("usage.referenceCost"),
       value: summary
-        ? dt("约 {{v0}}", { v0: fmtUsd(summary.totalCost, 2) })
+        ? dt("约 {{v0}}", {
+            v0: fmtCredits(summary.totalCost, 2, summary.costSymbol),
+          })
         : "--",
       icon: Coins,
     },

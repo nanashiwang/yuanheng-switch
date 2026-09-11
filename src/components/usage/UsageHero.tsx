@@ -17,7 +17,7 @@ import {
   Zap,
 } from "lucide-react";
 import {
-  fmtUsd,
+  fmtCredits,
   formatTokensShort,
   getResolvedLang,
   parseFiniteNumber,
@@ -83,6 +83,8 @@ function aggregateSummaries(items: UsageSummary[]): UsageSummary {
   let totalRequests = 0;
   let successCount = 0;
   let totalCostNum = 0;
+  let pricedRequests = 0;
+  let unpricedRequests = 0;
   let input = 0;
   let output = 0;
   let cacheCreation = 0;
@@ -91,6 +93,8 @@ function aggregateSummaries(items: UsageSummary[]): UsageSummary {
   for (const s of items) {
     totalRequests += s.totalRequests;
     successCount += Math.round((s.totalRequests * s.successRate) / 100);
+    pricedRequests += s.pricedRequests ?? 0;
+    unpricedRequests += s.unpricedRequests ?? 0;
     totalCostNum += parseFiniteNumber(s.totalCost) ?? 0;
     input += s.totalInputTokens;
     output += s.totalOutputTokens;
@@ -101,7 +105,12 @@ function aggregateSummaries(items: UsageSummary[]): UsageSummary {
   const cacheableInput = input + cacheCreation + cacheRead;
   return {
     totalRequests,
-    totalCost: totalCostNum.toFixed(6),
+    totalCost: items.some((s) => s.totalCost !== null)
+      ? totalCostNum.toFixed(6)
+      : null,
+    pricedRequests,
+    unpricedRequests,
+    costSymbol: items[0]?.costSymbol,
     totalInputTokens: input,
     totalOutputTokens: output,
     totalCacheCreationTokens: cacheCreation,
@@ -298,10 +307,21 @@ export function UsageHero({
                 <div className="w-px h-8 bg-border/60" />
                 <div className="flex flex-col">
                   <span className="text-[10px] text-muted-foreground uppercase tracking-wider font-medium">
-                    {t("usage.totalCost")}
+                    <span title={t("usage.referenceCostHelp")}>
+                      {t("usage.referenceCost")}
+                    </span>
                   </span>
                   <span className="font-semibold text-green-500 text-sm tabular-nums">
-                    {totalCost == null ? "--" : fmtUsd(totalCost, 4)}
+                    {totalCost == null
+                      ? "—"
+                      : fmtCredits(totalCost, 4, summary?.costSymbol)}
+                    {!!summary?.unpricedRequests && (
+                      <span className="ml-2 text-xs text-muted-foreground">
+                        {t("usage.platformPricing.uncovered", {
+                          count: summary.unpricedRequests,
+                        })}
+                      </span>
+                    )}
                   </span>
                 </div>
               </div>

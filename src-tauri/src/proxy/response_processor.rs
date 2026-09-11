@@ -283,7 +283,7 @@ pub async fn handle_non_streaming(
                     false,
                 );
                 log::debug!(
-                    "[{}] 未能解析 usage 信息，跳过记录",
+                    "[{}] 未能解析 usage 信息，保留请求记录但用量未知",
                     parser_config.app_type_str
                 );
             }
@@ -320,6 +320,65 @@ pub async fn handle_non_streaming(
     })
 }
 
+/// Some official Codex responses contain valid SSE but omit Content-Type.
+/// Inspect only a small prefix, then replay every original byte unchanged.
+/// Explicit content types and error responses remain authoritative.
+async fn detect_untyped_sse(
+    response: ProxyResponse,
+    first_byte_timeout: Duration,
+) -> Result<ProxyResponse, ProxyError> {
+    if !response.status().is_success()
+        || response
+            .content_type()
+            .is_some_and(|value| !value.trim().is_empty())
+        || get_content_encoding(response.headers()).is_some()
+    {
+        return Ok(response);
+    }
+    let status = response.status();
+    let mut headers = response.headers().clone();
+    let mut stream = response.bytes_stream();
+    let mut chunks = Vec::new();
+    let mut prefix = Vec::new();
+    let sniff = async {
+        while prefix.len() < 256 && chunks.len() < 32 {
+            let Some(chunk) = stream.next().await else {
+                break;
+            };
+            let chunk =
+                chunk.map_err(|e| ProxyError::Internal(format!("读取响应首包失败: {e}")))?;
+            prefix.extend_from_slice(&chunk[..chunk.len().min(256 - prefix.len())]);
+            chunks.push(chunk);
+            let text = String::from_utf8_lossy(&prefix);
+            let text = text.trim_start_matches('\u{feff}').trim_start();
+            if text.len() >= 6 {
+                break;
+            }
+        }
+        Ok::<(), ProxyError>(())
+    };
+    if first_byte_timeout.is_zero() {
+        sniff.await?;
+    } else {
+        tokio::time::timeout(first_byte_timeout, sniff)
+            .await
+            .map_err(|_| ProxyError::Timeout("response media-type detection timed out".into()))??;
+    }
+    let text = String::from_utf8_lossy(&prefix);
+    let text = text.trim_start_matches('\u{feff}').trim_start();
+    if ["data:", "event:", "id:", "retry:", ":"]
+        .iter()
+        .any(|field| text.starts_with(field))
+    {
+        headers.insert(
+            axum::http::header::CONTENT_TYPE,
+            axum::http::HeaderValue::from_static("text/event-stream; charset=utf-8"),
+        );
+    }
+    let replay = futures::stream::iter(chunks.into_iter().map(Ok)).chain(stream);
+    Ok(ProxyResponse::streamed(status, headers, replay))
+}
+
 /// 通用响应处理入口
 ///
 /// 根据响应类型自动选择流式或非流式处理
@@ -330,6 +389,14 @@ pub async fn process_response(
     parser_config: &UsageParserConfig,
     connection_guard: Option<ActiveConnectionGuard>,
 ) -> Result<Response, ProxyError> {
+    let detection_timeout = if ctx.requested_streaming {
+        ctx.streaming_timeout_config().first_byte_timeout
+    } else if ctx.app_config.auto_failover_enabled {
+        ctx.app_config.non_streaming_timeout as u64
+    } else {
+        0
+    };
+    let response = detect_untyped_sse(response, Duration::from_secs(detection_timeout)).await?;
     if is_sse_response(&response) {
         Ok(handle_streaming(response, ctx, state, parser_config, connection_guard).await)
     } else {
@@ -552,7 +619,7 @@ pub(crate) fn create_usage_collector(
                     )
                     .await;
                 });
-                log::debug!("[{tag}] 流式响应缺少 usage 统计，跳过消费记录");
+                log::debug!("[{tag}] 流式响应缺少 usage 统计，保留请求记录但用量未知");
             }
         },
     ))
@@ -795,6 +862,17 @@ pub fn create_logged_passthrough_stream(
         }
 
         if let Some(c) = collector.take() {
+            // Do not drop valid terminal usage when the upstream ends without
+            // a final blank line. Truncated JSON is ignored, never guessed.
+            for line in buffer.lines() {
+                if let Some(data) = strip_sse_field(line, "data") {
+                    if c.should_collect(data) {
+                        if let Ok(value) = serde_json::from_str::<Value>(data) {
+                            c.push(value).await;
+                        }
+                    }
+                }
+            }
             c.finish().await;
         }
         if let Some(guard) = &mut finish_guard {
@@ -887,6 +965,146 @@ mod tests {
         assert!(formatted.contains("cf-ray=abc123-SJC"), "{formatted}");
         assert!(!formatted.contains("super-secret"), "{formatted}");
         assert!(!formatted.contains("cookie-secret"), "{formatted}");
+    }
+
+    #[tokio::test]
+    async fn untyped_official_sse_replays_bytes_and_records_actual_usage() {
+        for suffix in ["\n\n", ""] {
+            let body = format!(": keepalive\n\nevent: response.completed\ndata: {{\"type\":\"response.completed\",\"response\":{{\"id\":\"resp_test\",\"model\":\"gpt-6-astra\",\"usage\":{{\"input_tokens\":20,\"output_tokens\":5,\"input_tokens_details\":{{\"cached_tokens\":0}}}}}}}}{suffix}");
+            let chunks = body
+                .as_bytes()
+                .chunks(3)
+                .map(|chunk| Ok::<_, std::io::Error>(Bytes::copy_from_slice(chunk)))
+                .collect::<Vec<_>>();
+            let raw = ProxyResponse::streamed(
+                http::StatusCode::OK,
+                HeaderMap::new(),
+                futures::stream::iter(chunks),
+            );
+            let detected = detect_untyped_sse(raw, Duration::from_secs(1))
+                .await
+                .unwrap();
+            assert!(detected.is_sse());
+            let db = Arc::new(Database::memory().unwrap());
+            let log_db = db.clone();
+            let collector = SseUsageCollector::new(
+                std::time::Instant::now(),
+                Some(crate::proxy::handler_config::codex_stream_usage_event_filter),
+                move |events, first_token_ms| {
+                    let usage =
+                        TokenUsage::from_codex_stream_events_auto(&events).expect("terminal usage");
+                    assert_eq!((usage.input_tokens, usage.output_tokens), (20, 5));
+                    super::super::usage::logger::UsageLogger::new(&log_db)
+                        .log_with_calculation(
+                            usage.dedup_request_id(Some(("codex", "codex-official"))),
+                            "codex-official".into(),
+                            "codex".into(),
+                            "gpt-6-astra".into(),
+                            "gpt-6-astra".into(),
+                            "gpt-6-astra".into(),
+                            usage,
+                            rust_decimal::Decimal::ONE,
+                            1,
+                            first_token_ms,
+                            200,
+                            None,
+                            None,
+                            true,
+                        )
+                        .unwrap();
+                },
+            );
+            let stream = create_logged_passthrough_stream(
+                detected.bytes_stream(),
+                "Codex",
+                Some(collector),
+                StreamingTimeoutConfig {
+                    first_byte_timeout: 1,
+                    idle_timeout: 1,
+                },
+                None,
+            );
+            let chunks = stream.collect::<Vec<_>>().await;
+            let replay = chunks
+                .into_iter()
+                .flat_map(|chunk| chunk.unwrap().to_vec())
+                .collect::<Vec<_>>();
+            assert_eq!(replay, body.as_bytes());
+            let conn = db.conn.lock().unwrap();
+            let row = conn.query_row("SELECT provider_id, input_tokens, output_tokens, is_streaming FROM proxy_request_logs", [],
+                |row| Ok((row.get::<_, String>(0)?, row.get::<_, u32>(1)?, row.get::<_, u32>(2)?, row.get::<_, bool>(3)?))).unwrap();
+            assert_eq!(row, ("codex-official".into(), 20, 5, true));
+        }
+    }
+
+    #[tokio::test]
+    async fn untyped_sse_detection_does_not_buffer_until_stream_ends() {
+        let stream =
+            futures::stream::once(async { Ok::<_, std::io::Error>(Bytes::from_static(b"event:")) })
+                .chain(futures::stream::pending());
+        let response = ProxyResponse::streamed(http::StatusCode::OK, HeaderMap::new(), stream);
+        let response = detect_untyped_sse(response, Duration::from_millis(100))
+            .await
+            .unwrap();
+        assert!(response.is_sse());
+        assert_eq!(
+            response.bytes_stream().next().await.unwrap().unwrap(),
+            Bytes::from_static(b"event:")
+        );
+    }
+
+    #[tokio::test]
+    async fn untyped_detection_preserves_json_explicit_types_and_errors() {
+        for (status, content_type, body) in [
+            (
+                http::StatusCode::OK,
+                None,
+                "{\"usage\":{\"input_tokens\":20,\"output_tokens\":5}}",
+            ),
+            (
+                http::StatusCode::OK,
+                Some("application/json"),
+                "event: response.completed\n\n",
+            ),
+            (http::StatusCode::BAD_REQUEST, None, "event: error\n\n"),
+        ] {
+            let mut headers = HeaderMap::new();
+            if let Some(content_type) = content_type {
+                headers.insert("content-type", content_type.parse().unwrap());
+            }
+            let response = detect_untyped_sse(
+                ProxyResponse::buffered(status, headers.clone(), Bytes::from(body)),
+                Duration::from_secs(1),
+            )
+            .await
+            .unwrap();
+            assert_eq!(response.headers(), &headers);
+            let (_, actual_status, bytes) =
+                read_decoded_body(response, "test", Duration::from_secs(1))
+                    .await
+                    .unwrap();
+            assert_eq!(actual_status, status);
+            assert_eq!(bytes.as_ref(), body.as_bytes());
+        }
+    }
+
+    #[tokio::test]
+    async fn untyped_detection_respects_timeout_and_bounds_empty_chunks() {
+        let response = ProxyResponse::streamed(
+            http::StatusCode::OK,
+            HeaderMap::new(),
+            futures::stream::pending(),
+        );
+        assert!(matches!(
+            detect_untyped_sse(response, Duration::from_millis(1)).await,
+            Err(ProxyError::Timeout(_))
+        ));
+        let stream = futures::stream::repeat_with(|| Ok::<_, std::io::Error>(Bytes::new()));
+        let response = ProxyResponse::streamed(http::StatusCode::OK, HeaderMap::new(), stream);
+        assert!(!detect_untyped_sse(response, Duration::from_millis(100))
+            .await
+            .unwrap()
+            .is_sse());
     }
 
     #[tokio::test]

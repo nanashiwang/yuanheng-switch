@@ -53,6 +53,119 @@ const LOCAL_PROXY_TOKEN: &str = "PROXY_MANAGED";
 const NO_PREVIOUS_VALUE: &str = "__none__";
 const CODEX_OFFICIAL_PROVIDER_ID: &str = crate::database::CODEX_OFFICIAL_PROVIDER_ID;
 
+/// Shared, bounded catalog sync. A failed refresh never destroys the last good
+/// account-scoped price book, and pricing failure cannot prevent tool use.
+#[tauri::command]
+pub async fn get_platform_pricing(
+    state: State<'_, AppState>,
+    force: Option<bool>,
+) -> Result<crate::services::platform_pricing::PriceBook, String> {
+    use crate::services::platform_pricing::{self, PriceBook};
+    static LOCK: OnceLock<tokio::sync::Mutex<()>> = OnceLock::new();
+    let _guard = LOCK
+        .get_or_init(|| tokio::sync::Mutex::new(()))
+        .lock()
+        .await;
+    let cached = platform_pricing::load(&state.db).map_err(|e| e.to_string())?;
+    if !force.unwrap_or(false) {
+        if let Some(book) = cached.as_ref().filter(|b| !b.stale) {
+            return Ok(book.clone());
+        }
+    }
+    let connection = read_cached_status(&state)?;
+    let account_id = connection.user_id.clone();
+    let result = async {
+        let client = yuanheng_client()?;
+        let cookie = if connection.connected {
+            get_yuanheng_secret(&state, SESSION_COOKIE_KEY)?
+        } else {
+            None
+        };
+        let pricing_url = format!("{BASE_URL}/api/pricing");
+        let status_url = format!("{BASE_URL}/api/status");
+        let (pricing, status) = tokio::try_join!(
+            fetch_json(
+                &client,
+                &pricing_url,
+                cookie.as_deref(),
+                account_id.as_deref()
+            ),
+            fetch_json(&client, &status_url, None, None)
+        )?;
+        let mut book = PriceBook::from_api(&pricing, &status, account_id.clone())?;
+        // User-group ratios may override public ratios; never invent a default 1.
+        if connection.connected {
+            let groups_value = fetch_json(
+                &client,
+                &format!("{BASE_URL}/api/user/self/groups"),
+                cookie.as_deref(),
+                account_id.as_deref(),
+            )
+            .await?;
+            let groups = parse_user_groups(&groups_value)?;
+            book.groups = groups
+                .into_iter()
+                .filter_map(|g| {
+                    g.ratio
+                        .filter(|r| r.is_finite() && *r >= 0.0)
+                        .map(|r| (g.id, r.to_string()))
+                })
+                .collect();
+        }
+        if read_cached_status(&state)?.user_id != account_id {
+            return Err("账号已切换，请重新同步报价".to_string());
+        }
+        book.selected_group = state
+            .db
+            .get_setting(platform_pricing::GROUP_KEY)
+            .map_err(|e| e.to_string())?
+            .filter(|s| !s.is_empty());
+        state
+            .db
+            .set_setting(
+                platform_pricing::CACHE_KEY,
+                &serde_json::to_string(&book).map_err(|e| e.to_string())?,
+            )
+            .map_err(|e| e.to_string())?;
+        Ok(book)
+    }
+    .await;
+    match result {
+        Ok(book) => Ok(book),
+        Err(error) => match cached {
+            Some(mut book) if read_cached_status(&state)?.user_id == book.account_id => {
+                book.stale = true;
+                book.sync_error = Some(error);
+                Ok(book)
+            }
+            _ => Err(error),
+        },
+    }
+}
+
+#[tauri::command]
+pub fn set_platform_quote_group(
+    state: State<'_, AppState>,
+    group: Option<String>,
+) -> Result<(), String> {
+    use crate::services::platform_pricing;
+    if let Some(group) = &group {
+        let book = platform_pricing::load(&state.db)
+            .map_err(|e| e.to_string())?
+            .ok_or("请先同步平台报价")?;
+        if !book.groups.contains_key(group) {
+            return Err("报价分组不可用，请重新同步".into());
+        }
+    }
+    state
+        .db
+        .set_setting(
+            platform_pricing::GROUP_KEY,
+            group.as_deref().unwrap_or_default(),
+        )
+        .map_err(|e| e.to_string())
+}
+
 fn codex_account_mode_switch_lock() -> &'static tokio::sync::Mutex<()> {
     static LOCK: OnceLock<tokio::sync::Mutex<()>> = OnceLock::new();
     LOCK.get_or_init(|| tokio::sync::Mutex::new(()))

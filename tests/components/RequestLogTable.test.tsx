@@ -1,7 +1,7 @@
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { RequestLogTable } from "@/components/usage/RequestLogTable";
-import type { UsageRangeSelection } from "@/types/usage";
+import type { RequestLog, UsageRangeSelection } from "@/types/usage";
 
 const useRequestLogsMock = vi.hoisted(() => vi.fn());
 
@@ -55,6 +55,32 @@ vi.mock("@/components/ui/table", () => ({
   TableRow: ({ children }: any) => <tr>{children}</tr>,
 }));
 
+function makeUsageLog(overrides: Partial<RequestLog> = {}): RequestLog {
+  return {
+    requestId: "fallback-uuid",
+    providerId: "codex-official",
+    providerName: "OpenAI Official",
+    appType: "codex",
+    model: "gpt-6-astra",
+    costMultiplier: "1",
+    inputTokens: 0,
+    outputTokens: 0,
+    cacheReadTokens: 0,
+    cacheCreationTokens: 0,
+    inputCostUsd: "0",
+    outputCostUsd: "0",
+    cacheReadCostUsd: "0",
+    cacheCreationCostUsd: "0",
+    totalCostUsd: "0",
+    isStreaming: false,
+    latencyMs: 11900,
+    statusCode: 200,
+    createdAt: 1,
+    dataSource: "proxy",
+    ...overrides,
+  };
+}
+
 describe("RequestLogTable", () => {
   beforeEach(() => {
     useRequestLogsMock.mockReset();
@@ -69,6 +95,75 @@ describe("RequestLogTable", () => {
         isLoading: false,
       }),
     );
+  });
+
+  it("does not display missing official usage as free zero-token requests", () => {
+    const official = makeUsageLog();
+    const imported = {
+      ...official,
+      requestId: "codex_session:thread:1",
+      providerId: "_codex_session",
+      providerName: "Codex (Session)",
+      dataSource: "codex_session",
+      inputTokens: 225330,
+      cacheReadTokens: 224256,
+      outputTokens: 94,
+      latencyMs: 0,
+    };
+    useRequestLogsMock.mockReturnValue({
+      data: { data: [official, imported], total: 2, page: 0, pageSize: 20 },
+      isLoading: false,
+    });
+    render(
+      <RequestLogTable
+        range={{ preset: "today" }}
+        rangeLabel="Today"
+        appType="codex"
+        refreshIntervalMs={0}
+      />,
+    );
+    expect(screen.getByText("usage.accountBilling")).toBeInTheDocument();
+    expect(
+      screen.getByText("usage.sessionProviderUnknown"),
+    ).toBeInTheDocument();
+    expect(screen.getByText("usage.codexSessionSource")).toBeInTheDocument();
+    expect(screen.getByText("1,074")).toBeInTheDocument();
+    expect(screen.getByText("R224,256")).toBeInTheDocument();
+    expect(screen.queryByText("$0.0000")).not.toBeInTheDocument();
+    expect(screen.queryByText("0.0s")).not.toBeInTheDocument();
+  });
+
+  it("shows platform credits beside official account billing without relabelling legacy USD", () => {
+    const official = makeUsageLog({
+      requestId: "session:codex:codex-official:resp-priced",
+      inputTokens: 225330,
+      cacheReadTokens: 224256,
+      outputTokens: 94,
+      totalCostUsd: "0.239696",
+      platformQuote: {
+        amount: "0.539316",
+        symbol: "⚡️",
+        reason: "estimate",
+        group: "OpenAI · 优质",
+        groupRatio: "0.45",
+      },
+      isStreaming: true,
+    });
+    useRequestLogsMock.mockReturnValue({
+      data: { data: [official], total: 1, page: 0, pageSize: 20 },
+      isLoading: false,
+    });
+    render(
+      <RequestLogTable
+        range={{ preset: "today" }}
+        rangeLabel="Today"
+        appType="codex"
+        refreshIntervalMs={0}
+      />,
+    );
+    expect(screen.getByText("usage.accountBilling")).toBeInTheDocument();
+    expect(screen.getByText("≈ ⚡️0.5393")).toBeInTheDocument();
+    expect(screen.queryByText(/\$0\.2397/)).not.toBeInTheDocument();
   });
 
   it("resets pagination when the dashboard range changes", async () => {
