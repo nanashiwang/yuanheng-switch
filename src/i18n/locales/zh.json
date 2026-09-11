@@ -1745,7 +1745,28 @@
         "group_missing": "无可用报价分组"
       },
       "uncovered_one": "{{count}} 条未计入估算"
-    }
+    },
+    "periodSummary": {
+      "title": "周期消耗汇总",
+      "range": "统计周期",
+      "today": "今天",
+      "1d": "最近 24 小时",
+      "7d": "最近 7 天",
+      "30d": "最近 30 天",
+      "custom": "自定义周期",
+      "estimate": "闪电消耗 · 元衡报价估算",
+      "requests": "总请求",
+      "priced": "已计价",
+      "unpriced": "未计价",
+      "partial": "{{count}} 条请求未计入金额。",
+      "help": "随当前应用、供应商和模型筛选统计。按当前元衡报价折算，包含官方账号的参考价值；实际扣费以平台账单为准。",
+      "loadFailed": "周期汇总加载失败，请刷新后重试。",
+      "partial_one": "{{count}} 条请求未计入金额。"
+    },
+    "sessionDeclared": "会话声明",
+    "sessionDeclaredHelp": "按会话日志标记“{{provider}}”归属，未按当前登录方式反推。历史兼容别名可能在后续切换路由，因此此标记不等同于实际上游或账号扣费证据。",
+    "filterByProvider": "供应商筛选",
+    "allProviders": "全部供应商"
   },
   "usageScript": {
     "title": "配置用量查询",

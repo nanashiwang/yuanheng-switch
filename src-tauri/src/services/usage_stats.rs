@@ -78,6 +78,7 @@ pub struct DailyStats {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ProviderStats {
+    pub observed_request_count: u64,
     pub app_type: String,
     pub provider_id: String,
     pub provider_name: String,
@@ -125,6 +126,10 @@ pub struct PaginatedLogs {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct RequestLogDetail {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub declared_provider: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub provider_attribution: Option<String>,
     pub request_id: String,
     pub provider_id: String,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -160,19 +165,21 @@ pub struct RequestLogDetail {
     pub pricing_model: Option<String>,
 }
 
-/// 把 26 列的查询结果映射为 `RequestLogDetail`。
+/// 把 28 列的查询结果映射为 `RequestLogDetail`。
 ///
-/// 调用方的 SELECT **必须**按以下顺序返回 26 列：
+/// 调用方的 SELECT **必须**按以下顺序返回 28 列：
 /// `request_id, provider_id, provider_name, app_type, model, request_model,
 ///  cost_multiplier, input_tokens, output_tokens, cache_read_tokens,
 ///  cache_creation_tokens, input_cost_usd, output_cost_usd, cache_read_cost_usd,
 ///  cache_creation_cost_usd, total_cost_usd, is_streaming, latency_ms,
 ///  first_token_ms, duration_ms, status_code, error_message, created_at,
-///  data_source, pricing_model, input_token_semantics`
+///  data_source, pricing_model, input_token_semantics, declared_provider, provider_attribution`
 ///
 /// 不需要 provider_name 时（如 backfill）SELECT `NULL AS provider_name` 占位即可。
 fn row_to_request_log_detail(row: &rusqlite::Row<'_>) -> rusqlite::Result<RequestLogDetail> {
     Ok(RequestLogDetail {
+        declared_provider: row.get(26)?,
+        provider_attribution: row.get(27)?,
         request_id: row.get(0)?,
         provider_id: row.get(1)?,
         provider_name: row.get(2)?,
@@ -212,6 +219,7 @@ pub(crate) fn provider_name_coalesce(log_alias: &str, provider_alias: &str) -> S
     format!(
         "COALESCE({provider_alias}.name, CASE {log_alias}.provider_id \
          WHEN '_session' THEN 'Claude (Session)' \
+         WHEN 'codex-official' THEN 'OpenAI Official' \
          WHEN '_codex_session' THEN 'Codex (Session)' \
          WHEN '_gemini_session' THEN 'Gemini (Session)' \
          WHEN '_opencode_session' THEN 'OpenCode (Session)' \
@@ -1279,6 +1287,8 @@ impl Database {
         let rollup_pname = provider_name_coalesce("r", "p2");
         let fresh_input_detail = fresh_input_sql("l");
         let fresh_input_rollup = fresh_input_sql("r");
+        let observed_detail = "COALESCE(l.data_source, 'proxy') = 'proxy'";
+        let observed_rollup = "r.data_source = 'proxy' OR (r.data_source = 'legacy' AND r.provider_id NOT IN ('_session','_codex_session','_gemini_session','_opencode_session'))";
         let sql = format!(
             "SELECT
                 provider_id, app_type, provider_name,
@@ -1286,17 +1296,18 @@ impl Database {
                 SUM(total_tokens) as total_tokens,
                 SUM(total_cost) as total_cost,
                 SUM(success_count) as success_count,
-                CASE WHEN SUM(request_count) > 0
-                    THEN SUM(latency_sum) / SUM(request_count)
-                    ELSE 0 END as avg_latency
+                CASE WHEN SUM(observed_count) > 0
+                    THEN SUM(latency_sum) / SUM(observed_count)
+                    ELSE 0 END as avg_latency, SUM(observed_count)
             FROM (
                 SELECT l.provider_id, l.app_type,
                     {detail_pname} as provider_name,
                     COUNT(*) as request_count,
                     COALESCE(SUM({fresh_input_detail} + l.output_tokens), 0) as total_tokens,
                     COALESCE(SUM(CAST(l.total_cost_usd AS REAL)), 0) as total_cost,
-                    COALESCE(SUM(CASE WHEN l.status_code >= 200 AND l.status_code < 300 THEN 1 ELSE 0 END), 0) as success_count,
-                    COALESCE(SUM(l.latency_ms), 0) as latency_sum
+                    COALESCE(SUM(CASE WHEN {observed_detail} AND l.status_code >= 200 AND l.status_code < 300 THEN 1 ELSE 0 END), 0) as success_count,
+                    COALESCE(SUM(CASE WHEN {observed_detail} THEN l.latency_ms ELSE 0 END), 0) as latency_sum,
+                    COALESCE(SUM(CASE WHEN {observed_detail} THEN 1 ELSE 0 END), 0) as observed_count
                 FROM proxy_request_logs l
                 LEFT JOIN providers p ON l.provider_id = p.id AND l.app_type = p.app_type
                 {detail_where}
@@ -1307,8 +1318,9 @@ impl Database {
                     COALESCE(SUM(r.request_count), 0),
                     COALESCE(SUM({fresh_input_rollup} + r.output_tokens), 0),
                     COALESCE(SUM(CAST(r.total_cost_usd AS REAL)), 0),
-                    COALESCE(SUM(r.success_count), 0),
-                    COALESCE(SUM(r.avg_latency_ms * r.request_count), 0)
+                    COALESCE(SUM(CASE WHEN {observed_rollup} THEN r.success_count ELSE 0 END), 0),
+                    COALESCE(SUM(CASE WHEN {observed_rollup} THEN r.avg_latency_ms * r.request_count ELSE 0 END), 0),
+                    COALESCE(SUM(CASE WHEN {observed_rollup} THEN r.request_count ELSE 0 END), 0)
                 FROM usage_daily_rollups r
                 LEFT JOIN providers p2 ON r.provider_id = p2.id AND r.app_type = p2.app_type
                 {rollup_where}
@@ -1325,13 +1337,15 @@ impl Database {
         let row_mapper = |row: &rusqlite::Row| {
             let request_count: i64 = row.get(3)?;
             let success_count: i64 = row.get(6)?;
-            let success_rate = if request_count > 0 {
-                (success_count as f32 / request_count as f32) * 100.0
+            let observed_count: u64 = row.get(8)?;
+            let success_rate = if observed_count > 0 {
+                (success_count as f32 / observed_count as f32) * 100.0
             } else {
                 0.0
             };
 
             Ok(ProviderStats {
+                observed_request_count: observed_count,
                 app_type: row.get(1)?,
                 provider_id: row.get(0)?,
                 provider_name: row.get(2)?,
@@ -1571,7 +1585,7 @@ impl Database {
                     l.input_cost_usd, l.output_cost_usd, l.cache_read_cost_usd, l.cache_creation_cost_usd, l.total_cost_usd,
                     l.is_streaming, l.latency_ms, l.first_token_ms, l.duration_ms,
                     l.status_code, l.error_message, l.created_at, l.data_source, l.pricing_model,
-                    l.input_token_semantics
+                    l.input_token_semantics, l.declared_provider, l.provider_attribution
              FROM proxy_request_logs l
              LEFT JOIN providers p ON l.provider_id = p.id AND l.app_type = p.app_type
              {where_clause}
@@ -1619,7 +1633,7 @@ impl Database {
                     l.input_cost_usd, l.output_cost_usd, l.cache_read_cost_usd, l.cache_creation_cost_usd, l.total_cost_usd,
                     l.is_streaming, l.latency_ms, l.first_token_ms, l.duration_ms,
                     l.status_code, l.error_message, l.created_at, l.data_source, l.pricing_model,
-                    l.input_token_semantics
+                    l.input_token_semantics, l.declared_provider, l.provider_attribution
              FROM proxy_request_logs l
              LEFT JOIN providers p ON l.provider_id = p.id AND l.app_type = p.app_type
              WHERE COALESCE(l.data_source, 'proxy') = 'proxy' AND l.app_type = ?1 AND l.created_at >= ?2
@@ -1654,7 +1668,7 @@ impl Database {
                     l.input_cost_usd, l.output_cost_usd, l.cache_read_cost_usd, l.cache_creation_cost_usd, l.total_cost_usd,
                     l.is_streaming, l.latency_ms, l.first_token_ms, l.duration_ms,
                     l.status_code, l.error_message, l.created_at, l.data_source, l.pricing_model,
-                    l.input_token_semantics
+                    l.input_token_semantics, l.declared_provider, l.provider_attribution
              FROM proxy_request_logs l
              LEFT JOIN providers p ON l.provider_id = p.id AND l.app_type = p.app_type
              WHERE l.request_id = ?"
@@ -1804,7 +1818,7 @@ impl Database {
                         input_cost_usd, output_cost_usd, cache_read_cost_usd,
                         cache_creation_cost_usd, total_cost_usd, is_streaming, latency_ms,
                         first_token_ms, duration_ms, status_code, error_message, created_at,
-                        data_source, pricing_model, input_token_semantics
+                        data_source, pricing_model, input_token_semantics, declared_provider, provider_attribution
              FROM proxy_request_logs
              WHERE CAST(total_cost_usd AS REAL) <= 0
                AND (input_tokens > 0 OR output_tokens > 0

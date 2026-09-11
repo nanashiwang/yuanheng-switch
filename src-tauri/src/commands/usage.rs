@@ -26,7 +26,7 @@ pub fn get_usage_summary(
         provider_name.as_deref(),
         model.as_deref(),
     )?;
-    platform_pricing::decorate_stats(
+    let mut result = platform_pricing::decorate_stats(
         &state.db,
         serde_json::to_value(data).map_err(|e| AppError::Config(e.to_string()))?,
         "summary",
@@ -35,7 +35,10 @@ pub fn get_usage_summary(
         app_type.as_deref(),
         provider_name.as_deref(),
         model.as_deref(),
-    )
+    )?;
+    result["periodStart"] = serde_json::json!(start_date);
+    result["periodEnd"] = serde_json::json!(end_date);
+    Ok(result)
 }
 
 /// 获取按 app_type 拆分的使用量汇总

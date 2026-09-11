@@ -207,7 +207,8 @@ impl Database {
             duration_ms INTEGER, status_code INTEGER NOT NULL, error_message TEXT, session_id TEXT,
             provider_type TEXT, is_streaming INTEGER NOT NULL DEFAULT 0,
             cost_multiplier TEXT NOT NULL DEFAULT '1.0', created_at INTEGER NOT NULL,
-            data_source TEXT NOT NULL DEFAULT 'proxy'
+            data_source TEXT NOT NULL DEFAULT 'proxy',
+            declared_provider TEXT, provider_attribution TEXT
         )", []).map_err(|e| AppError::Database(e.to_string()))?;
 
         conn.execute("CREATE INDEX IF NOT EXISTS idx_request_logs_provider ON proxy_request_logs(provider_id, app_type)", [])
@@ -279,6 +280,7 @@ impl Database {
                 app_type TEXT NOT NULL,
                 provider_id TEXT NOT NULL,
                 model TEXT NOT NULL,
+                data_source TEXT NOT NULL DEFAULT 'legacy',
                 request_model TEXT NOT NULL DEFAULT '',
                 pricing_model TEXT NOT NULL DEFAULT '',
                 request_count INTEGER NOT NULL DEFAULT 0,
@@ -290,7 +292,7 @@ impl Database {
                 input_token_semantics INTEGER NOT NULL DEFAULT 0,
                 total_cost_usd TEXT NOT NULL DEFAULT '0',
                 avg_latency_ms INTEGER NOT NULL DEFAULT 0,
-                PRIMARY KEY (date, app_type, provider_id, model, request_model, pricing_model)
+                PRIMARY KEY (date, app_type, provider_id, model, request_model, pricing_model, data_source)
             )",
             [],
         )
@@ -528,6 +530,10 @@ impl Database {
                         log::info!("迁移数据库从 v17 到 v18（会话日志字节游标列）");
                         Self::migrate_v17_to_v18(conn)?;
                         Self::set_user_version(conn, 18)?;
+                    }
+                    18 => {
+                        Self::migrate_v18_to_v19(conn)?;
+                        Self::set_user_version(conn, 19)?;
                     }
                     _ => {
                         return Err(AppError::Database(format!(
@@ -1559,6 +1565,58 @@ impl Database {
             [],
         )
         .map_err(|e| AppError::Database(e.to_string()))?;
+        Ok(())
+    }
+
+    /// v18 -> v19: retain declared provider attribution and rollup provenance.
+    fn migrate_v18_to_v19(conn: &Connection) -> Result<(), AppError> {
+        if Self::table_exists(conn, "proxy_request_logs")? {
+            for column in ["declared_provider", "provider_attribution"] {
+                if !Self::has_column(conn, "proxy_request_logs", column)? {
+                    conn.execute(
+                        &format!("ALTER TABLE proxy_request_logs ADD COLUMN {column} TEXT"),
+                        [],
+                    )?;
+                }
+            }
+        }
+        if Self::table_exists(conn, "usage_daily_rollups")?
+            && !Self::has_column(conn, "usage_daily_rollups", "data_source")?
+        {
+            conn.execute_batch("ALTER TABLE usage_daily_rollups RENAME TO usage_daily_rollups_v18;
+                CREATE TABLE usage_daily_rollups (
+                    date TEXT NOT NULL, app_type TEXT NOT NULL, provider_id TEXT NOT NULL,
+                    model TEXT NOT NULL, request_model TEXT NOT NULL DEFAULT '', pricing_model TEXT NOT NULL DEFAULT '',
+                    request_count INTEGER NOT NULL DEFAULT 0, success_count INTEGER NOT NULL DEFAULT 0,
+                    input_tokens INTEGER NOT NULL DEFAULT 0, output_tokens INTEGER NOT NULL DEFAULT 0,
+                    cache_read_tokens INTEGER NOT NULL DEFAULT 0, cache_creation_tokens INTEGER NOT NULL DEFAULT 0,
+                    input_token_semantics INTEGER NOT NULL DEFAULT 0, total_cost_usd TEXT NOT NULL DEFAULT '0',
+                    avg_latency_ms INTEGER NOT NULL DEFAULT 0, data_source TEXT NOT NULL DEFAULT 'legacy',
+                    PRIMARY KEY(date, app_type, provider_id, model, request_model, pricing_model, data_source));
+                INSERT INTO usage_daily_rollups
+                    SELECT date, app_type, provider_id, model, request_model, pricing_model,
+                        request_count, success_count, input_tokens, output_tokens, cache_read_tokens,
+                        cache_creation_tokens, input_token_semantics, total_cost_usd, avg_latency_ms, 'legacy'
+                    FROM usage_daily_rollups_v18;
+                DROP TABLE usage_daily_rollups_v18;")?;
+        }
+        // Re-read only Codex rollout metadata once. Keep the existing cursor so
+        // already-imported usage is neither deleted nor imported a second time.
+        if Self::table_exists(conn, "session_log_sync")? {
+            let codex_dir = crate::codex_config::get_codex_config_dir();
+            let paths = conn
+                .prepare("SELECT file_path FROM session_log_sync")?
+                .query_map([], |r| r.get::<_, String>(0))?
+                .collect::<Result<Vec<_>, _>>()?;
+            for path in paths {
+                if crate::services::session_usage_codex::is_codex_cursor_path(&path, &codex_dir) {
+                    conn.execute(
+                        "UPDATE session_log_sync SET last_modified=0 WHERE file_path=?1",
+                        [path],
+                    )?;
+                }
+            }
+        }
         Ok(())
     }
 
@@ -2986,6 +3044,44 @@ mod tests {
     use super::*;
 
     #[test]
+    fn migrate_v18_to_v19_keeps_old_values_and_only_reopens_rollout_metadata(
+    ) -> Result<(), AppError> {
+        let conn = Connection::open_in_memory()?;
+        conn.execute_batch("CREATE TABLE proxy_request_logs(request_id TEXT PRIMARY KEY);
+            CREATE TABLE session_log_sync(file_path TEXT PRIMARY KEY,last_modified INTEGER,last_line_offset INTEGER);
+            INSERT INTO session_log_sync VALUES('/codex/sessions/rollout-2026-09-11T00-00-00-00000000-0000-4000-8000-000000000001.jsonl',100,27),('/claude/project/session.jsonl',200,99);
+            CREATE TABLE usage_daily_rollups(
+                date TEXT, app_type TEXT, provider_id TEXT, model TEXT, request_model TEXT, pricing_model TEXT,
+                request_count INTEGER, success_count INTEGER, input_tokens INTEGER, output_tokens INTEGER,
+                cache_read_tokens INTEGER, cache_creation_tokens INTEGER, total_cost_usd TEXT, avg_latency_ms INTEGER,
+                input_token_semantics INTEGER);
+            INSERT INTO usage_daily_rollups VALUES('2026-01-01','codex','_codex_session','gpt','gpt','gpt',3,2,100,20,10,5,'42.125',99,2);")?;
+        Database::migrate_v18_to_v19(&conn)?;
+        Database::migrate_v18_to_v19(&conn)?;
+        assert!(Database::has_column(
+            &conn,
+            "proxy_request_logs",
+            "declared_provider"
+        )?);
+        assert!(Database::has_column(
+            &conn,
+            "proxy_request_logs",
+            "provider_attribution"
+        )?);
+        assert_eq!(conn.query_row("SELECT total_cost_usd,avg_latency_ms,input_token_semantics,data_source,request_count FROM usage_daily_rollups",[],|r|Ok((r.get::<_,String>(0)?,r.get::<_,i64>(1)?,r.get::<_,i64>(2)?,r.get::<_,String>(3)?,r.get::<_,i64>(4)?)))?,("42.125".into(),99,2,"legacy".into(),3));
+        assert_eq!(conn.query_row("SELECT last_modified,last_line_offset FROM session_log_sync WHERE file_path LIKE '%rollout%'",[],|r|Ok((r.get::<_,i64>(0)?,r.get::<_,i64>(1)?)))?,(0,27));
+        assert_eq!(
+            conn.query_row(
+                "SELECT last_modified FROM session_log_sync WHERE file_path LIKE '%claude%'",
+                [],
+                |r| r.get::<_, i64>(0)
+            )?,
+            200
+        );
+        Ok(())
+    }
+
+    #[test]
     fn migrate_v12_to_v13_adds_input_token_semantics_columns() -> Result<(), AppError> {
         let conn = Connection::open_in_memory()?;
         conn.execute(
@@ -2993,7 +3089,13 @@ mod tests {
             [],
         )?;
         conn.execute(
-            "CREATE TABLE usage_daily_rollups (date TEXT PRIMARY KEY)",
+            "CREATE TABLE usage_daily_rollups (date TEXT PRIMARY KEY, app_type TEXT NOT NULL DEFAULT 'codex',
+                provider_id TEXT NOT NULL DEFAULT '_codex_session', model TEXT NOT NULL DEFAULT '',
+                request_model TEXT NOT NULL DEFAULT '', pricing_model TEXT NOT NULL DEFAULT '',
+                request_count INTEGER NOT NULL DEFAULT 0, success_count INTEGER NOT NULL DEFAULT 0,
+                input_tokens INTEGER NOT NULL DEFAULT 0, output_tokens INTEGER NOT NULL DEFAULT 0,
+                cache_read_tokens INTEGER NOT NULL DEFAULT 0, cache_creation_tokens INTEGER NOT NULL DEFAULT 0,
+                total_cost_usd TEXT NOT NULL DEFAULT '0', avg_latency_ms INTEGER NOT NULL DEFAULT 0)",
             [],
         )?;
         Database::set_user_version(&conn, 12)?;

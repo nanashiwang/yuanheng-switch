@@ -13,11 +13,15 @@ export function isCodexSessionImport(
 }
 
 export function isOfficialAccountUsage(
-  log: Pick<RequestLog, "providerId" | "appType">,
+  log: Pick<RequestLog, "providerId" | "appType" | "dataSource">,
 ): boolean {
   // This is the actual upstream provider recorded by the proxy, not the
   // current configuration or a historical Codex model_provider alias.
-  return log.appType === "codex" && log.providerId === "codex-official";
+  return (
+    log.appType === "codex" &&
+    log.providerId === "codex-official" &&
+    log.dataSource !== "codex_session"
+  );
 }
 
 export function isUsageUnavailable(log: RequestLog): boolean {

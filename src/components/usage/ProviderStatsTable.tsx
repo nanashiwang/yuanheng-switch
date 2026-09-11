@@ -105,10 +105,14 @@ export function ProviderStatsTable({
                   )}
                 </TableCell>
                 <TableCell className="text-right">
-                  {stat.successRate.toFixed(1)}%
+                  {stat.observedRequestCount === 0
+                    ? "—"
+                    : `${stat.successRate.toFixed(1)}%`}
                 </TableCell>
                 <TableCell className="text-right">
-                  {stat.avgLatencyMs}ms
+                  {stat.observedRequestCount === 0
+                    ? "—"
+                    : `${stat.avgLatencyMs}ms`}
                 </TableCell>
               </TableRow>
             ))

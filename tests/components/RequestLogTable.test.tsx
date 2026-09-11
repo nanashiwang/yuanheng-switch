@@ -166,6 +166,42 @@ describe("RequestLogTable", () => {
     expect(screen.queryByText(/\$0\.2397/)).not.toBeInTheDocument();
   });
 
+  it("shows the declared official provider separately from the session source", () => {
+    useRequestLogsMock.mockReturnValue({
+      data: {
+        data: [
+          makeUsageLog({
+            providerId: "codex-official",
+            providerName: "OpenAI Official",
+            dataSource: "codex_session",
+            providerAttribution: "session_meta",
+            declaredProvider: "yuanheng-switch-official",
+            inputTokens: 10,
+            outputTokens: 1,
+          }),
+        ],
+        total: 1,
+        page: 0,
+        pageSize: 20,
+      },
+      isLoading: false,
+    });
+    render(
+      <RequestLogTable
+        range={{ preset: "1d" }}
+        rangeLabel="24 hours"
+        refreshIntervalMs={0}
+      />,
+    );
+    expect(screen.getByText("OpenAI Official")).toBeInTheDocument();
+    expect(screen.getByText("usage.codexSessionSource")).toBeInTheDocument();
+    expect(screen.getByText("usage.sessionDeclared")).toBeInTheDocument();
+    expect(
+      screen.queryByText("usage.sessionProviderUnknown"),
+    ).not.toBeInTheDocument();
+    expect(screen.queryByText("usage.accountBilling")).not.toBeInTheDocument();
+  });
+
   it("resets pagination when the dashboard range changes", async () => {
     const initialRange: UsageRangeSelection = { preset: "today" };
     const nextRange: UsageRangeSelection = {

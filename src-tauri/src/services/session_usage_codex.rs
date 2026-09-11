@@ -51,6 +51,39 @@ struct DeltaTokens {
     output: u32,
 }
 
+/// A declaration in the rollout, not proof of the eventual upstream route.
+/// In particular, YuanHeng's compatibility aliases can be retargeted later.
+/// Keep the basis visible and never infer from today's login/configuration.
+#[derive(Debug, Clone, Default)]
+struct ProviderDeclaration {
+    id: Option<String>,
+    basis: Option<&'static str>,
+}
+
+impl ProviderDeclaration {
+    fn from_payload(payload: &serde_json::Value, basis: &'static str) -> Option<Self> {
+        let value = payload.get("model_provider")?;
+        Some(Self {
+            id: value
+                .as_str()
+                .map(str::trim)
+                .filter(|s| !s.is_empty())
+                .map(str::to_owned),
+            basis: Some(basis),
+        })
+    }
+
+    fn provider_id(&self) -> &'static str {
+        match self.id.as_deref() {
+            Some("openai" | "yuanheng-switch-official") => {
+                crate::database::CODEX_OFFICIAL_PROVIDER_ID
+            }
+            // Generic/reusable names do not identify a supplier.
+            _ => "_codex_session",
+        }
+    }
+}
+
 impl DeltaTokens {
     fn is_zero(&self) -> bool {
         self.input == 0 && self.cached_input == 0 && self.output == 0
@@ -80,6 +113,7 @@ struct ParsedTokenEvent {
     event_index: Option<u32>,
     model: String,
     timestamp: Option<String>,
+    provider: ProviderDeclaration,
 }
 
 #[derive(Debug)]
@@ -142,7 +176,7 @@ fn is_rollout_filename(file_name: &str) -> bool {
         .is_some_and(|candidate| uuid::Uuid::parse_str(candidate).is_ok())
 }
 
-fn is_codex_cursor_path(file_path: &str, codex_dir: &Path) -> bool {
+pub(crate) fn is_codex_cursor_path(file_path: &str, codex_dir: &Path) -> bool {
     let path = Path::new(file_path);
     let file_name = file_path.rsplit(['/', '\\']).next().unwrap_or_default();
     if !is_rollout_filename(file_name) {
@@ -201,8 +235,13 @@ pub(crate) fn reset_codex_usage_on_conn(
     if sqlite_table_exists(conn, "usage_daily_rollups")?
         && sqlite_column_exists(conn, "usage_daily_rollups", "provider_id")?
     {
+        let predicate = if sqlite_column_exists(conn, "usage_daily_rollups", "data_source")? {
+            "data_source = 'codex_session' OR (provider_id = '_codex_session' AND data_source = 'legacy')"
+        } else {
+            "provider_id = '_codex_session'"
+        };
         conn.execute(
-            "DELETE FROM usage_daily_rollups WHERE provider_id = '_codex_session'",
+            &format!("DELETE FROM usage_daily_rollups WHERE {predicate}"),
             [],
         )
         .map_err(|error| AppError::Database(format!("清理 Codex 用量汇总失败: {error}")))?;
@@ -613,6 +652,7 @@ fn parse_codex_file(
     let mut root_timestamp = None;
     let mut parent = ParentResolution::None;
     let mut current_model = "unknown".to_string();
+    let mut current_provider = ProviderDeclaration::default();
     // `total_token_usage` is session-cumulative, including across model and
     // rate-limit bucket changes. Divergent snapshots are handled by preferring
     // exact `last_token_usage`, not by splitting the cumulative baseline.
@@ -662,6 +702,8 @@ fn parse_codex_file(
                 root_meta_seen = true;
                 root_timestamp = parse_timestamp(value.get("timestamp"));
                 let payload = value.get("payload").unwrap_or(&serde_json::Value::Null);
+                current_provider =
+                    ProviderDeclaration::from_payload(payload, "session_meta").unwrap_or_default();
                 parent = explicit_parent_from_meta(payload);
 
                 let meta_thread_id = non_empty_string(
@@ -697,6 +739,11 @@ fn parse_codex_file(
             }
             "turn_context" => {
                 if let Some(payload) = value.get("payload") {
+                    if let Some(provider) =
+                        ProviderDeclaration::from_payload(payload, "turn_context")
+                    {
+                        current_provider = provider;
+                    }
                     if let Some(model) = payload
                         .get("model")
                         .or_else(|| payload.get("info").and_then(|info| info.get("model")))
@@ -793,6 +840,7 @@ fn parse_codex_file(
                     delta,
                     event_index: nonzero_index,
                     model: current_model.clone(),
+                    provider: current_provider.clone(),
                     timestamp: value
                         .get("timestamp")
                         .and_then(serde_json::Value::as_str)
@@ -1096,6 +1144,7 @@ fn sync_single_codex_file(
     }
 
     let mut result = CodexFileSyncResult::default();
+    let mut attribution_updates = 0;
     for (token_offset, event) in parsed.token_events.iter().enumerate() {
         let Some(event_index) = event.event_index else {
             continue;
@@ -1106,11 +1155,13 @@ fn sync_single_codex_file(
             }
             continue;
         }
+        let request_id = format!("{CODEX_THREAD_REQUEST_ID_PREFIX}:{root_thread_id}:{event_index}");
         if event.line_offset <= last_offset {
+            if last_modified == 0 {
+                attribution_updates += update_existing_declaration(db, &request_id, event)?;
+            }
             continue;
         }
-
-        let request_id = format!("{CODEX_THREAD_REQUEST_ID_PREFIX}:{root_thread_id}:{event_index}");
         match insert_codex_session_entry(
             db,
             &request_id,
@@ -1118,6 +1169,7 @@ fn sync_single_codex_file(
             &event.model,
             Some(root_thread_id),
             event.timestamp.as_deref(),
+            &event.provider,
             &mut result.suspected_duplicates,
         ) {
             Ok(true) => result.imported = result.imported.saturating_add(1),
@@ -1130,10 +1182,39 @@ fn sync_single_codex_file(
     }
 
     update_sync_state(db, &file_path_str, file_modified, parsed.line_offset)?;
+    if attribution_updates > 0 {
+        crate::usage_events::notify_log_recorded();
+    }
     Ok(result)
 }
 
+fn update_existing_declaration(
+    db: &Database,
+    request_id: &str,
+    event: &ParsedTokenEvent,
+) -> Result<usize, AppError> {
+    let Some(at) = event
+        .timestamp
+        .as_deref()
+        .and_then(|s| DateTime::parse_from_rfc3339(s).ok())
+        .map(|d| d.timestamp())
+    else {
+        return Ok(0);
+    };
+    let conn = lock_conn!(db.conn);
+    // Matching identity AND counters/time prevents a replaced/replayed file from
+    // relabelling a different historic request. No tokens or costs are rewritten.
+    Ok(conn.execute("UPDATE proxy_request_logs SET provider_id=?1, declared_provider=?2, provider_attribution=?3
+        WHERE request_id=?4 AND data_source='codex_session' AND app_type='codex'
+          AND provider_id='_codex_session' AND provider_attribution IS NULL
+          AND model=?5 AND input_tokens=?6 AND output_tokens=?7 AND cache_read_tokens=?8 AND created_at=?9
+          AND (provider_id<>?1 OR declared_provider IS NOT ?2 OR provider_attribution IS NOT ?3)", rusqlite::params![
+        event.provider.provider_id(),event.provider.id,event.provider.basis,request_id,event.model,
+        event.delta.input,event.delta.output,event.delta.cached_input,at])?)
+}
+
 /// 插入单条 Codex 会话记录到 proxy_request_logs
+#[allow(clippy::too_many_arguments)]
 fn insert_codex_session_entry(
     db: &Database,
     request_id: &str,
@@ -1141,6 +1222,7 @@ fn insert_codex_session_entry(
     model: &str,
     session_id: Option<&str>,
     timestamp: Option<&str>,
+    provider: &ProviderDeclaration,
     suspected_duplicates: &mut u32,
 ) -> Result<bool, AppError> {
     let conn = lock_conn!(db.conn);
@@ -1220,11 +1302,11 @@ fn insert_codex_session_entry(
             input_tokens, output_tokens, cache_read_tokens, cache_creation_tokens,
             input_cost_usd, output_cost_usd, cache_read_cost_usd, cache_creation_cost_usd, total_cost_usd,
             latency_ms, first_token_ms, status_code, error_message, session_id,
-            provider_type, is_streaming, cost_multiplier, created_at, data_source
-        ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19, ?20, ?21, ?22, ?23, ?24)",
+            provider_type, is_streaming, cost_multiplier, created_at, data_source, declared_provider, provider_attribution
+        ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19, ?20, ?21, ?22, ?23, ?24, ?25, ?26)",
             rusqlite::params![
                 request_id,
-                "_codex_session",    // provider_id
+                provider.provider_id(),
                 "codex",             // app_type
                 model,
                 model,               // request_model = model
@@ -1247,6 +1329,8 @@ fn insert_codex_session_entry(
                 "1.0",               // cost_multiplier
                 created_at,
                 "codex_session",     // data_source
+                provider.id,
+                provider.basis,
             ],
         )
         .map_err(|e| AppError::Database(format!("插入 Codex 会话日志失败: {e}")))?;
@@ -1267,6 +1351,145 @@ mod tests {
     const PARENT_ID: &str = "00000000-0000-4000-8000-000000000001";
     const CHILD_A_ID: &str = "00000000-0000-4000-8000-000000000002";
     const CHILD_B_ID: &str = "00000000-0000-4000-8000-000000000003";
+
+    #[test]
+    fn provider_declarations_follow_turn_overrides_without_using_current_login(
+    ) -> Result<(), AppError> {
+        let tmp = tempdir().unwrap();
+        let path = rollout_path(tmp.path(), PARENT_ID);
+        let mut root = session_meta(PARENT_ID);
+        root["payload"]["model_provider"] = serde_json::json!("yuanheng-switch-official");
+        let mut relay_turn = turn_context_at("2026-07-10T03:00:03Z");
+        relay_turn["payload"]["model_provider"] = serde_json::json!("custom");
+        let mut native_turn = turn_context_at("2026-07-10T03:00:05Z");
+        native_turn["payload"]["model_provider"] = serde_json::json!("openai");
+        write_jsonl(
+            &path,
+            &[
+                root,
+                turn_context(),
+                token_count(100, 20, 10),
+                relay_turn,
+                token_count_at(200, 40, 20, "2026-07-10T03:00:04Z"),
+                native_turn,
+                token_count_at(300, 60, 30, "2026-07-10T03:00:06Z"),
+            ],
+        );
+        let parsed = parse_codex_file(&path, Some(PARENT_ID.into()))?;
+        assert_eq!(
+            parsed.token_events[0].provider.provider_id(),
+            "codex-official"
+        );
+        assert_eq!(parsed.token_events[0].provider.basis, Some("session_meta"));
+        assert_eq!(
+            parsed.token_events[1].provider.provider_id(),
+            "_codex_session"
+        );
+        assert_eq!(
+            parsed.token_events[1].provider.id.as_deref(),
+            Some("custom")
+        );
+        assert_eq!(
+            parsed.token_events[2].provider.provider_id(),
+            "codex-official"
+        );
+        assert_eq!(parsed.token_events[2].provider.basis, Some("turn_context"));
+        assert_eq!(
+            ProviderDeclaration::from_payload(
+                &serde_json::json!({"model_provider":null}),
+                "turn_context"
+            )
+            .unwrap()
+            .provider_id(),
+            "_codex_session"
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn historical_attribution_backfill_preserves_usage_cost_and_cursor() -> Result<(), AppError> {
+        let db = Database::memory()?;
+        let tmp = tempdir().unwrap();
+        let path = rollout_path(tmp.path(), PARENT_ID);
+        let mut root = session_meta(PARENT_ID);
+        root["payload"]["model_provider"] = serde_json::json!("yuanheng-switch-official");
+        write_jsonl(&path, &[root, turn_context(), token_count(100, 20, 10)]);
+        let index = build_rollout_index(std::slice::from_ref(&path));
+        assert_eq!(sync_single_codex_file(&db, &path, &index)?.imported, 1);
+        let id = format!("{CODEX_THREAD_REQUEST_ID_PREFIX}:{PARENT_ID}:1");
+        let cursor = get_codex_sync_state(&db, &path)?.1;
+        {
+            let conn = lock_conn!(db.conn);
+            conn.execute("UPDATE proxy_request_logs SET provider_id='_codex_session',declared_provider=NULL,provider_attribution=NULL,total_cost_usd='123.45'",[])?;
+            conn.execute("UPDATE session_log_sync SET last_modified=0", [])?;
+        }
+        assert_eq!(sync_single_codex_file(&db, &path, &index)?.imported, 0);
+        let detail = db.get_request_detail(&id)?.unwrap();
+        assert_eq!(detail.provider_id, "codex-official");
+        assert_eq!(detail.provider_name.as_deref(), Some("OpenAI Official"));
+        assert_eq!(detail.data_source.as_deref(), Some("codex_session"));
+        assert_eq!(detail.provider_attribution.as_deref(), Some("session_meta"));
+        assert_eq!(
+            (
+                detail.input_tokens,
+                detail.cache_read_tokens,
+                detail.output_tokens
+            ),
+            (100, 20, 10)
+        );
+        assert_eq!(detail.total_cost_usd, "123.45");
+        assert_eq!(get_codex_sync_state(&db, &path)?.1, cursor);
+        assert_eq!(sync_single_codex_file(&db, &path, &index)?.imported, 0);
+        let conn = lock_conn!(db.conn);
+        assert_eq!(
+            conn.query_row("SELECT COUNT(*) FROM proxy_request_logs", [], |r| r
+                .get::<_, i64>(0))?,
+            1
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn attributed_rollups_keep_source_and_rebuild_preserves_official_proxy_usage(
+    ) -> Result<(), AppError> {
+        let db = Database::memory()?;
+        let tmp = tempdir().unwrap();
+        {
+            let conn = lock_conn!(db.conn);
+            for (id, source, input) in [("proxy", "proxy", 111), ("session", "codex_session", 222)]
+            {
+                conn.execute("INSERT INTO proxy_request_logs (request_id,provider_id,app_type,model,input_tokens,output_tokens,latency_ms,status_code,created_at,data_source) VALUES (?1,'codex-official','codex','gpt-6-astra',?3,1,CASE WHEN ?2='proxy' THEN 900 ELSE 0 END,200,1000,?2)",rusqlite::params![id,source,input])?;
+            }
+        }
+        let stats = db.get_provider_stats(None, None, None, None, None)?;
+        assert_eq!(stats[0].request_count, 2);
+        assert_eq!(stats[0].observed_request_count, 1);
+        assert_eq!(stats[0].avg_latency_ms, 900);
+        assert_eq!(db.rollup_and_prune(30)?, 2);
+        let stats = db.get_provider_stats(None, None, None, None, None)?;
+        assert_eq!(stats[0].observed_request_count, 1);
+        assert_eq!(stats[0].avg_latency_ms, 900);
+        let conn = lock_conn!(db.conn);
+        assert_eq!(
+            conn.query_row("SELECT COUNT(*) FROM usage_daily_rollups", [], |r| r
+                .get::<_, i64>(0))?,
+            2
+        );
+        reset_codex_usage_on_conn(&conn, tmp.path())?;
+        assert_eq!(
+            conn.query_row(
+                "SELECT data_source,request_count,input_tokens FROM usage_daily_rollups",
+                [],
+                |r| Ok((
+                    r.get::<_, String>(0)?,
+                    r.get::<_, i64>(1)?,
+                    r.get::<_, i64>(2)?
+                ))
+            )?,
+            ("proxy".into(), 1, 111)
+        );
+        Ok(())
+    }
 
     fn write_jsonl(path: &Path, values: &[serde_json::Value]) {
         let contents = values
@@ -2359,6 +2582,7 @@ mod tests {
             "gpt-5.4",
             Some("session-1"),
             Some("1970-01-01T00:16:45Z"),
+            &ProviderDeclaration::default(),
             &mut suspected_duplicates,
         )?;
         assert!(!inserted);
@@ -2388,6 +2612,7 @@ mod tests {
             "gpt-5.4",
             Some("session-a"),
             Some("1970-01-01T00:16:40Z"),
+            &ProviderDeclaration::default(),
             &mut suspected_duplicates,
         )?);
         assert!(insert_codex_session_entry(
@@ -2397,6 +2622,7 @@ mod tests {
             "gpt-5.4",
             Some("session-b"),
             Some("1970-01-01T00:16:45Z"),
+            &ProviderDeclaration::default(),
             &mut suspected_duplicates,
         )?);
         assert_eq!(suspected_duplicates, 1);

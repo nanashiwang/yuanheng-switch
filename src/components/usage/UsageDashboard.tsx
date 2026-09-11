@@ -45,7 +45,7 @@ import { PricingConfigPanel } from "@/components/usage/PricingConfigPanel";
 import { cn } from "@/lib/utils";
 import { getLocaleFromLanguage } from "./format";
 import { getUsageRangePresetLabel, resolveUsageRange } from "@/lib/usageRange";
-import { UsageDateRangePicker } from "./UsageDateRangePicker";
+import { UsageCostSummary } from "./UsageCostSummary";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Button } from "@/components/ui/button";
 import { Switch } from "@/components/ui/switch";
@@ -100,7 +100,7 @@ export function UsageDashboard({
 }: UsageDashboardProps = {}) {
   const { t, i18n } = useTranslation();
   const queryClient = useQueryClient();
-  const [range, setRange] = useState<UsageRangeSelection>({ preset: "today" });
+  const [range, setRange] = useState<UsageRangeSelection>({ preset: "1d" });
   const [appType, setAppType] = useState<AppTypeFilter>("all");
   const [providerName, setProviderName] = useState<string | undefined>(
     undefined,
@@ -320,13 +320,13 @@ export function UsageDashboard({
             onValueChange={(v) => changeProviderName(decodeOptionValue(v))}
           >
             <SelectTrigger
-              className="h-9 w-[100px] bg-background text-xs focus:border-border-default [&>span]:min-w-0 [&>span]:truncate"
-              title={providerName ?? t("usage.filterBySource")}
+              className="h-9 w-[140px] bg-background text-xs focus:border-border-default [&>span]:min-w-0 [&>span]:truncate"
+              title={providerName ?? t("usage.filterByProvider")}
             >
               <SelectValue />
             </SelectTrigger>
             <SelectContent className="max-w-[280px]">
-              <SelectItem value="all">{t("usage.allSources")}</SelectItem>
+              <SelectItem value="all">{t("usage.allProviders")}</SelectItem>
               {providerOptions.map((name) => (
                 <SelectItem
                   key={name}
@@ -388,15 +388,21 @@ export function UsageDashboard({
                 ))}
               </SelectContent>
             </Select>
-
-            <UsageDateRangePicker
-              selection={range}
-              triggerLabel={rangeLabel}
-              onApply={(nextRange) => setRange(nextRange)}
-            />
           </div>
         </div>
       </div>
+
+      <UsageCostSummary
+        range={range}
+        rangeLabel={rangeLabel}
+        filters={{
+          appType: appType === "all" ? undefined : appType,
+          providerName,
+          model,
+        }}
+        refreshIntervalMs={refreshIntervalMs}
+        onRangeChange={setRange}
+      />
 
       <PlatformPricingPanel />
 

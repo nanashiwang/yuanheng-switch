@@ -106,6 +106,13 @@ export function RequestDetailPanel({
                       ? t("usage.codexSessionSource")
                       : request.providerId}
                   </span>
+                  {imported && request.providerAttribution && (
+                    <p className="mt-2 text-xs text-muted-foreground">
+                      {t("usage.sessionDeclaredHelp", {
+                        provider: request.declaredProvider ?? "—",
+                      })}
+                    </p>
+                  )}
                 </dd>
               </div>
               <div>
@@ -229,7 +236,11 @@ export function RequestDetailPanel({
 
           {imported && (
             <p className="text-sm text-muted-foreground">
-              {t("usage.sessionAttributionHelp")}
+              {request.providerAttribution
+                ? t("usage.sessionDeclaredHelp", {
+                    provider: request.declaredProvider ?? "—",
+                  })
+                : t("usage.sessionAttributionHelp")}
             </p>
           )}
           {unavailable && (

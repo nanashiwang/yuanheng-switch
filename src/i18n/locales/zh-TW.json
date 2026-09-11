@@ -1747,7 +1747,28 @@
       },
       "synced_one": "{{count}} 個模型 · {{time}}",
       "uncovered_one": "{{count}} 筆未計入估算"
-    }
+    },
+    "periodSummary": {
+      "title": "週期消耗彙總",
+      "range": "統計週期",
+      "today": "今天",
+      "1d": "最近 24 小時",
+      "7d": "最近 7 天",
+      "30d": "最近 30 天",
+      "custom": "自訂週期",
+      "estimate": "閃電消耗 · 元衡報價估算",
+      "requests": "總請求",
+      "priced": "已計價",
+      "unpriced": "未計價",
+      "partial": "{{count}} 筆請求未計入金額。",
+      "help": "依目前應用程式、供應商和模型篩選統計。按目前元衡報價換算，包含官方帳號的參考價值；實際扣費以平台帳單為準。",
+      "loadFailed": "週期彙總載入失敗，請重新整理後重試。",
+      "partial_one": "{{count}} 筆請求未計入金額。"
+    },
+    "sessionDeclared": "會話聲明",
+    "sessionDeclaredHelp": "依會話日誌標記「{{provider}}」歸屬，不按目前登入方式反推。歷史相容別名可能在後續切換路由，此標記不等同於實際上游或帳號扣費證據。",
+    "filterByProvider": "供應商篩選",
+    "allProviders": "全部供應商"
   },
   "usageScript": {
     "title": "設定用量查詢",

@@ -17,7 +17,6 @@ import {
   Zap,
 } from "lucide-react";
 import {
-  fmtCredits,
   formatTokensShort,
   getResolvedLang,
   parseFiniteNumber,
@@ -212,7 +211,6 @@ export function UsageHero({
   const cacheRead = summary?.totalCacheReadTokens ?? 0;
   const realTotal = summary?.realTotalTokens ?? 0;
   const hitRate = summary?.cacheHitRate ?? 0;
-  const totalCost = parseFiniteNumber(summary?.totalCost);
   const requests = summary?.totalRequests ?? 0;
 
   const cacheWriteDisplay = {
@@ -304,26 +302,6 @@ export function UsageHero({
                     {requests.toLocaleString()}
                   </span>
                 </div>
-                <div className="w-px h-8 bg-border/60" />
-                <div className="flex flex-col">
-                  <span className="text-[10px] text-muted-foreground uppercase tracking-wider font-medium">
-                    <span title={t("usage.referenceCostHelp")}>
-                      {t("usage.referenceCost")}
-                    </span>
-                  </span>
-                  <span className="font-semibold text-green-500 text-sm tabular-nums">
-                    {totalCost == null
-                      ? "—"
-                      : fmtCredits(totalCost, 4, summary?.costSymbol)}
-                    {!!summary?.unpricedRequests && (
-                      <span className="ml-2 text-xs text-muted-foreground">
-                        {t("usage.platformPricing.uncovered", {
-                          count: summary.unpricedRequests,
-                        })}
-                      </span>
-                    )}
-                  </span>
-                </div>
               </div>
             </div>
 
@@ -337,7 +315,7 @@ export function UsageHero({
               />
               <MiniStat
                 icon={<ArrowUpFromLine className="h-3.5 w-3.5" />}
-                label={t("usage.output")}
+                label={t("usage.outputTokens")}
                 value={formatTokensShort(output, lang)}
                 accent="text-purple-500"
               />

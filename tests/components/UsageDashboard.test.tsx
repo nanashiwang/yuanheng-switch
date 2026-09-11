@@ -136,6 +136,25 @@ describe("UsageDashboard", () => {
     expect(screen.getByTestId("select-5000")).toBeInTheDocument();
   });
 
+  it("uses one period for the cost card and the downstream statistics", async () => {
+    renderDashboard({});
+    fireEvent.click(
+      screen.getByRole("button", { name: "usage.periodSummary.7d" }),
+    );
+    await waitFor(() => {
+      expect(useProviderStatsMock).toHaveBeenLastCalledWith(
+        { preset: "7d" },
+        expect.any(Object),
+        expect.any(Object),
+      );
+      expect(useModelStatsMock).toHaveBeenLastCalledWith(
+        { preset: "7d" },
+        expect.any(Object),
+        expect.any(Object),
+      );
+    });
+  });
+
   it("rolls back optimistic interval changes when persistence fails", async () => {
     const onRefreshIntervalChange = vi.fn().mockResolvedValue(false);
     renderDashboard({ onRefreshIntervalChange });

@@ -218,6 +218,16 @@ export function RequestLogTable({
                               ? t("usage.sessionProviderUnknown")
                               : log.providerName || t("usage.unknownProvider")}
                           </span>
+                          {imported && log.providerAttribution && (
+                            <div
+                              className="text-[10px] text-muted-foreground"
+                              title={t("usage.sessionDeclaredHelp", {
+                                provider: log.declaredProvider ?? "—",
+                              })}
+                            >
+                              {t("usage.sessionDeclared")}
+                            </div>
+                          )}
                         </TableCell>
                         <TableCell className="text-center font-mono text-xs max-w-[200px]">
                           <div

@@ -1745,7 +1745,28 @@
         "rule_unsupported": "See platform ledger",
         "group_missing": "No eligible pricing group"
       }
-    }
+    },
+    "periodSummary": {
+      "title": "Period usage total",
+      "range": "Reporting period",
+      "today": "Today",
+      "1d": "Last 24 hours",
+      "7d": "Last 7 days",
+      "30d": "Last 30 days",
+      "custom": "Custom period",
+      "estimate": "Credits · YuanHeng estimate",
+      "requests": "Requests",
+      "priced": "Priced",
+      "unpriced": "Unpriced",
+      "partial": "{{count}} requests are excluded from the amount.",
+      "help": "Uses the selected app, provider and model filters. Current YuanHeng quotes include comparison estimates for official accounts; actual charges come from the platform ledger.",
+      "loadFailed": "Could not load the period total. Please refresh and try again.",
+      "partial_one": "{{count}} requests are excluded from the amount."
+    },
+    "sessionDeclared": "Session declaration",
+    "sessionDeclaredHelp": "Attributed from the recorded provider “{{provider}}”, not the current login. Compatibility aliases can be rerouted later; this is not proof of the actual upstream or account billing.",
+    "filterByProvider": "Filter by provider",
+    "allProviders": "All providers"
   },
   "usageScript": {
     "title": "Configure Usage Query",

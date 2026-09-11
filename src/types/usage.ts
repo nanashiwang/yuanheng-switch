@@ -11,6 +11,8 @@ export interface RequestLog {
   requestId: string;
   providerId: string;
   providerName?: string;
+  declaredProvider?: string;
+  providerAttribution?: "session_meta" | "turn_context";
   appType: string;
   model: string;
   requestModel?: string;
@@ -77,6 +79,8 @@ export interface ModelPricing {
 }
 
 export interface UsageSummary {
+  periodStart?: number | null;
+  periodEnd?: number | null;
   totalRequests: number;
   totalCost: string | null;
   pricedRequests?: number;
@@ -113,6 +117,7 @@ export interface DailyStats {
 }
 
 export interface ProviderStats {
+  observedRequestCount?: number;
   appType?: string;
   providerId: string;
   providerName: string;

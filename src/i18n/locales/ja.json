@@ -1745,7 +1745,28 @@
       },
       "synced_one": "{{count}} モデル · {{time}}",
       "uncovered_one": "{{count}} 件は概算対象外"
-    }
+    },
+    "periodSummary": {
+      "title": "期間別消費合計",
+      "range": "集計期間",
+      "today": "今日",
+      "1d": "直近24時間",
+      "7d": "直近7日間",
+      "30d": "直近30日間",
+      "custom": "期間を指定",
+      "estimate": "クレジット · 元衡料金による概算",
+      "requests": "リクエスト",
+      "priced": "算出済み",
+      "unpriced": "未算出",
+      "partial": "{{count}} 件は金額に含まれていません。",
+      "help": "選択中のアプリ、プロバイダー、モデルで集計します。現在の元衡料金による概算で、公式アカウントの比較値も含みます。実際の請求額はプラットフォーム明細をご確認ください。",
+      "loadFailed": "期間合計を取得できませんでした。再読み込みしてください。",
+      "partial_one": "{{count}} 件は金額に含まれていません。"
+    },
+    "sessionDeclared": "セッションの申告",
+    "sessionDeclaredHelp": "現在のログインではなく、ログの「{{provider}}」を基に帰属します。互換エイリアスは後で接続先が変わるため、実際の接続先や課金の証明ではありません。",
+    "filterByProvider": "プロバイダーで絞り込み",
+    "allProviders": "すべてのプロバイダー"
   },
   "usageScript": {
     "title": "利用状況を設定",

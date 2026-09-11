@@ -1745,7 +1745,28 @@
       },
       "synced_one": "모델 {{count}}개 · {{time}}",
       "uncovered_one": "요청 {{count}}건 추정 제외"
-    }
+    },
+    "periodSummary": {
+      "title": "기간별 사용 합계",
+      "range": "통계 기간",
+      "today": "오늘",
+      "1d": "최근 24시간",
+      "7d": "최근 7일",
+      "30d": "최근 30일",
+      "custom": "기간 지정",
+      "estimate": "크레딧 · 위안헝 요금 추정",
+      "requests": "전체 요청",
+      "priced": "추정 완료",
+      "unpriced": "요금 미확인",
+      "partial": "요청 {{count}}건은 금액에서 제외되었습니다.",
+      "help": "선택한 앱, 공급자 및 모델 필터를 적용합니다. 현재 위안헝 요금으로 공식 계정의 비교 금액도 환산하며 실제 차감액은 플랫폼 명세서를 따릅니다.",
+      "loadFailed": "기간 합계를 불러오지 못했습니다. 새로 고침해 주세요.",
+      "partial_one": "요청 {{count}}건은 금액에서 제외되었습니다."
+    },
+    "sessionDeclared": "세션 선언",
+    "sessionDeclaredHelp": "현재 로그인이 아닌 로그의 “{{provider}}” 표기를 기준으로 분류합니다. 호환 별칭의 경로는 나중에 바뀔 수 있으므로 실제 공급자나 계정 과금의 증거는 아닙니다.",
+    "filterByProvider": "공급자 필터",
+    "allProviders": "모든 공급자"
   },
   "usageScript": {
     "title": "사용 쿼리 구성",
