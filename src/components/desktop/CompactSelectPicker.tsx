@@ -43,11 +43,18 @@ export function CompactSelectPicker({
   onChange: (value: string) => void;
 }) {
   const selected =
-    options.find((option) => option.value === value) ?? options[0];
+    options.find((option) => option.value === value) ??
+    (value ? undefined : options[0]);
 
   return (
     <Select
-      value={selected ? encodeValue(selected.value) : undefined}
+      value={
+        selected
+          ? encodeValue(selected.value)
+          : value
+            ? encodeValue(value)
+            : undefined
+      }
       disabled={disabled || options.length === 0}
       onValueChange={(nextValue) => onChange(decodeValue(nextValue))}
     >

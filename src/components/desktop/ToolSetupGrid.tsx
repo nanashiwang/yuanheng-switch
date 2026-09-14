@@ -51,6 +51,11 @@ import {
 import { useDesktopInstallFlow } from "./useDesktopInstallFlow";
 import { clearToolInventoryCache } from "./toolInventoryCache";
 import { useToolInventory } from "@/lib/query/toolInventory";
+import {
+  pickPreferredGroup,
+  resolveToolSetupSelection,
+} from "./toolSetupSelection";
+export { pickPreferredGroup } from "./toolSetupSelection";
 
 export const DESKTOP_TOOLS: YuanhengToolId[] = [
   "claude",
@@ -120,27 +125,6 @@ export const reasoningLabel = (
     ? dt("自动（默认：{{v0}}）", { v0: dt(REASONING_LABELS[defaultLevel]) })
     : dt(REASONING_LABELS[level]);
 
-/** 为模型挑选默认令牌分组：优先保留当前选择，其次 auto / 账号分组，最后按费率最低 */
-export function pickPreferredGroup(
-  connection: YuanhengConnectionStatus | undefined,
-  model: string,
-  current?: string,
-): string | undefined {
-  if (!connection) return undefined;
-  const available = connection.modelGroups[model] ?? [];
-  if (current && available.includes(current)) return current;
-  if (available.includes("auto")) return "auto";
-  const accountGroup = connection.account?.group;
-  if (accountGroup && available.includes(accountGroup)) return accountGroup;
-  const ratioOf = (id: string) =>
-    connection.groups.find((group) => group.id === id)?.ratio ??
-    Number.POSITIVE_INFINITY;
-  return [...available].sort(
-    (left, right) =>
-      ratioOf(left) - ratioOf(right) || left.localeCompare(right),
-  )[0];
-}
-
 interface ToolSetupGridProps {
   activeApp?: AppId;
   compact?: boolean;
@@ -148,13 +132,28 @@ interface ToolSetupGridProps {
   onConfigured?: () => void;
 }
 
-export function ToolSetupGrid({
+export function ToolSetupGrid(props: ToolSetupGridProps) {
+  const { data: connection } = useYuanhengConnection();
+  return (
+    <ToolSetupGridContent
+      key={JSON.stringify([
+        connection?.baseUrl,
+        connection?.userId,
+        connection?.connected,
+      ])}
+      {...props}
+      connection={connection}
+    />
+  );
+}
+
+function ToolSetupGridContent({
   activeApp,
   compact = false,
   onSetActiveApp,
   onConfigured,
-}: ToolSetupGridProps) {
-  const { data: connection } = useYuanhengConnection();
+  connection,
+}: ToolSetupGridProps & { connection?: YuanhengConnectionStatus }) {
   const refreshConnection = useRefreshYuanheng();
   const statuses = useYuanhengToolStatuses();
   const configure = useConfigureYuanhengTools();
@@ -164,16 +163,42 @@ export function ToolSetupGrid({
   const launchDirectoryState = useToolLaunchDirectories();
   const versions = useToolInventory();
   const [selected, setSelected] = useState<YuanhengToolId[]>([]);
-  const [models, setModels] = useState<Partial<Record<YuanhengToolId, string>>>(
-    {},
-  );
-  const [groups, setGroups] = useState<Partial<Record<YuanhengToolId, string>>>(
-    {},
-  );
-  const [reasoning, setReasoning] = useState<
+  const [modelDrafts, setModels] = useState<
+    Partial<Record<YuanhengToolId, string>>
+  >({});
+  const [groupDrafts, setGroups] = useState<
+    Partial<Record<YuanhengToolId, string>>
+  >({});
+  const [reasoningDrafts, setReasoning] = useState<
     Partial<Record<YuanhengToolId, YuanhengReasoningLevel>>
   >({});
   const selectionInitialized = useRef(false);
+  const actionLocked = useRef(false);
+  const mounted = useRef(true);
+  const [actionPending, setActionPending] = useState(false);
+  const busy = actionPending || configure.isPending;
+  useEffect(() => {
+    mounted.current = true;
+    return () => {
+      mounted.current = false;
+    };
+  }, []);
+  const beginAction = () => {
+    if (
+      actionLocked.current ||
+      !connection?.connected ||
+      !statuses.data ||
+      statuses.isError
+    )
+      return false;
+    actionLocked.current = true;
+    setActionPending(true);
+    return true;
+  };
+  const endAction = () => {
+    actionLocked.current = false;
+    if (mounted.current) setActionPending(false);
+  };
 
   const versionMap = useMemo(
     () => new Map((versions.data ?? []).map((item) => [item.name, item])),
@@ -184,6 +209,25 @@ export function ToolSetupGrid({
     [statuses.data],
   );
   const tools = DESKTOP_TOOLS;
+  // Drafts are only user edits; saved settings are read on every render.
+  // This avoids arrival-order races and lets refreshes update untouched tools.
+  const models: Partial<Record<YuanhengToolId, string>> = {};
+  const groups: Partial<Record<YuanhengToolId, string>> = {};
+  const reasoning: Partial<Record<YuanhengToolId, YuanhengReasoningLevel>> = {};
+  for (const app of tools) {
+    const selection = resolveToolSetupSelection(
+      connection,
+      statusMap.get(app),
+      {
+        model: modelDrafts[app],
+        group: groupDrafts[app],
+        reasoning: reasoningDrafts[app],
+      },
+    );
+    models[app] = selection.model;
+    groups[app] = selection.group;
+    reasoning[app] = selection.reasoning;
+  }
   const groupMap = useMemo(
     () => new Map((connection?.groups ?? []).map((group) => [group.id, group])),
     [connection?.groups],
@@ -202,47 +246,6 @@ export function ToolSetupGrid({
       ),
     [connection],
   );
-
-  const preferredGroup = (model: string, current?: string) =>
-    pickPreferredGroup(connection, model, current);
-
-  useEffect(() => {
-    if (!statuses.data) return;
-    setModels((current) => {
-      const next = { ...current };
-      for (const status of statuses.data) {
-        const model =
-          status.model && connection?.models.includes(status.model)
-            ? status.model
-            : status.recommendedModel;
-        if (!next[status.app] && model) next[status.app] = model;
-      }
-      return next;
-    });
-    setReasoning((current) => {
-      const next = { ...current };
-      for (const status of statuses.data) {
-        if (!next[status.app]) next[status.app] = status.reasoning ?? "auto";
-      }
-      return next;
-    });
-  }, [connection?.models, statuses.data]);
-
-  useEffect(() => {
-    if (!connection) return;
-    setGroups((current) => {
-      const next = { ...current };
-      for (const [app, model] of Object.entries(models) as [
-        YuanhengToolId,
-        string,
-      ][]) {
-        const group = preferredGroup(model, current[app]);
-        if (group) next[app] = group;
-        else delete next[app];
-      }
-      return next;
-    });
-  }, [connection, models]);
 
   useEffect(() => {
     if (selectionInitialized.current || !versions.data || !statuses.data)
@@ -278,6 +281,7 @@ export function ToolSetupGrid({
   const preflightApps = async (
     apps: YuanhengToolId[],
     overrides: Partial<Record<YuanhengToolId, string>> = {},
+    groupOverrides: Partial<Record<YuanhengToolId, string>> = {},
   ) => {
     const checked = new Set<string>();
     let requiresConfiguration = false;
@@ -286,7 +290,8 @@ export function ToolSetupGrid({
         overrides[app] ?? models[app] ?? statusMap.get(app)?.recommendedModel;
       if (!model)
         throw new Error(dt("{{v0}} 没有可用模型", { v0: toolLabel(app) }));
-      const group = preferredGroup(model, groups[app]);
+      const group = groupOverrides[app] ?? groups[app];
+      if (!group) throw new Error(dt("请先选择令牌分组，再配置或启动。"));
       const selectedReasoning = selectedReasoningFor(app, model);
       const key = [app, model, group ?? "", selectedReasoning].join("\u0000");
       if (checked.has(key)) continue;
@@ -297,6 +302,7 @@ export function ToolSetupGrid({
         group,
         reasoning: selectedReasoning,
       });
+      if (!mounted.current) throw new Error("操作已取消");
       if (result.status === "error") {
         const failed = result.checks.find((check) => check.status === "error");
         throw new Error(failed?.message || result.message);
@@ -308,6 +314,7 @@ export function ToolSetupGrid({
   };
 
   const configureApps = async (apps: YuanhengToolId[]) => {
+    if (!beginAction()) return false;
     try {
       await preflightApps(apps);
       const selectedModels = Object.fromEntries(
@@ -362,13 +369,38 @@ export function ToolSetupGrid({
     } catch (error) {
       toast.error(extractErrorMessage(error) || dt("工具配置失败"));
       return false;
+    } finally {
+      endAction();
     }
   };
 
   const applyCodexModel = async (model: string) => {
+    if (!beginAction()) return;
     const previousModel = models.codex;
     const previousGroup = groups.codex;
-    const group = preferredGroup(model, previousGroup);
+    let group = previousGroup;
+    const available = connection?.modelGroups[model] ?? [];
+    if (
+      model !== previousModel &&
+      group &&
+      available.length > 0 &&
+      !available.includes(group)
+    ) {
+      const suggestion = pickPreferredGroup(connection, model);
+      if (
+        !suggestion ||
+        !window.confirm(
+          dt(
+            "新模型的目录未包含原分组 {{old}}。是否改用 {{next}}？取消将保留原配置。",
+            { old: group, next: suggestion },
+          ),
+        )
+      ) {
+        endAction();
+        return;
+      }
+      group = suggestion;
+    }
     const selectedReasoning = selectedReasoningFor("codex", model);
     setModels((current) => ({ ...current, codex: model }));
     setGroups((current) => {
@@ -378,7 +410,11 @@ export function ToolSetupGrid({
       return next;
     });
     try {
-      await preflightApps(["codex"], { codex: model });
+      await preflightApps(
+        ["codex"],
+        { codex: model },
+        group ? { codex: group } : {},
+      );
       const results = await configure.mutateAsync({
         apps: ["codex"],
         models: { codex: model },
@@ -399,6 +435,8 @@ export function ToolSetupGrid({
         return next;
       });
       toast.error(extractErrorMessage(error) || dt("模型切换失败"));
+    } finally {
+      endAction();
     }
   };
 
@@ -496,6 +534,7 @@ export function ToolSetupGrid({
   };
 
   const launchTool = async (app: YuanhengToolId, forceRestart = false) => {
+    if (!beginAction()) return;
     try {
       if (
         (app === "codex" || app === "chatgpt-desktop") &&
@@ -511,9 +550,7 @@ export function ToolSetupGrid({
       const status = statusMap.get(app);
       const selectedModel = models[app] ?? status?.recommendedModel;
       const launchedModel = selectedModel ?? status?.model;
-      const selectedGroup = selectedModel
-        ? preferredGroup(selectedModel, groups[app])
-        : undefined;
+      const selectedGroup = groups[app];
       const selectedReasoning = selectedReasoningFor(app, selectedModel);
       const needsCredentialRepair = await preflightApps([app]);
       const needsApply =
@@ -540,6 +577,7 @@ export function ToolSetupGrid({
         }
         onConfigured?.();
       }
+      if (!mounted.current) return;
       const restarted = isDesktopApp(app) && (needsApply || forceRestart);
       await yuanhengApi.launchTool(
         app,
@@ -562,6 +600,8 @@ export function ToolSetupGrid({
       );
     } catch (error) {
       toast.error(extractErrorMessage(error) || dt("启动失败"));
+    } finally {
+      endAction();
     }
   };
 
@@ -629,11 +669,13 @@ export function ToolSetupGrid({
           disabled={
             !connection?.connected ||
             selected.length === 0 ||
-            configure.isPending
+            busy ||
+            !statuses.data ||
+            statuses.isError
           }
           onClick={() => void configureApps(selected)}
         >
-          {configure.isPending ? (
+          {busy ? (
             <Loader2 className="h-3.5 w-3.5 animate-spin" />
           ) : (
             <Settings2 className="h-3.5 w-3.5" />
@@ -690,9 +732,13 @@ export function ToolSetupGrid({
           const availableGroups = selectedModel
             ? (connection?.modelGroups[selectedModel] ?? [])
             : [];
-          const selectedGroup = selectedModel
-            ? preferredGroup(selectedModel, groups[app])
-            : undefined;
+          const selectedGroup = groups[app];
+          const groupUnconfirmed = Boolean(
+            selectedGroup && !availableGroups.includes(selectedGroup),
+          );
+          const displayGroups = groupUnconfirmed
+            ? [selectedGroup!, ...availableGroups]
+            : availableGroups;
           const supportedReasoning = selectedModel
             ? (connection?.reasoningLevels[selectedModel] ?? [])
             : [];
@@ -983,7 +1029,7 @@ export function ToolSetupGrid({
                     recommended={status.recommendedModel}
                     modelMeta={modelMeta}
                     label={dt("{{v0}} 模型选择", { v0: toolLabel(app) })}
-                    disabled={configure.isPending}
+                    disabled={busy}
                     onRefresh={refreshModels}
                     onChange={(value) => {
                       if (app === "codex") {
@@ -991,7 +1037,7 @@ export function ToolSetupGrid({
                         return;
                       }
                       setModels((current) => ({ ...current, [app]: value }));
-                      const group = preferredGroup(value);
+                      const group = groups[app];
                       setGroups((current) => {
                         const next = { ...current };
                         if (group) next[app] = group;
@@ -1012,41 +1058,54 @@ export function ToolSetupGrid({
                       });
                     }}
                   />
-                  {availableGroups.length > 0 && (
+                  {displayGroups.length > 0 && (
                     <div className="mt-2 flex items-center gap-2 text-[10px]">
                       <span className="shrink-0 text-muted-foreground">
                         {dt("令牌分组")}
                       </span>
-                      {availableGroups.length === 1 ? (
-                        <span className="truncate font-medium">
-                          {availableGroups[0]}
-                          {groupMap.get(availableGroups[0])?.ratio != null &&
-                            ` · ${groupMap.get(availableGroups[0])?.ratio}x`}
-                        </span>
-                      ) : (
-                        <CompactSelectPicker
-                          label={dt("{{v0}} 令牌分组", {
-                            v0: toolLabel(app),
-                          })}
-                          triggerClassName="h-7 flex-1"
-                          value={selectedGroup ?? ""}
-                          options={availableGroups.map((group) => {
+                      <CompactSelectPicker
+                        label={dt("{{v0}} 令牌分组", {
+                          v0: toolLabel(app),
+                        })}
+                        triggerClassName="h-7 flex-1"
+                        value={selectedGroup ?? ""}
+                        disabled={busy}
+                        options={[
+                          ...(!selectedGroup
+                            ? [{ value: "", label: dt("选择令牌分组") }]
+                            : []),
+                          ...displayGroups.map((group) => {
                             const option = groupMap.get(group);
                             return {
                               value: group,
                               label: `${group}${option?.ratio != null ? ` · ${option.ratio}x` : ""}`,
                             };
-                          })}
-                          onChange={(value) => {
-                            setGroups((current) => ({
-                              ...current,
-                              [app]: value,
-                            }));
-                          }}
-                        />
-                      )}
+                          }),
+                        ]}
+                        onChange={(value) => {
+                          setGroups((current) => ({
+                            ...current,
+                            [app]: value,
+                          }));
+                        }}
+                      />
                     </div>
                   )}
+                  {groupUnconfirmed && (
+                    <p
+                      role="status"
+                      className="mt-2 text-[10px] text-amber-700 dark:text-amber-300"
+                    >
+                      {dt(
+                        "保留原分组：当前目录尚未确认其可用性。请刷新或手动选择，不会自动换组。",
+                      )}
+                    </p>
+                  )}
+                  <p className="mt-2 text-[10px] text-muted-foreground">
+                    {dt(
+                      "分组选择需点击配置或启动后保存；再次打开将恢复已保存配置。",
+                    )}
+                  </p>
                   {controlsReasoning && (
                     <div className="mt-2 flex items-center gap-2 text-[10px]">
                       <span className="shrink-0 text-muted-foreground">
@@ -1064,7 +1123,7 @@ export function ToolSetupGrid({
                             ? selectedReasoning
                             : "unsupported"
                         }
-                        disabled={supportedReasoning.length === 0}
+                        disabled={busy || supportedReasoning.length === 0}
                         options={
                           supportedReasoning.length === 0
                             ? [{ value: "unsupported", label: dt("不适用") }]
@@ -1153,7 +1212,9 @@ export function ToolSetupGrid({
                     disabled={
                       !connection?.connected ||
                       !status?.supported ||
-                      configure.isPending
+                      busy ||
+                      !statuses.data ||
+                      statuses.isError
                     }
                     aria-label={dt("配置 {{v0}}", { v0: toolLabel(app) })}
                     onClick={(event) => {
@@ -1178,7 +1239,9 @@ export function ToolSetupGrid({
                     !installed ||
                     !connection?.connected ||
                     !status?.supported ||
-                    configure.isPending
+                    busy ||
+                    !statuses.data ||
+                    statuses.isError
                   }
                   aria-label={dt("启动 {{v0}}", { v0: toolLabel(app) })}
                   onClick={(event) => {

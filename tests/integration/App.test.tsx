@@ -18,12 +18,31 @@ import {
   getRestartedToolCalls,
   resetProviderState,
   setSettings,
-  setYuanhengConnection,
-  setYuanhengToolStatus,
+  setYuanhengConnection as setConnectionState,
+  setYuanhengToolStatus as setToolState,
 } from "../msw/state";
 import { emitTauriEvent } from "../msw/tauriMocks";
 import { server } from "../msw/server";
 import i18n from "@/i18n";
+
+// Successful setup fixtures must include the group catalog required by live
+// configuration; an absent catalog is not proof of permission to change groups.
+const setYuanhengConnection = (
+  input: Parameters<typeof setConnectionState>[0],
+) =>
+  setConnectionState({
+    ...input,
+    groups: input.groups ?? [{ id: "default", description: "", ratio: 1 }],
+    modelGroups:
+      input.modelGroups ??
+      Object.fromEntries(
+        (input.models ?? []).map((model) => [model, ["default"]]),
+      ),
+  });
+const setYuanhengToolStatus = (
+  app: Parameters<typeof setToolState>[0],
+  input: Parameters<typeof setToolState>[1],
+) => setToolState(app, { group: "default", ...input });
 
 const toastSuccessMock = vi.fn();
 const toastErrorMock = vi.fn();
