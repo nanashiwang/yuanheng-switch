@@ -478,6 +478,59 @@ describe("useModelSwitchCenter", () => {
     });
   });
 
+  it.each([true, false])(
+    "confirms cross-group model switches from the workspace: %s",
+    async (accepted) => {
+      connection.modelGroups = {
+        "model-a": ["premium"],
+        "model-b": ["other-group"],
+      };
+      connection.groups = [
+        { id: "premium", description: "", ratio: 1 },
+        { id: "other-group", description: "", ratio: 0.2 },
+      ];
+      statuses.find((row) => row.app === "codex")!.group = "premium";
+      const confirm = vi.spyOn(window, "confirm").mockReturnValue(accepted);
+      const original = invokeMock.getMockImplementation()!;
+      invokeMock.mockImplementation((command, payload) => {
+        if (command === "configure_yuanheng_tools")
+          return Promise.resolve([
+            {
+              app: "codex",
+              configured: true,
+              model: "model-b",
+              warnings: [],
+              error: null,
+            },
+          ]);
+        return original(command, payload);
+      });
+      const { wrapper } = createWrapper();
+      const { result } = renderHook(() => useModelSwitchCenter(), { wrapper });
+      await waitFor(() => expect(result.current.groups.codex).toBe("premium"));
+      await act(async () => result.current.applyModel("codex", "model-b"));
+      expect(confirm).toHaveBeenCalledOnce();
+      if (accepted) {
+        expect(invokeMock).toHaveBeenCalledWith(
+          "preflight_yuanheng_tool",
+          expect.objectContaining({ group: "other-group", model: "model-b" }),
+        );
+        expect(invokeMock).toHaveBeenCalledWith(
+          "configure_yuanheng_tools",
+          expect.objectContaining({ groups: { codex: "other-group" } }),
+        );
+      } else {
+        expect(result.current.groups.codex).toBe("premium");
+        expect(
+          invokeMock.mock.calls.some(
+            ([cmd]) => cmd === "configure_yuanheng_tools",
+          ),
+        ).toBe(false);
+      }
+      confirm.mockRestore();
+    },
+  );
+
   it("restarts Codex App after its model catalog configuration changes", async () => {
     const { wrapper } = createWrapper();
     const { result } = renderHook(() => useModelSwitchCenter(), { wrapper });

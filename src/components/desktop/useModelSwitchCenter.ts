@@ -453,10 +453,36 @@ export function useModelSwitchCenter() {
     }
     const availableGroups = connection?.modelGroups[model] ?? [];
     const requestedGroup = patch.group ?? groups[app] ?? status?.group;
-    const group =
+    let group =
       requestedGroup && availableGroups.includes(requestedGroup)
         ? requestedGroup
         : pickPreferredGroup(connection, model, requestedGroup ?? undefined);
+    // Explicit cross-model switches can change groups only after confirmation.
+    // Refresh/launch and missing catalogs must continue to preserve the old group.
+    if (
+      patch.model &&
+      model !== (previous.model ?? status?.model) &&
+      !patch.group &&
+      group &&
+      availableGroups.length > 0 &&
+      !availableGroups.includes(group)
+    ) {
+      const suggestion = pickPreferredGroup(connection, model);
+      if (
+        !suggestion ||
+        !window.confirm(
+          dt(
+            "新模型的目录未包含原分组 {{old}}。是否改用 {{next}}？取消将保留原配置。",
+            {
+              old: group,
+              next: suggestion,
+            },
+          ),
+        )
+      )
+        return;
+      group = suggestion;
+    }
     const supportedReasoning = connection?.reasoningLevels[model] ?? [];
     const requestedReasoning =
       patch.reasoning ?? reasoning[app] ?? status?.reasoning ?? "auto";
