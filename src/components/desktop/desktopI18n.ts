@@ -6,6 +6,15 @@ import { DESKTOP_ZH_TW } from "./desktopI18n.zhTW";
 type Values = Record<string, string | number | null | undefined>;
 
 export const DESKTOP_EN: Record<string, string> = {
+  "新模型的目录未包含原分组 {{old}}。是否改用 {{next}}？取消将保留原配置。":
+    "The new model's catalog does not include {{old}}. Switch to {{next}}? Cancel keeps the original configuration.",
+  "请先选择令牌分组，再配置或启动。":
+    "Select a token group before configuring or launching.",
+  选择令牌分组: "Select token group",
+  "保留原分组：当前目录尚未确认其可用性。请刷新或手动选择，不会自动换组。":
+    "Original group retained; availability is not confirmed in the current catalog. Refresh or choose manually. No automatic group switch.",
+  "分组选择需点击配置或启动后保存；再次打开将恢复已保存配置。":
+    "Click Configure or Launch to save your group choice. Reopening restores the saved configuration.",
   "历史会话配置与自定义供应商冲突（{{providers}}），已保留原配置，请检查供应商设置。":
     "History settings conflict with custom providers ({{providers}}). Your settings were preserved; review the provider configuration.",
   "历史会话配置需要修复，请再次点击当前使用方式。":
