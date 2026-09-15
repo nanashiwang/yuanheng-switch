@@ -5,6 +5,9 @@ use crate::codex_config::CC_SWITCH_CODEX_OFFICIAL_PROXY_PROVIDER_ID as OFFICIAL;
 use crate::error::AppError;
 use toml_edit::{DocumentMut, Item, Table};
 
+/// Stable provider id for new YuanHeng projections. `custom` is a user-facing
+/// legacy alias and must never be claimed when it contains a foreign route.
+const MANAGED_PROVIDER: &str = "yuanheng-switch";
 const ALIASES: [&str; 3] = ["yuanheng", "custom", OFFICIAL];
 
 fn parse(text: &str) -> Result<DocumentMut, AppError> {
@@ -88,7 +91,7 @@ fn owned(item: &Item) -> bool {
 
 fn active_route(doc: &DocumentMut, tables: &Table) -> Option<Item> {
     let id = doc.get("model_provider")?.as_str()?;
-    if !ALIASES.contains(&id) {
+    if !ALIASES.contains(&id) && id != MANAGED_PROVIDER {
         return None;
     }
     tables.get(id).filter(|route| owned(route)).cloned()
@@ -106,7 +109,8 @@ fn native_route() -> Item {
 pub(crate) fn manages(config: &str) -> Result<bool, AppError> {
     let doc = parse(config)?;
     let tables = providers(&doc)?;
-    Ok(ALIASES.iter().any(|id| tables.get(id).is_some_and(owned)))
+    Ok(tables.get(MANAGED_PROVIDER).is_some_and(owned)
+        || ALIASES.iter().any(|id| tables.get(id).is_some_and(owned)))
 }
 
 /// Merge only provider definitions from the previous live file, then project all
@@ -114,17 +118,31 @@ pub(crate) fn manages(config: &str) -> Result<bool, AppError> {
 pub(crate) fn prepare(previous: &str, next: &str) -> Result<String, AppError> {
     let mut doc = parse(next)?;
     let mut tables = providers(&doc)?;
-    let active = doc
+    let mut active = doc
         .get("model_provider")
         .and_then(Item::as_str)
         .map(str::to_string);
-    let route = active_route(&doc, &tables);
+    let mut route = active_route(&doc, &tables);
+    // A first-time YuanHeng setup may be projected using the historical
+    // `custom` id while the live config already contains the user's own
+    // `custom` provider. Never overwrite or activate that foreign route:
+    // move only the generated YuanHeng route to its dedicated id.
+    let old_doc = parse(previous)?;
+    let old_tables = providers(&old_doc)?;
+    if route.is_some()
+        && active.as_deref() == Some("custom")
+        && old_tables.get("custom").is_some_and(|item| !owned(item))
+    {
+        let generated = route.take().expect("route checked above");
+        tables.insert(MANAGED_PROVIDER, generated);
+        doc["model_provider"] = toml_edit::value(MANAGED_PROVIDER);
+        active = Some(MANAGED_PROVIDER.to_string());
+        route = tables.get(MANAGED_PROVIDER).cloned();
+    }
     // A non-YuanHeng custom provider is outside this feature's scope.
     if route.is_none() && active.as_deref().is_some_and(|id| id != "openai") {
         return Ok(next.into());
     }
-    let old_doc = parse(previous)?;
-    let old_tables = providers(&old_doc)?;
     let route = match route {
         Some(route) => route,
         None if ALIASES
@@ -158,6 +176,9 @@ pub(crate) fn prepare(previous: &str, next: &str) -> Result<String, AppError> {
         if tables.get(alias).is_none_or(owned) {
             tables.insert(alias, route.clone());
         }
+    }
+    if tables.get(MANAGED_PROVIDER).is_some_and(owned) {
+        tables.insert(MANAGED_PROVIDER, route.clone());
     }
     // A restored third-party takeover can contribute a non-YuanHeng alias.
     // Keep its settings, but official mode must not resurrect the proxy-owned
@@ -391,10 +412,34 @@ base_url = "http://localhost:4444/v1"
         );
         assert_eq!(health(&next).unwrap().conflicts, vec!["custom"]);
         assert_eq!(prepare(&next, &next).unwrap(), next);
-        assert!(
-            prepare(source, &managed()).is_err(),
-            "never activate by overwriting a conflicting custom route"
+        let switched = value(&prepare(source, &managed()).unwrap());
+        assert_eq!(switched["model_provider"].as_str(), Some(MANAGED_PROVIDER));
+        assert_eq!(
+            switched["model_providers"]["custom"]["base_url"].as_str(),
+            Some("https://example.com/v1")
         );
+    }
+
+    #[test]
+    fn first_time_setup_uses_dedicated_provider_when_custom_is_user_owned() {
+        let previous = r#"[model_providers.custom]
+name = "My server"
+base_url = "https://example.com/v1"
+api_key_env = "MY_KEY"
+"#;
+        let generated = managed();
+        let fixed = prepare(previous, &generated).unwrap();
+        let doc = value(&fixed);
+        assert_eq!(doc["model_provider"].as_str(), Some(MANAGED_PROVIDER));
+        assert_eq!(
+            doc["model_providers"]["custom"]["base_url"].as_str(),
+            Some("https://example.com/v1")
+        );
+        assert_eq!(
+            doc["model_providers"][MANAGED_PROVIDER]["base_url"].as_str(),
+            Some("http://127.0.0.1:15721/chatgpt-desktop/v1")
+        );
+        assert_eq!(prepare(&fixed, &fixed).unwrap(), fixed);
     }
 
     #[test]
