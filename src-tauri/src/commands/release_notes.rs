@@ -1,6 +1,6 @@
 use std::time::Duration;
 
-const RELEASE_MANIFEST_URL: &str = "https://cn.meta-api.vip/desktop/update/latest.json";
+use crate::yuanheng_endpoints::RELEASE_MANIFEST_URL;
 const MAX_MANIFEST_BYTES: usize = 128 * 1024;
 
 async fn read_release_notes(mut response: reqwest::Response) -> Result<serde_json::Value, String> {

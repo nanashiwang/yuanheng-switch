@@ -188,7 +188,7 @@ describe("ProviderList Component", () => {
     });
     expect(consoleLink).toHaveAttribute(
       "href",
-      "https://cn.meta-api.vip/console/token",
+      "https://meta-api.vip/console/token",
     );
   });
 

@@ -1,4 +1,5 @@
 import { Download, ExternalLink, Link2 } from "lucide-react";
+import { YUANHENG_WEBSITE_URL } from "@/config/yuanhengBrand";
 import { useTranslation } from "react-i18next";
 import { Button } from "@/components/ui/button";
 import type { AppId } from "@/lib/api/types";
@@ -28,7 +29,7 @@ export function ProviderEmptyState({
       <div className="mt-6 flex flex-col gap-2 sm:flex-row">
         <Button asChild>
           <a
-            href="https://cn.meta-api.vip/console/token"
+            href={`${YUANHENG_WEBSITE_URL}/console/token`}
             target="_blank"
             rel="noreferrer"
           >

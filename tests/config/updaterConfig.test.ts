@@ -3,7 +3,7 @@ import tauriConfig from "../../src-tauri/tauri.conf.json";
 const githubReleaseManifest =
   "https://github.com/nanashiwang/yuanheng-switch/releases/latest/download/latest.json";
 const yuanHengReleaseManifest =
-  "https://cn.meta-api.vip/desktop/update/latest.json";
+  "https://meta-api.vip/desktop/update/latest.json";
 
 describe("desktop updater config", () => {
   it("uses the YuanHeng mirror as the primary endpoint", () => {
