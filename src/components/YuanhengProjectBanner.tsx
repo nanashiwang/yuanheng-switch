@@ -4,14 +4,31 @@ import type { Provider } from "@/types";
 import type { AppId } from "@/lib/api";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
+import { YUANHENG_WEBSITE_URL } from "@/config/yuanhengBrand";
 
-const YUANHENG_CONSOLE_URL = "https://cn.meta-api.vip/console/token";
-const YUANHENG_API_HOST = "cn.meta-api.vip";
+const YUANHENG_CONSOLE_URL = `${YUANHENG_WEBSITE_URL}/console/token`;
 
 export function isYuanhengProvider(provider?: Provider): boolean {
   if (!provider) return false;
 
-  return JSON.stringify(provider).toLowerCase().includes(YUANHENG_API_HOST);
+  // Old managed configurations remain recognizable while awaiting reapply.
+  const urls =
+    JSON.stringify(provider.settingsConfig).match(/https?:\/\/[^\s"'\\]+/g) ??
+    [];
+  return urls.some((raw) => {
+    try {
+      const url = new URL(raw);
+      return (
+        url.protocol === "https:" &&
+        ["meta-api.vip", "cn.meta-api.vip"].includes(url.hostname) &&
+        !url.username &&
+        !url.password &&
+        (!url.port || url.port === "443")
+      );
+    } catch {
+      return false;
+    }
+  });
 }
 
 interface YuanhengProjectBannerProps {

@@ -1,4 +1,5 @@
 import { platformPricingKey, usePlatformPricing } from "./platformPricing";
+import { YUANHENG_WEBSITE_URL } from "@/config/yuanhengBrand";
 import { usageKeys } from "./usage";
 import { useEffect } from "react";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
@@ -132,7 +133,7 @@ export function useSignOutYuanheng() {
       queryClient.invalidateQueries({ queryKey: usageKeys.all });
       queryClient.setQueryData(yuanhengKeys.connection, {
         connected: false,
-        baseUrl: "https://cn.meta-api.vip",
+        baseUrl: YUANHENG_WEBSITE_URL,
         userId: null,
         account: null,
         models: [],

@@ -34,7 +34,7 @@ The helper reads credentials in this order:
 2. `NAN_API_KEY` or `OPENAI_API_KEY` in `~/.codex/auth.json`.
 3. `NAN_API_KEY` or `OPENAI_API_KEY` in the process environment.
 
-The default base URL is `https://cn.meta-api.vip`. Never print or repeat API
+The default base URL is `https://meta-api.vip`. Never print or repeat API
 keys in logs or final responses.
 
 ## Generate

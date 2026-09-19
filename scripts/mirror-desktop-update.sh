@@ -11,7 +11,7 @@ fi
 : "${GITHUB_REPOSITORY:?missing repository}"
 : "${DESKTOP_UPDATE_PUBLISH_URL:?missing publishing URL}"
 : "${DESKTOP_UPDATE_PUBLISH_TOKEN:?missing publishing token}"
-public_url="${DESKTOP_UPDATE_PUBLIC_URL:-https://cn.meta-api.vip/desktop/update}"
+public_url="${DESKTOP_UPDATE_PUBLIC_URL:-https://meta-api.vip/desktop/update}"
 tag="v${version}"
 asset_dir="$(mktemp -d)"
 trap 'rm -rf "$asset_dir"' EXIT

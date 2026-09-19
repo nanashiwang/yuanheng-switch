@@ -10,7 +10,7 @@ use tauri::State;
 use crate::store::AppState;
 
 const API_TOKEN_SETTING_KEY: &str = "yuanheng_api_token";
-const VOICE_CLONE_ENDPOINT: &str = "https://cn.meta-api.vip/v1/chat/completions";
+use crate::yuanheng_endpoints::CHAT_URL as VOICE_CLONE_ENDPOINT;
 const VOICE_CLONE_MODEL: &str = "mimo-v2.5-tts-voiceclone";
 const MAX_REFERENCE_BASE64_BYTES: usize = 10_000_000;
 const MAX_REFERENCE_AUDIO_BYTES: usize = 7_500_000;

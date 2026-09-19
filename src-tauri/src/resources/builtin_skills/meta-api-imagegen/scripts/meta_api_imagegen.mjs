@@ -6,7 +6,7 @@ import { homedir } from "node:os";
 import { dirname, extname, resolve } from "node:path";
 
 const DEFAULTS = {
-  baseUrl: "https://cn.meta-api.vip",
+  baseUrl: "https://meta-api.vip",
   imageModel: "gpt-image-2",
   responsesModel: "gpt-5.5",
   size: "1024x1024",

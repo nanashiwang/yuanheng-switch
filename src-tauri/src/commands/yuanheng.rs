@@ -24,10 +24,9 @@ use crate::provider::{
 use crate::services::ProviderService;
 use crate::store::AppState;
 
-const BASE_URL: &str = "https://cn.meta-api.vip";
-const OPENAI_BASE_URL: &str = "https://cn.meta-api.vip/v1";
-const TOPUP_URL: &str = "https://cn.meta-api.vip/console/topup";
-const PULSE_URL: &str = "https://cn.meta-api.vip/console/pulse";
+use crate::yuanheng_endpoints::{
+    is_managed_endpoint, API_URL as OPENAI_BASE_URL, BASE_URL, COOKIE_DOMAIN, PULSE_URL, TOPUP_URL,
+};
 const TOPUP_WINDOW_LABEL: &str = "yuanheng-topup";
 const PULSE_WINDOW_LABEL: &str = "yuanheng-pulse";
 const TOPUP_CLOSED_EVENT: &str = "yuanheng-topup-closed";
@@ -935,7 +934,7 @@ fn session_cookie_for_webview(raw: &str) -> Result<Cookie<'static>, String> {
     }
 
     let mut cookie = Cookie::new(name.to_string(), value.to_string());
-    cookie.set_domain("cn.meta-api.vip");
+    cookie.set_domain(COOKIE_DOMAIN);
     cookie.set_path("/");
     cookie.set_secure(true);
     cookie.set_http_only(true);
@@ -1100,8 +1099,10 @@ fn stored_tool_credential(
                 })
             });
         if entry.is_some_and(|model| {
-            model.get("url").and_then(Value::as_str)
-                != Some(&format!("{OPENAI_BASE_URL}/chat/completions"))
+            !model
+                .get("url")
+                .and_then(Value::as_str)
+                .is_some_and(|url| is_managed_endpoint(url, &["/v1/chat/completions"], true))
         }) {
             return Err("工具接口已被外部修改，请核对元衡配置后再试".to_string());
         }
@@ -1129,13 +1130,7 @@ fn stored_tool_credential(
         return Ok(None);
     }
     let (base_url, fallback_key) = provider.resolve_usage_credentials(&app);
-    if url::Url::parse(&base_url).ok().is_none_or(|url| {
-        url.scheme() != "https"
-            || url.host_str() != Some("cn.meta-api.vip")
-            || url.port_or_known_default() != Some(443)
-            || !url.username().is_empty()
-            || url.password().is_some()
-    }) {
+    if !is_managed_endpoint(&base_url, &["", "/v1"], true) {
         return Err("工具接口已被外部修改，请核对元衡配置后再试".to_string());
     }
     let key = if matches!(app, AppType::Codex) {
@@ -1152,6 +1147,42 @@ fn stored_tool_credential(
 
 fn is_token_rejected(error: &str) -> bool {
     error.contains("HTTP 401") || error.contains("HTTP 403")
+}
+
+fn tool_uses_legacy_endpoint(state: &AppState, app_name: &str, model: &str) -> bool {
+    let endpoint = if app_name == "workbuddy" {
+        read_workbuddy_config().and_then(|config| {
+            config
+                .get("models")?
+                .as_array()?
+                .iter()
+                .find(|item| item.get("id").and_then(Value::as_str) == Some(model))?
+                .get("url")?
+                .as_str()
+                .map(str::to_string)
+        })
+    } else {
+        let app = if app_name == CHATGPT_DESKTOP_NAMESPACE {
+            AppType::Codex
+        } else {
+            let Ok(app) = app_name.parse::<AppType>() else {
+                return false;
+            };
+            app
+        };
+        state
+            .db
+            .get_provider_by_id(MANAGED_PROVIDER_ID, app_name)
+            .ok()
+            .flatten()
+            .filter(|provider| provider.category.as_deref() == Some("managed"))
+            .map(|provider| provider.resolve_usage_credentials(&app).0)
+    };
+    endpoint.is_some_and(|endpoint| {
+        let paths = ["", "/v1", "/v1/chat/completions"];
+        is_managed_endpoint(&endpoint, &paths, true)
+            && !is_managed_endpoint(&endpoint, &paths, false)
+    })
 }
 
 async fn ensure_device_api_token(
@@ -1856,7 +1887,7 @@ fn yuanheng_codex_mode_available(state: &AppState) -> bool {
                 .ok()
                 .flatten()
                 .is_some_and(|provider| {
-                    provider_has_credentials(&provider, &AppType::Codex)
+                    provider_has_credentials_for_route(&provider, &AppType::Codex, true)
                         && codex_surface_matches(
                             &provider,
                             if *namespace == CHATGPT_DESKTOP_NAMESPACE {
@@ -1926,6 +1957,8 @@ struct CodexModeSwitchSnapshot {
     local_current: Option<String>,
     database_current: Option<String>,
     previous_provider_setting: Option<String>,
+    managed_terminal: Option<Provider>,
+    managed_desktop: Option<Provider>,
 }
 
 fn capture_codex_mode_switch_snapshot(state: &AppState) -> Result<CodexModeSwitchSnapshot, String> {
@@ -1942,6 +1975,8 @@ fn capture_codex_mode_switch_snapshot(state: &AppState) -> Result<CodexModeSwitc
         Err(error) => return Err(format!("读取 Codex 终端快照失败: {error}")),
     };
     Ok(CodexModeSwitchSnapshot {
+        managed_terminal: managed_codex_provider_for_namespace(state, AppType::Codex.as_str())?,
+        managed_desktop: managed_codex_provider_for_namespace(state, CHATGPT_DESKTOP_NAMESPACE)?,
         live_config,
         terminal_profile,
         local_current: crate::settings::get_current_provider(&AppType::Codex),
@@ -1972,6 +2007,18 @@ fn restore_codex_mode_switch_snapshot(
     snapshot: &CodexModeSwitchSnapshot,
 ) -> Result<(), String> {
     let mut errors = Vec::new();
+    for (namespace, previous) in [
+        (AppType::Codex.as_str(), snapshot.managed_terminal.as_ref()),
+        (CHATGPT_DESKTOP_NAMESPACE, snapshot.managed_desktop.as_ref()),
+    ] {
+        let result = match previous {
+            Some(provider) => state.db.save_provider(namespace, provider),
+            None => state.db.delete_provider(namespace, MANAGED_PROVIDER_ID),
+        };
+        if let Err(error) = result {
+            errors.push(format!("恢复元衡线路记录失败: {error}"));
+        }
+    }
     let restore_previous = match snapshot.previous_provider_setting.as_deref() {
         Some(value) => state
             .db
@@ -2080,7 +2127,15 @@ fn switch_codex_account_mode_at_origin(
     }
 
     let snapshot = capture_codex_mode_switch_snapshot(state)?;
-    if before.mode == target_mode {
+    let legacy_routes = [&snapshot.managed_terminal, &snapshot.managed_desktop]
+        .into_iter()
+        .flatten()
+        .any(|provider| {
+            let (endpoint, _) = provider.resolve_usage_credentials(&AppType::Codex);
+            is_managed_endpoint(&endpoint, &["", "/v1"], true)
+                && !is_managed_endpoint(&endpoint, &["", "/v1"], false)
+        });
+    if before.mode == target_mode && !(target_mode == "yuanheng" && legacy_routes) {
         let current = snapshot.live_config.as_deref().unwrap_or_default();
         let port = url::Url::parse(proxy_origin)
             .ok()
@@ -2136,6 +2191,15 @@ fn switch_codex_account_mode_at_origin(
             }
             // 该文件只允许不存在，或仍为元衡自己生成的路由；未知内容不覆盖。
             read_owned_codex_terminal_profile()?;
+            for namespace in [AppType::Codex.as_str(), CHATGPT_DESKTOP_NAMESPACE] {
+                let mut provider = managed_codex_provider_for_namespace(state, namespace)?
+                    .ok_or("元衡配置不存在")?;
+                migrate_codex_provider_endpoint(&mut provider)?;
+                state
+                    .db
+                    .save_provider(namespace, &provider)
+                    .map_err(|e| e.to_string())?;
+            }
             write_codex_surface_config_at_origin(state, CodexSurface::Terminal, proxy_origin)?;
             write_codex_surface_config_at_origin(state, CodexSurface::Desktop, proxy_origin)?;
             set_codex_current_provider(state, MANAGED_PROVIDER_ID)?;
@@ -2212,6 +2276,41 @@ fn codex_provider_catalog_settings(provider: &Provider) -> Value {
             .cloned()
             .unwrap_or_else(|| json!({ "models": [] }))
     })
+}
+
+/// Change only the selected managed provider's legacy endpoint, never tokens,
+/// model catalog, unrelated TOML tables or third-party/official providers.
+fn migrate_codex_provider_endpoint(provider: &mut Provider) -> Result<(), String> {
+    if provider.id != MANAGED_PROVIDER_ID || provider.category.as_deref() != Some("managed") {
+        return Ok(());
+    }
+    let (endpoint, _) = provider.resolve_usage_credentials(&AppType::Codex);
+    if !is_managed_endpoint(&endpoint, &["", "/v1"], true)
+        || is_managed_endpoint(&endpoint, &["", "/v1"], false)
+    {
+        return Ok(());
+    }
+    let config = provider
+        .settings_config
+        .get("config")
+        .and_then(Value::as_str)
+        .ok_or("元衡 Codex 配置缺失")?;
+    let mut doc = config
+        .parse::<DocumentMut>()
+        .map_err(|_| "元衡 Codex 配置格式错误")?;
+    let id = doc
+        .get("model_provider")
+        .and_then(toml_edit::Item::as_str)
+        .ok_or("元衡 Codex 供应商标识缺失")?
+        .to_string();
+    let table = doc
+        .get_mut("model_providers")
+        .and_then(|providers| providers.get_mut(&id))
+        .and_then(toml_edit::Item::as_table_like_mut)
+        .ok_or("元衡 Codex 供应商定义缺失")?;
+    table.insert("base_url", toml_edit::value(OPENAI_BASE_URL));
+    provider.settings_config["config"] = json!(doc.to_string());
+    Ok(())
 }
 
 fn set_codex_reasoning_field(config_text: &str, reasoning: Option<&str>) -> Result<String, String> {
@@ -2383,7 +2482,7 @@ async fn configure_codex_surface(
     let terminal_before = managed_codex_provider_for_namespace(state, AppType::Codex.as_str())?;
     let desktop_before = managed_codex_provider_for_namespace(state, CHATGPT_DESKTOP_NAMESPACE)?;
 
-    let terminal = if surface == CodexSurface::Terminal {
+    let mut terminal = if surface == CodexSurface::Terminal {
         selected.clone()
     } else {
         terminal_before
@@ -2391,7 +2490,7 @@ async fn configure_codex_surface(
             .or_else(|| desktop_before.clone())
             .unwrap_or_else(|| selected.clone())
     };
-    let desktop = if surface == CodexSurface::Desktop {
+    let mut desktop = if surface == CodexSurface::Desktop {
         selected
     } else {
         desktop_before
@@ -2399,6 +2498,8 @@ async fn configure_codex_surface(
             .or_else(|| terminal_before.clone())
             .unwrap_or_else(|| terminal.clone())
     };
+    migrate_codex_provider_endpoint(&mut terminal)?;
+    migrate_codex_provider_endpoint(&mut desktop)?;
 
     let update = async {
         save_managed_codex_provider(state, AppType::Codex.as_str(), &terminal)?;
@@ -2679,6 +2780,14 @@ fn codex_surface_matches(provider: &Provider, surface: CodexSurface) -> bool {
 }
 
 fn provider_has_credentials(provider: &Provider, app: &AppType) -> bool {
+    provider_has_credentials_for_route(provider, app, false)
+}
+
+fn provider_has_credentials_for_route(
+    provider: &Provider,
+    app: &AppType,
+    allow_legacy: bool,
+) -> bool {
     let settings = &provider.settings_config;
     let non_empty = |pointer: &str| {
         settings
@@ -2686,8 +2795,11 @@ fn provider_has_credentials(provider: &Provider, app: &AppType) -> bool {
             .and_then(Value::as_str)
             .is_some_and(|value| !value.trim().is_empty())
     };
-    let serialized = settings.to_string();
-    let has_base_url = serialized.contains(BASE_URL);
+    // Inspect the effective endpoint, not arbitrary text in notes or keys.
+    // Old CN records remain readable by stored_tool_credential, but must be
+    // reapplied through the normal verified configuration flow before current.
+    let (base_url, _) = provider.resolve_usage_credentials(app);
+    let has_base_url = is_managed_endpoint(&base_url, &["", "/v1"], allow_legacy);
     let has_token = match app {
         AppType::Claude | AppType::ClaudeDesktop => non_empty("/env/ANTHROPIC_AUTH_TOKEN"),
         AppType::Codex => non_empty("/auth/OPENAI_API_KEY"),
@@ -2920,6 +3032,25 @@ fn read_workbuddy_config() -> Option<Value> {
 }
 
 fn workbuddy_config_matches(value: &Value, model: &str) -> bool {
+    workbuddy_config_matches_endpoint(value, model, false)
+}
+
+fn workbuddy_config_matches_endpoint(value: &Value, model: &str, allow_legacy: bool) -> bool {
+    // The file is replaced/restored as a whole; a valid selected model must
+    // not hide another row that still uses CN or belongs to a third party.
+    let Some(models) = value.get("models").and_then(Value::as_array) else {
+        return false;
+    };
+    if models.is_empty()
+        || !models.iter().all(|item| {
+            item.get("vendor").and_then(Value::as_str) == Some(MANAGED_PROVIDER_DISPLAY_NAME)
+                && item.get("url").and_then(Value::as_str).is_some_and(|url| {
+                    is_managed_endpoint(url, &["/v1/chat/completions"], allow_legacy)
+                })
+        })
+    {
+        return false;
+    }
     let Some(item) = value
         .get("models")
         .and_then(Value::as_array)
@@ -2931,10 +3062,12 @@ fn workbuddy_config_matches(value: &Value, model: &str) -> bool {
     else {
         return false;
     };
-    let expected_url = format!("{OPENAI_BASE_URL}/chat/completions");
     item.get("id").and_then(Value::as_str) == Some(model)
         && item.get("vendor").and_then(Value::as_str) == Some(MANAGED_PROVIDER_DISPLAY_NAME)
-        && item.get("url").and_then(Value::as_str) == Some(expected_url.as_str())
+        && item
+            .get("url")
+            .and_then(Value::as_str)
+            .is_some_and(|url| is_managed_endpoint(url, &["/v1/chat/completions"], allow_legacy))
         && item
             .get("apiKey")
             .and_then(Value::as_str)
@@ -2957,9 +3090,9 @@ fn workbuddy_config_covers_models(value: &Value, models: &[String]) -> bool {
         })
         .unwrap_or_default();
     !models.is_empty()
-        && models
-            .iter()
-            .all(|model| configured.contains(model.as_str()))
+        && models.iter().all(|model| {
+            configured.contains(model.as_str()) && workbuddy_config_matches(value, model)
+        })
 }
 
 fn workbuddy_status(state: &AppState, connection: &YuanhengConnectionStatus) -> YuanhengToolStatus {
@@ -3040,7 +3173,8 @@ fn chatgpt_desktop_status(
     let schema_current = stored.as_ref().is_some_and(|provider| {
         let expected_models =
             cached_models_for_provider_group(connection, provider, &AppType::Codex);
-        provider_schema_current(provider, &AppType::Codex)
+        provider_has_credentials(provider, &AppType::Codex)
+            && provider_schema_current(provider, &AppType::Codex)
             && codex_catalog_covers_available_models(provider, &expected_models)
             && codex_surface_matches(provider, CodexSurface::Desktop)
     });
@@ -3356,7 +3490,7 @@ fn restore_workbuddy_config(state: &AppState) -> Result<Option<bool>, String> {
     let current_is_managed = !stored_model.is_empty()
         && read_workbuddy_config()
             .as_ref()
-            .is_some_and(|value| workbuddy_config_matches(value, &stored_model));
+            .is_some_and(|value| workbuddy_config_matches_endpoint(value, &stored_model, true));
     if !current_is_managed {
         return Err("WorkBuddy 配置已被外部修改，元衡未覆盖当前文件".to_string());
     }
@@ -3851,7 +3985,18 @@ async fn preflight_yuanheng_tool_at(
     }
 
     let stored_token = stored_tool_credential(state, app_name, &group, Some(model))?;
-    let mut requires_configuration = stored_token.is_none();
+    let legacy_endpoint = tool_uses_legacy_endpoint(state, app_name, model);
+    let mut requires_configuration = stored_token.is_none() || legacy_endpoint;
+    if legacy_endpoint {
+        has_warning = true;
+        push_preflight_check(
+            &mut checks,
+            "endpoint",
+            "warning",
+            "元衡线路需要更新",
+            "仍在使用旧 CN 线路，重新应用配置后将使用 meta-api.vip；模型与分组保持当前选择",
+        );
+    }
     {
         match stored_token {
             Some(token) => match fetch_api_models_at(client, origin, &token).await {
@@ -5550,7 +5695,7 @@ mod tests {
 
         assert_eq!(cookie.name(), "session");
         assert_eq!(cookie.value(), "abc123");
-        assert_eq!(cookie.domain(), Some("cn.meta-api.vip"));
+        assert_eq!(cookie.domain(), Some("meta-api.vip"));
         assert_eq!(cookie.path(), Some("/"));
         assert_eq!(cookie.secure(), Some(true));
         assert_eq!(cookie.http_only(), Some(true));
@@ -6090,10 +6235,118 @@ mod tests {
             assert_eq!(provider_model(&provider, &app).as_deref(), Some(model));
             assert!(provider.settings_config.to_string().contains("sk-test"));
             assert!(provider_schema_current(&provider, &app));
+            assert!(provider_has_credentials(&provider, &app));
+            assert!(!provider
+                .settings_config
+                .to_string()
+                .contains("cn.meta-api.vip"));
 
             let mut legacy_name = provider.clone();
             legacy_name.name = "元衡".to_string();
             assert!(!provider_schema_current(&legacy_name, &app));
+        }
+    }
+
+    #[test]
+    #[serial]
+    fn international_route_reads_legacy_credentials_without_treating_cn_as_current() {
+        let (_home, state) = isolated_state();
+        for namespace in [
+            "claude",
+            "claude-desktop",
+            "codex",
+            "chatgpt-desktop",
+            "gemini",
+            "grokbuild",
+            "opencode",
+            "openclaw",
+            "hermes",
+        ] {
+            let app = if namespace == CHATGPT_DESKTOP_NAMESPACE {
+                AppType::Codex
+            } else {
+                namespace.parse::<AppType>().unwrap()
+            };
+            let provider =
+                managed_provider(&app, "sk-own-group", "test-model", "vip", "auto").unwrap();
+            let legacy_json = serde_json::to_string(&provider.settings_config)
+                .unwrap()
+                .replace(BASE_URL, "https://cn.meta-api.vip");
+            let mut legacy = provider.clone();
+            legacy.settings_config = serde_json::from_str(&legacy_json).unwrap();
+            state.db.save_provider(namespace, &legacy).unwrap();
+            assert!(tool_uses_legacy_endpoint(&state, namespace, "test-model"));
+            assert!(!provider_has_credentials(&legacy, &app), "{namespace}");
+            assert_eq!(
+                stored_tool_credential(&state, namespace, "vip", Some("test-model")).unwrap(),
+                Some("sk-own-group".into()),
+                "{namespace}"
+            );
+            assert_eq!(
+                stored_tool_credential(&state, namespace, "other", Some("test-model")).unwrap(),
+                None
+            );
+            // Reapplying the same selection updates only the managed endpoint;
+            // model, group and credentials retain their own identity.
+            assert_eq!(
+                provider_model(&legacy, &app),
+                provider_model(&provider, &app)
+            );
+            assert_eq!(provider_group(&legacy), provider_group(&provider));
+            state.db.save_provider(namespace, &provider).unwrap();
+            assert!(!tool_uses_legacy_endpoint(&state, namespace, "test-model"));
+            assert!(provider_has_credentials(&provider, &app));
+            assert_eq!(
+                stored_tool_credential(&state, namespace, "vip", Some("test-model")).unwrap(),
+                Some("sk-own-group".into())
+            );
+            let mut external = legacy.clone();
+            external.settings_config = serde_json::from_str(&legacy_json.replace(
+                "https://cn.meta-api.vip",
+                "https://cn.meta-api.vip.evil.test",
+            ))
+            .unwrap();
+            state.db.save_provider(namespace, &external).unwrap();
+            assert!(stored_tool_credential(&state, namespace, "vip", Some("test-model")).is_err());
+            assert!(!provider_has_credentials(&external, &app));
+        }
+    }
+
+    #[test]
+    fn workbuddy_legacy_endpoint_is_recognized_for_rollback_but_requires_reapply() {
+        let old = json!({
+            "models":[{"id":"test-model","vendor":"YuanHeng",
+                "url":"https://cn.meta-api.vip/v1/chat/completions","apiKey":"sk-own-group"}],
+            "availableModels":["test-model"]
+        });
+        assert!(!workbuddy_config_matches(&old, "test-model"));
+        assert!(workbuddy_config_matches_endpoint(&old, "test-model", true));
+        let mut new = old.clone();
+        new["models"][0]["url"] = json!(crate::yuanheng_endpoints::CHAT_URL);
+        assert!(workbuddy_config_matches(&new, "test-model"));
+        let mut mixed = new.clone();
+        mixed["models"].as_array_mut().unwrap().push(json!({
+            "id":"other-model","vendor":"YuanHeng","apiKey":"sk-own-group",
+            "url":"https://cn.meta-api.vip/v1/chat/completions"
+        }));
+        assert!(!workbuddy_config_matches(&mixed, "test-model"));
+        assert!(workbuddy_config_matches_endpoint(
+            &mixed,
+            "test-model",
+            true
+        ));
+        mixed["models"][1]["url"] = json!("https://example.test/v1/chat/completions");
+        assert!(!workbuddy_config_matches_endpoint(
+            &mixed,
+            "test-model",
+            true
+        ));
+        for url in [
+            "https://cn.meta-api.vip.evil.test/v1/chat/completions",
+            "https://meta-api.vip/v1/chat/completions?redirect=evil",
+        ] {
+            new["models"][0]["url"] = json!(url);
+            assert!(!workbuddy_config_matches_endpoint(&new, "test-model", true));
         }
     }
 
@@ -6670,6 +6923,179 @@ mod tests {
         let auth_final: Value =
             crate::config::read_json_file(&crate::codex_config::get_codex_auth_path()).unwrap();
         assert_eq!(auth_final, auth_before, "切回元衡也不能覆盖官方 OAuth");
+    }
+
+    fn make_codex_endpoints_legacy(state: &AppState) -> Vec<(String, Provider)> {
+        [AppType::Codex.as_str(), CHATGPT_DESKTOP_NAMESPACE]
+            .iter()
+            .map(|namespace| {
+                let mut provider = managed_codex_provider_for_namespace(state, namespace)
+                    .unwrap()
+                    .unwrap();
+                let config = provider.settings_config["config"]
+                    .as_str()
+                    .unwrap()
+                    .replace(BASE_URL, "https://cn.meta-api.vip");
+                provider.settings_config["config"] = json!(config);
+                state.db.save_provider(namespace, &provider).unwrap();
+                (namespace.to_string(), provider)
+            })
+            .collect()
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn legacy_routes_migrate_on_explicit_mode_switch_without_changing_identity() {
+        use crate::proxy::providers::get_adapter;
+        for official_first in [true, false] {
+            let (_home, state) = isolated_state();
+            prepare_managed_codex_mode(&state, true);
+            if official_first {
+                switch_codex_account_mode_at_origin(
+                    &state,
+                    "official",
+                    Some("yuanheng"),
+                    "http://127.0.0.1:15721",
+                )
+                .unwrap();
+            }
+            let originals = make_codex_endpoints_legacy(&state);
+            // Reuse a router instantiated before migration, as a running Core
+            // would: new requests must read the updated provider from the DB.
+            let router = crate::proxy::ProviderRouter::new(state.db.clone());
+            assert!(
+                yuanheng_codex_mode_available(&state),
+                "valid CN keys must not disable switching"
+            );
+            let auth = std::fs::read(crate::codex_config::get_codex_auth_path()).unwrap();
+            switch_codex_account_mode_at_origin(
+                &state,
+                "yuanheng",
+                Some(if official_first {
+                    "official"
+                } else {
+                    "yuanheng"
+                }),
+                "http://127.0.0.1:15721",
+            )
+            .unwrap();
+            for (namespace, original) in originals {
+                let actual = managed_codex_provider_for_namespace(&state, &namespace)
+                    .unwrap()
+                    .unwrap();
+                let mut expected = original.clone();
+                migrate_codex_provider_endpoint(&mut expected).unwrap();
+                assert_eq!(
+                    serde_json::to_value(&actual).unwrap(),
+                    serde_json::to_value(&expected).unwrap()
+                );
+                let adapter = get_adapter(&AppType::Codex);
+                assert_eq!(adapter.extract_base_url(&actual).unwrap(), OPENAI_BASE_URL);
+                let selected = router.select_providers(&namespace).await.unwrap();
+                assert_eq!(
+                    adapter.extract_base_url(&selected[0]).unwrap(),
+                    OPENAI_BASE_URL
+                );
+                assert_eq!(
+                    adapter.extract_auth(&actual).unwrap().api_key,
+                    adapter.extract_auth(&original).unwrap().api_key
+                );
+                assert!(provider_has_credentials(&actual, &AppType::Codex));
+            }
+            assert_eq!(
+                std::fs::read(crate::codex_config::get_codex_auth_path()).unwrap(),
+                auth
+            );
+            assert!(crate::codex_config::read_codex_config_text()
+                .unwrap()
+                .contains("/chatgpt-desktop/v1"));
+            assert!(std::fs::read_to_string(codex_terminal_profile_path())
+                .unwrap()
+                .contains("/codex/v1"));
+        }
+    }
+
+    #[test]
+    #[serial]
+    fn failed_switch_restores_legacy_database_records_and_files() {
+        let (_home, state) = isolated_state();
+        prepare_managed_codex_mode(&state, true);
+        switch_codex_account_mode_at_origin(
+            &state,
+            "official",
+            Some("yuanheng"),
+            "http://127.0.0.1:15721",
+        )
+        .unwrap();
+        let originals = make_codex_endpoints_legacy(&state);
+        let live = crate::codex_config::read_codex_config_text().unwrap();
+        // Deterministic IO failure: terminal catalog target is a directory.
+        let catalog = crate::codex_config::get_codex_named_model_catalog_path(
+            crate::codex_config::YUANHENG_TERMINAL_MODEL_CATALOG_FILENAME,
+        );
+        if catalog.is_file() {
+            std::fs::remove_file(&catalog).unwrap();
+        }
+        std::fs::create_dir_all(&catalog).unwrap();
+        let result = switch_codex_account_mode_at_origin(
+            &state,
+            "yuanheng",
+            Some("official"),
+            "http://127.0.0.1:15721",
+        );
+        assert!(result.is_err());
+        for (namespace, original) in originals {
+            let actual = managed_codex_provider_for_namespace(&state, &namespace)
+                .unwrap()
+                .unwrap();
+            assert_eq!(
+                serde_json::to_value(actual).unwrap(),
+                serde_json::to_value(original).unwrap()
+            );
+        }
+        assert_eq!(crate::codex_config::read_codex_config_text().unwrap(), live);
+        assert_eq!(
+            codex_account_mode_status_inner(&state).unwrap().mode,
+            "official"
+        );
+    }
+
+    #[test]
+    fn codex_endpoint_migration_is_narrow_and_idempotent() {
+        let mut provider =
+            managed_provider(&AppType::Codex, "sk-private", "test-model", "vip", "high").unwrap();
+        let text = provider.settings_config["config"]
+            .as_str()
+            .unwrap()
+            .replace(BASE_URL, "https://cn.meta-api.vip");
+        provider.settings_config["config"] = json!(format!(
+            "{text}\n[model_providers.personal]\nbase_url = \"https://example.test/v1\"\n"
+        ));
+        let original = provider.clone();
+        migrate_codex_provider_endpoint(&mut provider).unwrap();
+        assert_eq!(provider_group(&original), provider_group(&provider));
+        assert_eq!(
+            provider_model(&original, &AppType::Codex),
+            provider_model(&provider, &AppType::Codex)
+        );
+        let once = serde_json::to_value(&provider).unwrap();
+        migrate_codex_provider_endpoint(&mut provider).unwrap();
+        assert_eq!(serde_json::to_value(&provider).unwrap(), once);
+        assert!(provider.settings_config["config"]
+            .as_str()
+            .unwrap()
+            .contains("https://example.test/v1"));
+        for endpoint in [
+            "https://cn.meta-api.vip.evil.test/v1",
+            "https://example.test/v1",
+        ] {
+            let mut external = original.clone();
+            external.settings_config["config"] =
+                json!(text.replace("https://cn.meta-api.vip/v1", endpoint));
+            let before = serde_json::to_value(&external).unwrap();
+            migrate_codex_provider_endpoint(&mut external).unwrap();
+            assert_eq!(serde_json::to_value(external).unwrap(), before);
+        }
     }
 
     #[test]
@@ -7260,7 +7686,7 @@ base_url = "http://127.0.0.1:15721/chatgpt-desktop/v1"
         let live = read_workbuddy_config().unwrap();
         assert_eq!(
             live.pointer("/models/0/url").and_then(Value::as_str),
-            Some("https://cn.meta-api.vip/v1/chat/completions")
+            Some("https://meta-api.vip/v1/chat/completions")
         );
         assert!(workbuddy_config_matches(&live, "k3"));
         assert!(workbuddy_config_matches(&live, "gpt-5.6-sol"));
