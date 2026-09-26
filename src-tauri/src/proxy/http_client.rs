@@ -214,6 +214,22 @@ pub fn is_proxy_enabled() -> bool {
 
 /// 构建 HTTP 客户端
 fn build_client(proxy_url: Option<&str>) -> Result<Client, String> {
+    build_client_with_image_policy(proxy_url, false)
+}
+
+/// Images are non-idempotent. Never replay a POST on redirect or transport retry.
+/// Use the same configured network proxy as chat without changing its policy.
+pub(super) fn image_client() -> Result<Client, String> {
+    build_client_with_image_policy(get_current_proxy_url().as_deref(), true)
+}
+
+pub(super) fn image_no_replay_policy(builder: reqwest::ClientBuilder) -> reqwest::ClientBuilder {
+    builder
+        .redirect(reqwest::redirect::Policy::none())
+        .retry(reqwest::retry::never())
+}
+
+fn build_client_with_image_policy(proxy_url: Option<&str>, images: bool) -> Result<Client, String> {
     let mut builder = Client::builder()
         .timeout(Duration::from_secs(600))
         .connect_timeout(Duration::from_secs(30))
@@ -225,6 +241,10 @@ fn build_client(proxy_url: Option<&str>) -> Result<Client, String> {
         .no_brotli()
         .no_deflate()
         .no_zstd();
+
+    if images {
+        builder = image_no_replay_policy(builder);
+    }
 
     // 有代理地址则使用代理，否则跟随系统代理
     if let Some(url) = proxy_url {

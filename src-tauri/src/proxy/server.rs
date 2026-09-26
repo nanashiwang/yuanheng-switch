@@ -367,6 +367,8 @@ impl ProxyServer {
             .route("/v1/models", get(handlers::handle_models))
             .route("/codex/v1/models", get(handlers::handle_models))
             .route("/chatgpt-desktop/v1/models", get(handlers::handle_models))
+            // Images must bypass chat model mapping, conversion and failover.
+            .merge(super::images::routes())
             // OpenAI Responses API (Codex CLI，支持带前缀和不带前缀)
             .route("/responses", post(handlers::handle_responses))
             .route("/v1/responses", post(handlers::handle_responses))
@@ -454,5 +456,49 @@ impl ProxyServer {
             .provider_router
             .reset_provider_breaker(provider_id, app_type)
             .await;
+    }
+}
+
+#[cfg(test)]
+mod image_route_tests {
+    use super::*;
+    use axum::{
+        body::Body,
+        http::{Request, StatusCode},
+    };
+
+    #[tokio::test]
+    async fn image_routes_and_existing_chat_routes_are_registered() {
+        let server = ProxyServer::new(
+            ProxyConfig::default(),
+            Arc::new(Database::memory().unwrap()),
+            None,
+        );
+        for prefix in ["", "/v1", "/v1/v1", "/codex/v1"] {
+            for endpoint in [
+                "images/generations",
+                "images/edits",
+                "responses",
+                "chat/completions",
+            ] {
+                let mut router = server.build_router();
+                let response = tower::Service::call(
+                    &mut router,
+                    Request::builder()
+                        .method("OPTIONS")
+                        .uri(format!("{prefix}/{endpoint}"))
+                        .body(Body::empty())
+                        .unwrap(),
+                )
+                .await
+                .unwrap();
+                assert_eq!(
+                    response.status(),
+                    StatusCode::METHOD_NOT_ALLOWED,
+                    "{prefix}/{endpoint}"
+                );
+                assert_eq!(response.headers()["allow"], "POST");
+            }
+        }
     }
 }
