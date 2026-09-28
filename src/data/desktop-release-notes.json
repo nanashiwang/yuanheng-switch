@@ -2,9 +2,9 @@
   "schemaVersion": 1,
   "releases": [
     {
-      "version": "0.1.60",
+      "version": "0.1.61",
       "publishedAt": "2026-09-29T00:00:00Z",
-      "content": "【元衡客户端更新公告｜v0.1.60】\n\n• 新增 DSH 应用入口，与 Codex、Claude 一样选择分组和模型后直接配置。\n• 同步 DSH 桌面端与本机 Web 的模型目录，按 Chat、Responses、Messages 协议分别配置供应商。\n• 支持检测 DeepSeek Harness 桌面应用、选择源码目录启动，以及配置后启动 DSH Web。\n• 保留已有供应商和凭据，增加配置写入锁、外部修改检测及恢复保护。\n• 修复工具数量增加后本地检测缓存失效的问题。\n\n配置面向标准 desktop/web profile；远程 Web 与自定义 profile 需单独配置。默认模型用于新会话，首版模型目录仅声明文本输入。"
+      "content": "【元衡客户端更新公告｜v0.1.61】\n\n• 新增 DSH 应用入口，与 Codex、Claude 一样选择分组和模型后直接配置。\n• 同步 DSH 桌面端与本机 Web 的模型目录，按 Chat、Responses、Messages 协议分别配置供应商。\n• 支持检测 DeepSeek Harness 桌面应用、选择源码目录启动，以及配置后启动 DSH Web。\n• 保留已有供应商和凭据，增加配置写入锁、外部修改检测及恢复保护。\n• 修复工具数量增加后本地检测缓存失效的问题。\n\n配置面向标准 desktop/web profile；远程 Web 与自定义 profile 需单独配置。默认模型用于新会话，首版模型目录仅声明文本输入。"
     },
     {
       "version": "0.1.59",

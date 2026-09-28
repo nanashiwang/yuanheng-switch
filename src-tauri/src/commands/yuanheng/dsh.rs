@@ -147,7 +147,7 @@ fn profile_body(original: &str, model: &str, models: &[String]) -> Result<String
                 name.into(),
                 json!({
                     "displayName": format!("元亨 API · {protocol}"), "apiKeyEnv": KEY,
-                    "api": protocol, "baseURL": OPENAI_BASE_URL, "models": catalog
+                    "api": protocol, "baseURL": if protocol == "anthropic-messages" { BASE_URL } else { OPENAI_BASE_URL }, "models": catalog
                 }),
             );
         }
@@ -519,6 +519,34 @@ mod tests {
         );
         assert!(profile_body(&body, "model", &[]).is_err());
     }
+    #[test]
+    fn messages_sdk_uses_origin_while_openai_sdks_use_v1_root() {
+        let body = profile_body(
+            "",
+            "claude-sonnet-4-6",
+            &[
+                "claude-sonnet-4-6".into(),
+                "gpt-5.6".into(),
+                "test-model".into(),
+            ],
+        )
+        .unwrap();
+        let parsed = yaml(&body).unwrap();
+        let providers = &parsed[0]["config"]["providers"];
+        assert_eq!(
+            providers["yuanheng-messages"]["baseURL"].as_str(),
+            Some(BASE_URL)
+        );
+        assert_eq!(
+            providers["yuanheng-chat"]["baseURL"].as_str(),
+            Some(OPENAI_BASE_URL)
+        );
+        assert_eq!(
+            providers["yuanheng-responses"]["baseURL"].as_str(),
+            Some(OPENAI_BASE_URL)
+        );
+    }
+
     #[test]
     fn removes_only_owned_block_and_detects_damage() {
         let original = "# user comment\n";
