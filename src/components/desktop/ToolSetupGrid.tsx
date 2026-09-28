@@ -31,7 +31,12 @@ import {
   useYuanhengConnection,
   useYuanhengToolStatuses,
 } from "@/lib/query/yuanheng";
-import { DESKTOP_TOOLS, isDesktopApp, toolLabel } from "@/config/desktopTools";
+import {
+  DESKTOP_TOOLS,
+  isDesktopApp,
+  toolLabel,
+  toolIcon,
+} from "@/config/desktopTools";
 export {
   DESKTOP_TOOLS,
   isCoreApp,
@@ -76,6 +81,7 @@ export const TOOL_COMMANDS: Partial<Record<YuanhengToolId, string>> = {
 
 export const TOOL_VERSION_TARGETS: Partial<Record<YuanhengToolId, string>> = {
   ...TOOL_COMMANDS,
+  dsh: "dsh",
   "claude-desktop": "claude-desktop",
 };
 
@@ -703,7 +709,9 @@ function ToolSetupGridContent({
           const status = statusMap.get(app);
           const configured = Boolean(status?.configured);
           const selectable = Boolean(
-            connection?.connected && installed && status?.supported,
+            connection?.connected &&
+              (installed || app === "dsh") &&
+              status?.supported,
           );
           const isSelected = selected.includes(app);
           const availableModels = compatibleModels();
@@ -798,13 +806,7 @@ function ToolSetupGridContent({
                 </button>
                 <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-muted/70">
                   <ProviderIcon
-                    icon={
-                      app === "codex" || app === "chatgpt-desktop"
-                        ? "openai"
-                        : app === "claude-desktop"
-                          ? "claude"
-                          : app
-                    }
+                    icon={toolIcon(app)}
                     name={toolLabel(app)}
                     size={22}
                   />
@@ -868,6 +870,13 @@ function ToolSetupGridContent({
                         dt("尚未选择应用路径")}
                     </span>
                   </div>
+                  {app === "dsh" && (
+                    <p className="mt-1 text-muted-foreground">
+                      {dt(
+                        "可选择 DeepSeek Harness 应用，或 deepseek-harness 源码目录。源码启动需要已完成 DSH 构建并安装 pnpm。",
+                      )}
+                    </p>
+                  )}
                   {version?.custom_path && !version.custom_path_valid && (
                     <p className="mt-1 text-amber-700 dark:text-amber-300">
                       {dt("原自定义路径已失效，当前继续使用自动检测结果。")}
@@ -992,7 +1001,9 @@ function ToolSetupGridContent({
                 </div>
               )}
 
-              {installed && connection?.connected && status?.supported ? (
+              {(installed || app === "dsh") &&
+              connection?.connected &&
+              status?.supported ? (
                 <div className="mt-3 rounded-xl bg-muted/45 p-3">
                   <div className="flex items-center justify-between gap-2">
                     <p className="text-[10px] font-semibold">
@@ -1139,6 +1150,35 @@ function ToolSetupGridContent({
                     <p className="mt-2 text-[9px] leading-4 text-muted-foreground">
                       {dt("使用独立桌面配置；已有任务保持原模型，请新建任务。")}
                     </p>
+                  )}
+                  {app === "dsh" && (
+                    <div className="mt-2 space-y-2">
+                      <p className="text-xs text-muted-foreground">
+                        {dt(
+                          "同步桌面端和本机 Web 的模型目录。已有会话保留原模型；自定义 profile 和远程 Web 需单独配置。",
+                        )}
+                      </p>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        disabled={
+                          busy || !connection?.connected || !status?.supported
+                        }
+                        onClick={() => {
+                          void configureApps(["dsh"])
+                            .then((configured) =>
+                              configured
+                                ? yuanhengApi.launchTool("dsh-web")
+                                : false,
+                            )
+                            .catch((error) =>
+                              toast.error(extractErrorMessage(error)),
+                            );
+                        }}
+                      >
+                        {dt("启动 DSH Web")}
+                      </Button>
+                    </div>
                   )}
                   {app === "workbuddy" && (
                     <p className="mt-2 text-[9px] leading-4 text-muted-foreground">

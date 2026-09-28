@@ -1,3 +1,4 @@
+mod dsh;
 use std::collections::{BTreeSet, HashMap};
 use std::sync::OnceLock;
 use std::time::Duration;
@@ -1077,6 +1078,9 @@ fn stored_tool_credential(
     group: &str,
     selected_model: Option<&str>,
 ) -> Result<Option<String>, String> {
+    if app_name == "dsh" {
+        return dsh::credential(state, group);
+    }
     if app_name == "workbuddy" {
         if state
             .db
@@ -3211,6 +3215,7 @@ fn all_tool_statuses(
         .collect::<Vec<_>>();
     statuses.push(chatgpt_desktop_status(state, connection));
     statuses.push(workbuddy_status(state, connection));
+    statuses.push(dsh::status(state, connection));
     statuses
 }
 
@@ -3261,6 +3266,7 @@ async fn yuanheng_tool_activation_statuses_inner(
         "openclaw",
         "hermes",
         "workbuddy",
+        "dsh",
     ];
     let mut results = Vec::with_capacity(apps.len());
 
@@ -3662,6 +3668,14 @@ fn restore_managed_tools_inner(state: &AppState) -> Result<YuanhengDisconnectRes
             }
         }
     }
+    match dsh::restore(state) {
+        Ok(true) => result.restored_tools.push("dsh".into()),
+        Ok(false) => {}
+        Err(error) => {
+            result.retained_tools.push("dsh".into());
+            result.warnings.push(format!("dsh: {error}"));
+        }
+    }
     match restore_workbuddy_config(state) {
         Ok(Some(true)) => result.restored_tools.push("workbuddy".to_string()),
         Ok(Some(false)) => result.removed_tools.push("workbuddy".to_string()),
@@ -3807,7 +3821,7 @@ fn preflight_target_protocol(app_name: &str) -> &'static str {
         "claude" | "claude-desktop" => "anthropic_messages",
         "codex" | CHATGPT_DESKTOP_NAMESPACE | "grokbuild" => "openai_responses",
         "gemini" => "gemini_native",
-        "opencode" | "openclaw" | "hermes" | "workbuddy" => "openai_chat",
+        "opencode" | "openclaw" | "hermes" | "workbuddy" | "dsh" => "openai_chat",
         _ => "unknown",
     }
 }
@@ -3867,7 +3881,7 @@ async fn preflight_yuanheng_tool_at(
     let is_workbuddy = app_name == "workbuddy";
     let app = match app_name {
         CHATGPT_DESKTOP_NAMESPACE => AppType::Codex,
-        "workbuddy" => AppType::OpenCode,
+        "workbuddy" | "dsh" => AppType::OpenCode,
         _ => app_name.parse::<AppType>().map_err(|e| e.to_string())?,
     };
     let connection = read_cached_status(state)?;
@@ -3943,7 +3957,11 @@ async fn preflight_yuanheng_tool_at(
     }
 
     let source_protocol = yuanheng_model_api_format(model).to_string();
-    let target_protocol = preflight_target_protocol(app_name).to_string();
+    let target_protocol = if app_name == "dsh" {
+        source_protocol.clone()
+    } else {
+        preflight_target_protocol(app_name).to_string()
+    };
     if target_protocol == "unknown" {
         has_error = true;
         push_preflight_check(
@@ -4810,8 +4828,8 @@ pub async fn configure_yuanheng_tools(
     groups: Option<HashMap<String, String>>,
     reasoning: Option<HashMap<String, String>>,
 ) -> Result<Vec<YuanhengToolConfigureResult>, String> {
-    if apps.is_empty() || apps.len() > 10 {
-        return Err("请选择 1 到 10 个 AI 工具".to_string());
+    if apps.is_empty() || apps.len() > 11 {
+        return Err("请选择 1 到 11 个 AI 工具".to_string());
     }
     let _control_token = get_yuanheng_secret(&state, API_TOKEN_KEY)?
         .filter(|value| !value.is_empty())
@@ -4845,7 +4863,7 @@ pub async fn configure_yuanheng_tools(
         let is_chatgpt_desktop = app_name == CHATGPT_DESKTOP_NAMESPACE;
         let app = match app_name.as_str() {
             CHATGPT_DESKTOP_NAMESPACE => AppType::Codex,
-            "workbuddy" => AppType::OpenCode,
+            "workbuddy" | "dsh" => AppType::OpenCode,
             _ => match app_name.parse::<AppType>() {
                 Ok(app) => app,
                 Err(error) => {
@@ -5024,7 +5042,9 @@ pub async fn configure_yuanheng_tools(
             });
             break;
         }
-        let configured = if is_workbuddy {
+        let configured = if app_name == "dsh" {
+            dsh::configure(&state, &token, &model, &group_models, &group)
+        } else if is_workbuddy {
             configure_workbuddy(&state, &token, &model, &group_models, &group)
         } else if matches!(&app, AppType::Codex) {
             configure_codex_surface(
@@ -5573,6 +5593,27 @@ mod tests {
             .unwrap();
             assert_ne!(result.status, "error");
             assert!(!result.requires_configuration);
+            dsh::configure(
+                &state,
+                &format!("sk-group-{index}"),
+                "test-model",
+                &["test-model".into()],
+                group,
+            )
+            .unwrap();
+            let result = preflight_yuanheng_tool_at(
+                &state,
+                "dsh",
+                "test-model",
+                Some(group),
+                Some("auto"),
+                &client,
+                &origin,
+            )
+            .await
+            .unwrap();
+            assert_ne!(result.status, "error", "{:?}", result.checks);
+            assert!(!result.requires_configuration);
         }
         // 主 key 有效不应掩盖 Desktop key 被拒绝；CLI 的 key 也不能代替它。
         let provider = managed_provider(
@@ -5901,6 +5942,165 @@ mod tests {
         let home = TestHome::new();
         let db = Arc::new(Database::memory().expect("in-memory database"));
         (home, AppState::new(db))
+    }
+
+    #[test]
+    #[serial]
+    fn dsh_configures_profiles_rotates_key_and_restores_without_touching_other_providers() {
+        let (_home, state) = isolated_state();
+        let root = crate::config::get_home_dir().join(".dsh");
+        let desktop = root.join("profiles/desktop/cordis.patch.yml");
+        let web = root.join("profiles/web/cordis.patch.yml");
+        std::fs::create_dir_all(desktop.parent().unwrap()).unwrap();
+        std::fs::create_dir_all(web.parent().unwrap()).unwrap();
+        std::fs::write(&desktop, "# desktop comment\n[]\n").unwrap();
+        let old_web = "# web comment\n- id: llm-pi-ai\n  config:\n    providers:\n      mine: {api: openai-completions, baseURL: 'https://example.invalid/v1', models: [{id: old}]}\n";
+        std::fs::write(&web, old_web).unwrap();
+        std::fs::write(
+            root.join(".credentials.yaml"),
+            "# other key\nOTHER_KEY: preserved\n",
+        )
+        .unwrap();
+        let models = vec![
+            "gpt-5.6".into(),
+            "claude-sonnet-4-6".into(),
+            "test-model".into(),
+        ];
+        dsh::configure(&state, "synthetic-key-one", "gpt-5.6", &models, "default").unwrap();
+        assert_eq!(
+            dsh::credential(&state, "default").unwrap().as_deref(),
+            Some("synthetic-key-one")
+        );
+        assert!(dsh::credential(&state, "other").unwrap().is_none());
+        let connection = YuanhengConnectionStatus {
+            models: models.clone(),
+            terminal_models: models.clone(),
+            ..Default::default()
+        };
+        assert!(dsh::status(&state, &connection).configured);
+        dsh::configure(
+            &state,
+            "synthetic-key-two",
+            "claude-sonnet-4-6",
+            &models,
+            "default",
+        )
+        .unwrap();
+        assert_eq!(
+            dsh::credential(&state, "default").unwrap().as_deref(),
+            Some("synthetic-key-two")
+        );
+        let contents = std::fs::read_to_string(&web).unwrap();
+        assert!(contents.starts_with(old_web));
+        for protocol in [
+            "openai-responses",
+            "anthropic-messages",
+            "openai-completions",
+        ] {
+            assert!(contents.contains(protocol));
+        }
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            assert_eq!(
+                std::fs::metadata(root.join(".credentials.yaml"))
+                    .unwrap()
+                    .permissions()
+                    .mode()
+                    & 0o777,
+                0o600
+            );
+        }
+        // Optional export contains synthetic credentials only, for DSH runtime contract checks.
+        if let Ok(target) = std::env::var("YUANHENG_DSH_TEST_EXPORT") {
+            for relative in [
+                "profiles/desktop/cordis.patch.yml",
+                "profiles/web/cordis.patch.yml",
+                ".credentials.yaml",
+            ] {
+                let output = std::path::Path::new(&target).join(relative);
+                std::fs::create_dir_all(output.parent().unwrap()).unwrap();
+                std::fs::copy(root.join(relative), output).unwrap();
+            }
+        }
+        std::fs::write(&web, format!("{contents}# unrelated later note\n")).unwrap();
+        assert!(dsh::restore(&state).unwrap());
+        assert_eq!(
+            std::fs::read_to_string(&web).unwrap(),
+            format!("{old_web}# unrelated later note\n")
+        );
+        assert_eq!(
+            std::fs::read_to_string(root.join(".credentials.yaml")).unwrap(),
+            "# other key\nOTHER_KEY: preserved\n"
+        );
+        assert!(!dsh::restore(&state).unwrap());
+    }
+
+    #[test]
+    #[serial]
+    fn dsh_recovers_an_interrupted_multi_file_write() {
+        let (_home, state) = isolated_state();
+        dsh::configure(
+            &state,
+            "synthetic-key",
+            "test-model",
+            &["test-model".into()],
+            "default",
+        )
+        .unwrap();
+        let raw = state
+            .db
+            .get_setting("yuanheng_dsh_configuration")
+            .unwrap()
+            .unwrap();
+        let mut record: Value = serde_json::from_str(&raw).unwrap();
+        record["pending"] = json!(true);
+        record["previous_hashes"] = json!([null, null, null]);
+        state
+            .db
+            .set_setting("yuanheng_dsh_configuration", &record.to_string())
+            .unwrap();
+        let root = crate::config::get_home_dir().join(".dsh");
+        std::fs::write(root.join("profiles/web/cordis.patch.yml"), "[]\n").unwrap();
+        assert!(dsh::credential(&state, "default").is_err());
+        assert!(dsh::restore(&state).unwrap());
+        assert!(!std::fs::read_to_string(root.join(".credentials.yaml"))
+            .unwrap()
+            .contains("synthetic-key"));
+    }
+
+    #[test]
+    #[serial]
+    fn dsh_refuses_external_edits_overrides_and_busy_writers() {
+        let (_home, state) = isolated_state();
+        let root = crate::config::get_home_dir().join(".dsh");
+        let models = vec!["test-model".into()];
+        dsh::configure(&state, "synthetic-key", "test-model", &models, "default").unwrap();
+        let web = root.join("profiles/web/cordis.patch.yml");
+        let before = std::fs::read_to_string(&web).unwrap();
+        std::fs::write(
+            &web,
+            format!(
+                "{before}- id: agent-default-model\n  config: {{provider: other, model: other}}\n"
+            ),
+        )
+        .unwrap();
+        assert!(dsh::credential(&state, "default").is_err());
+        std::fs::write(&web, before.replace("test-model", "user-model")).unwrap();
+        assert!(dsh::configure(&state, "new-key", "test-model", &models, "default").is_err());
+        assert!(dsh::restore(&state).is_err());
+        std::fs::write(&web, &before).unwrap();
+        let lock = root.join(".credentials.yaml.lock");
+        std::fs::write(&lock, "123\n").unwrap();
+        assert!(dsh::configure(&state, "new-key", "test-model", &models, "default").is_err());
+        std::fs::remove_file(lock).unwrap();
+        std::fs::write(
+            root.join("cordis.patch.yml"),
+            "- id: llm-pi-ai\n  config: {}\n",
+        )
+        .unwrap();
+        assert!(dsh::configure(&state, "new-key", "test-model", &models, "default").is_err());
+        assert_eq!(std::fs::read_to_string(&web).unwrap(), before);
     }
 
     #[test]

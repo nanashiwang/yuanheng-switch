@@ -7,6 +7,7 @@ export const DESKTOP_TOOLS: YuanhengToolId[] = [
   "codex",
   "chatgpt-desktop",
   "workbuddy",
+  "dsh",
   "gemini",
   "grokbuild",
   "opencode",
@@ -15,13 +16,17 @@ export const DESKTOP_TOOLS: YuanhengToolId[] = [
 ];
 
 export const isCoreApp = (app: YuanhengToolId): app is AppId =>
-  app !== "chatgpt-desktop" && app !== "workbuddy";
+  app !== "chatgpt-desktop" && app !== "workbuddy" && app !== "dsh";
 
 export const isDesktopApp = (app: YuanhengToolId) =>
-  app === "claude-desktop" || app === "chatgpt-desktop" || app === "workbuddy";
+  app === "claude-desktop" ||
+  app === "chatgpt-desktop" ||
+  app === "workbuddy" ||
+  app === "dsh";
 
 export const toolLabel = (app: YuanhengToolId) => {
   if (app === "chatgpt-desktop") return "Codex Desktop";
+  if (app === "dsh") return "DSH";
   if (app === "workbuddy") return "WorkBuddy";
   return APP_ICON_MAP[app].label;
 };
@@ -29,6 +34,8 @@ export const toolLabel = (app: YuanhengToolId) => {
 export const toolIcon = (app: YuanhengToolId): string =>
   app === "codex" || app === "chatgpt-desktop"
     ? "openai"
-    : app === "claude-desktop"
-      ? "claude"
-      : app;
+    : app === "dsh"
+      ? "deepseek"
+      : app === "claude-desktop"
+        ? "claude"
+        : app;

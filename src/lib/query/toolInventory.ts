@@ -14,6 +14,7 @@ export const DESKTOP_INVENTORY_TARGETS = [
   "codex",
   "chatgpt-desktop",
   "workbuddy",
+  "dsh",
   "gemini",
   "grok",
   "opencode",

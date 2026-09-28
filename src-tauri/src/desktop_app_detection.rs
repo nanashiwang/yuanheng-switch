@@ -37,6 +37,14 @@ impl DesktopAppResolution {
     }
 }
 
+pub(crate) fn is_dsh_source(path: &Path) -> bool {
+    path.join("apps/desktop/package.json").is_file()
+        && std::fs::read_to_string(path.join("package.json"))
+            .ok()
+            .and_then(|s| serde_json::from_str::<serde_json::Value>(&s).ok())
+            .is_some_and(|v| v["name"] == "@deepseek-ai/dsh-root")
+}
+
 fn executable_names(tool: &str) -> &'static [&'static str] {
     match tool {
         "chatgpt-desktop" => {
@@ -47,6 +55,16 @@ fn executable_names(tool: &str) -> &'static [&'static str] {
             #[cfg(not(target_os = "macos"))]
             {
                 &["ChatGPT.exe", "Codex.exe"]
+            }
+        }
+        "dsh" => {
+            #[cfg(target_os = "macos")]
+            {
+                &["DeepSeek Harness.app"]
+            }
+            #[cfg(not(target_os = "macos"))]
+            {
+                &["DeepSeek Harness.exe"]
             }
         }
         "workbuddy" => {
@@ -164,6 +182,9 @@ pub(crate) fn validate_custom_desktop_app_path(
         return Err("应用路径为空或包含非法换行符".to_string());
     }
     let path = PathBuf::from(trimmed);
+    if tool == "dsh" && is_dsh_source(&path) {
+        return std::fs::canonicalize(path).map_err(|_| "无法解析 DSH 源码目录".into());
+    }
     let resolved = resolve_file_candidate(tool, &path)
         .ok_or_else(|| format!("所选路径中未找到 {}", executable_names(tool).join(" / ")))?;
     let canonical =
@@ -221,6 +242,7 @@ fn windows_desktop_directory_names(tool: &str) -> &'static [&'static str] {
             "Anthropic",
             "AnthropicClaude",
         ],
+        "dsh" => &["DeepSeek Harness", "deepseek-harness"],
         "workbuddy" => &["WorkBuddy", "CodeBuddy", "Tencent", "CodeBuddy Work"],
         _ => &[],
     }
@@ -364,6 +386,7 @@ fn windows_registry_candidates(tool: &str) -> Vec<(PathBuf, &'static str)> {
             "chatgpt-desktop" => name.contains("chatgpt") || name == "codex",
             "claude-desktop" => name.contains("claude"),
             "workbuddy" => name.contains("workbuddy"),
+            "dsh" => name.contains("deepseek harness"),
             _ => false,
         }
     }
@@ -665,6 +688,7 @@ fn windows_shortcut_resolution(tool: &str) -> Option<DesktopAppResolution> {
         "chatgpt-desktop" => "(?i)chatgpt|codex",
         "claude-desktop" => "(?i)claude",
         "workbuddy" => "(?i)workbuddy|codebuddy",
+        "dsh" => "(?i)deepseek harness",
         _ => return None,
     };
     const CREATE_NO_WINDOW: u32 = 0x08000000;
@@ -720,6 +744,7 @@ fn windows_running_resolution(tool: &str) -> Option<DesktopAppResolution> {
         "chatgpt-desktop" => "@('ChatGPT.exe', 'Codex.exe')",
         "claude-desktop" => "@('Claude.exe')",
         "workbuddy" => "@('WorkBuddy.exe')",
+        "dsh" => "@('DeepSeek Harness.exe')",
         _ => return None,
     };
     const CREATE_NO_WINDOW: u32 = 0x08000000;
@@ -825,6 +850,24 @@ pub(crate) fn discover_windows_store_app(tool: &str) -> Option<DesktopAppResolut
 mod tests {
     use super::*;
     use tempfile::tempdir;
+
+    #[test]
+    fn dsh_source_directory_is_discovered_without_running_code() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::create_dir_all(dir.path().join("apps/desktop")).unwrap();
+        std::fs::write(
+            dir.path().join("package.json"),
+            r#"{"name":"@deepseek-ai/dsh-root"}"#,
+        )
+        .unwrap();
+        std::fs::write(dir.path().join("apps/desktop/package.json"), "{}").unwrap();
+        let resolution = discover_desktop_app("dsh", dir.path().to_str());
+        assert!(resolution.launch_target.is_some());
+        assert_eq!(resolution.detection_source, "custom");
+        assert!(
+            validate_custom_desktop_app_path("workbuddy", dir.path().to_str().unwrap()).is_err()
+        );
+    }
 
     #[test]
     fn custom_directory_resolves_supported_executable() {

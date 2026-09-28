@@ -1,5 +1,10 @@
 // ko translations for the desktop Simplified Chinese source strings.
 export const DESKTOP_KO: Record<string, string> = {
+  "启动 DSH Web": "DSH Web 실행",
+  "同步桌面端和本机 Web 的模型目录。已有会话保留原模型；自定义 profile 和远程 Web 需单独配置。":
+    "데스크톱과 로컬 Web의 모델 목록을 동기화합니다. 기존 대화는 원래 모델을 유지합니다. 사용자 지정 profile과 원격 Web은 별도 설정이 필요합니다.",
+  "可选择 DeepSeek Harness 应用，或 deepseek-harness 源码目录。源码启动需要已完成 DSH 构建并安装 pnpm。":
+    "DeepSeek Harness 앱 또는 deepseek-harness 소스 폴더를 선택할 수 있습니다. 소스 실행에는 DSH 빌드 완료 및 pnpm 설치가 필요합니다.",
   "新模型的目录未包含原分组 {{old}}。是否改用 {{next}}？取消将保留原配置。":
     "새 모델 목록에 {{old}} 그룹이 없습니다. {{next}} 그룹으로 바꿀까요? 취소하면 기존 설정을 유지합니다.",
   "请先选择令牌分组，再配置或启动。":

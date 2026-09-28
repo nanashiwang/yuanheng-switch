@@ -1,5 +1,10 @@
 // Japanese translations for the desktop Simplified Chinese source strings.
 export const DESKTOP_JA: Record<string, string> = {
+  "启动 DSH Web": "DSH Web を起動",
+  "同步桌面端和本机 Web 的模型目录。已有会话保留原模型；自定义 profile 和远程 Web 需单独配置。":
+    "デスクトップとローカル Web のモデル一覧を同期します。既存の会話は元のモデルを維持します。カスタム profile とリモート Web は個別に設定してください。",
+  "可选择 DeepSeek Harness 应用，或 deepseek-harness 源码目录。源码启动需要已完成 DSH 构建并安装 pnpm。":
+    "DeepSeek Harness アプリまたは deepseek-harness のソースディレクトリを選択できます。ソースからの起動には DSH のビルドと pnpm のインストールが必要です。",
   "新模型的目录未包含原分组 {{old}}。是否改用 {{next}}？取消将保留原配置。":
     "新しいモデルの一覧には {{old}} がありません。{{next}} に変更しますか？キャンセルすると元の設定を保持します。",
   "请先选择令牌分组，再配置或启动。":

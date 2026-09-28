@@ -1,7 +1,7 @@
 import { invoke } from "@tauri-apps/api/core";
 import type { AppId } from "./types";
 
-export type YuanhengToolId = AppId | "chatgpt-desktop" | "workbuddy";
+export type YuanhengToolId = AppId | "chatgpt-desktop" | "workbuddy" | "dsh";
 
 export const YUANHENG_CLI_TOOLS = [
   "claude",
@@ -339,7 +339,7 @@ export const yuanhengApi = {
   },
 
   launchTool(
-    app: YuanhengToolId,
+    app: YuanhengToolId | "dsh-web",
     restart = false,
     cwd?: string,
   ): Promise<boolean> {

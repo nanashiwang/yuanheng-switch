@@ -6,6 +6,11 @@ import { DESKTOP_ZH_TW } from "./desktopI18n.zhTW";
 type Values = Record<string, string | number | null | undefined>;
 
 export const DESKTOP_EN: Record<string, string> = {
+  "启动 DSH Web": "Launch DSH Web",
+  "同步桌面端和本机 Web 的模型目录。已有会话保留原模型；自定义 profile 和远程 Web 需单独配置。":
+    "Sync model catalogs for Desktop and local Web. Existing sessions keep their model; custom profiles and remote Web require separate configuration.",
+  "可选择 DeepSeek Harness 应用，或 deepseek-harness 源码目录。源码启动需要已完成 DSH 构建并安装 pnpm。":
+    "Select the DeepSeek Harness app or the deepseek-harness source directory. Launching from source requires a built DSH checkout and pnpm.",
   "新模型的目录未包含原分组 {{old}}。是否改用 {{next}}？取消将保留原配置。":
     "The new model's catalog does not include {{old}}. Switch to {{next}}? Cancel keeps the original configuration.",
   "请先选择令牌分组，再配置或启动。":

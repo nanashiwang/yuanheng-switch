@@ -751,6 +751,7 @@ describe("App integration with MSW", { timeout: 15_000 }, () => {
   it.each([
     ["chatgpt-desktop", "Codex Desktop"],
     ["workbuddy", "WorkBuddy"],
+    ["dsh", "DSH"],
   ] as const)(
     "selects and restores %s from the toolbar",
     async (app, label) => {
@@ -861,6 +862,20 @@ describe("App integration with MSW", { timeout: 15_000 }, () => {
         ["workbuddy"],
       ]),
     );
+  });
+
+  it("configures DSH before launching its local Web surface", async () => {
+    setSettings({ firstRunNoticeConfirmed: true });
+    setYuanhengConnection({ connected: true, models: ["gpt-5.6"] });
+    const { default: App } = await import("@/App");
+    renderApp(App);
+    await screen.findByRole("heading", { name: "工作台" });
+    fireEvent.click(screen.getByRole("button", { name: "工具管理" }));
+    fireEvent.click(
+      await screen.findByRole("button", { name: "启动 DSH Web" }),
+    );
+    await waitFor(() => expect(getConfiguredToolCalls()).toEqual([["dsh"]]));
+    await waitFor(() => expect(getLaunchedToolCalls()).toContain("dsh-web"));
   });
 
   it("searches the live model catalog and launches Claude with the selection", async () => {

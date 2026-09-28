@@ -2,14 +2,14 @@
   "schemaVersion": 1,
   "releases": [
     {
+      "version": "0.1.60",
+      "publishedAt": "2026-09-29T00:00:00Z",
+      "content": "【元衡客户端更新公告｜v0.1.60】\n\n• 新增 DSH 应用入口，与 Codex、Claude 一样选择分组和模型后直接配置。\n• 同步 DSH 桌面端与本机 Web 的模型目录，按 Chat、Responses、Messages 协议分别配置供应商。\n• 支持检测 DeepSeek Harness 桌面应用、选择源码目录启动，以及配置后启动 DSH Web。\n• 保留已有供应商和凭据，增加配置写入锁、外部修改检测及恢复保护。\n• 修复工具数量增加后本地检测缓存失效的问题。\n\n配置面向标准 desktop/web profile；远程 Web 与自定义 profile 需单独配置。默认模型用于新会话，首版模型目录仅声明文本输入。"
+    },
+    {
       "version": "0.1.59",
       "publishedAt": "2026-09-28T00:00:00Z",
       "content": "【元衡客户端更新公告｜v0.1.59】\n\n• 补齐 WorkBuddy 官方图标，工作台、工具管理与快捷操作统一显示。\n• 顶部应用选择新增 Codex Desktop 和 WorkBuddy，选择后切换对应工具配置，并记住上次选择。\n• 将原 ChatGPT Desktop 配置入口统一标为 Codex Desktop，保留已有桌面端配置。\n• 所选工具尚未就绪时显示安装与配置入口，避免自动切换到其他工具。"
-    },
-    {
-      "version": "0.1.58",
-      "publishedAt": "2026-09-27T00:00:00Z",
-      "content": "【元衡客户端更新公告｜v0.1.58】\n\n• 补齐 Codex 内置图片生成与编辑接口，修复本地路由缺失导致的 404。\n• OpenAI Official 保留 Codex 的 ChatGPT OAuth 登录身份，图片请求独立透传，兼容 JSON 图片引用和 multipart 编辑。\n• 图片请求使用独立超时与大小限制，不自动重复提交或切换供应商。\n• 保留上游状态、错误正文及请求编号，增加本地与上游响应来源标记，方便定位失败。\n\n更新后请确认 Core 已升级至 v0.1.58；实际生图可用性仍取决于所选上游及账号权限。"
     }
   ]
 }

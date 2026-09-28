@@ -28,8 +28,8 @@ export function readToolInventoryCache(
       Date.now() - parsed.savedAt > CACHE_MAX_AGE_MS ||
       !Array.isArray(parsed.targets) ||
       !Array.isArray(parsed.data) ||
-      parsed.targets.length > 10 ||
-      parsed.data.length > 10 ||
+      parsed.targets.length > 32 ||
+      parsed.data.length > 32 ||
       !parsed.targets.every((target: unknown) => typeof target === "string") ||
       !parsed.data.every(
         (item: unknown) =>

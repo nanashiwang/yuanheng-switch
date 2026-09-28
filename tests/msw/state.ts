@@ -227,6 +227,7 @@ const emptyToolStatuses = (): YuanhengToolStatus[] =>
     "codex",
     "chatgpt-desktop",
     "workbuddy",
+    "dsh",
     "gemini",
     "grokbuild",
     "opencode",

@@ -147,7 +147,7 @@ pub(crate) fn support_probe_observations() -> Vec<serde_json::Value> {
             "path": "[local-path-hidden]",
             "customPathValid": value.custom_path_valid,
         }))
-    }).take(10).collect()
+    }).take(VALID_VERSION_TOOLS.len()).collect()
 }
 
 /// Pending probes are shared across pages/commands. A later explicit request
@@ -211,7 +211,7 @@ const VALID_TOOLS: [&str; 7] = [
     "claude", "codex", "gemini", "grok", "opencode", "openclaw", "hermes",
 ];
 
-const VALID_VERSION_TOOLS: [&str; 10] = [
+const VALID_VERSION_TOOLS: [&str; 11] = [
     "claude",
     "claude-desktop",
     "codex",
@@ -222,6 +222,7 @@ const VALID_VERSION_TOOLS: [&str; 10] = [
     "hermes",
     "chatgpt-desktop",
     "workbuddy",
+    "dsh",
 ];
 
 #[derive(Debug, Clone, serde::Deserialize)]
@@ -946,7 +947,10 @@ fn get_single_local_tool_version_impl(
         "unexpected tool name in get_single_tool_version_impl: {tool}"
     );
 
-    if matches!(tool, "claude-desktop" | "chatgpt-desktop" | "workbuddy") {
+    if matches!(
+        tool,
+        "claude-desktop" | "chatgpt-desktop" | "workbuddy" | "dsh"
+    ) {
         return desktop_app_version(tool, custom_path);
     }
 
@@ -997,7 +1001,10 @@ fn get_single_local_tool_version_impl(
 async fn enrich_remote_tool_version(mut result: ToolVersion) -> ToolVersion {
     let name = result.name.clone();
     let tool = name.as_str();
-    if matches!(tool, "claude-desktop" | "chatgpt-desktop" | "workbuddy") {
+    if matches!(
+        tool,
+        "claude-desktop" | "chatgpt-desktop" | "workbuddy" | "dsh"
+    ) {
         return result;
     }
 
@@ -3123,6 +3130,7 @@ fn launch_supported_desktop_app(
             "chatgpt-desktop" => &["ChatGPT.exe", "Codex.exe"],
             "claude-desktop" => &["Claude.exe"],
             "workbuddy" => &["WorkBuddy.exe"],
+            "dsh" => &["DeepSeek Harness.exe"],
             _ => &[],
         };
         for name in process_names {
@@ -3176,7 +3184,10 @@ fn launch_supported_desktop_app(
 }
 
 fn ensure_desktop_path_tool(tool: &str) -> Result<(), String> {
-    if matches!(tool, "chatgpt-desktop" | "workbuddy" | "claude-desktop") {
+    if matches!(
+        tool,
+        "chatgpt-desktop" | "workbuddy" | "dsh" | "claude-desktop"
+    ) {
         Ok(())
     } else {
         Err(format!("不支持为 {tool} 设置桌面应用路径"))
@@ -3188,6 +3199,8 @@ fn ensure_desktop_path_tool(tool: &str) -> Result<(), String> {
 pub async fn pick_desktop_app_path(app: AppHandle, tool: String) -> Result<Option<String>, String> {
     ensure_desktop_path_tool(&tool)?;
     let dialog_app = app.clone();
+    #[cfg(not(target_os = "windows"))]
+    let select_dsh = tool == "dsh";
     let selected = tauri::async_runtime::spawn_blocking(move || {
         #[cfg(target_os = "windows")]
         {
@@ -3195,7 +3208,11 @@ pub async fn pick_desktop_app_path(app: AppHandle, tool: String) -> Result<Optio
         }
         #[cfg(not(target_os = "windows"))]
         {
-            dialog_app.dialog().file().blocking_pick_file()
+            if select_dsh {
+                dialog_app.dialog().file().blocking_pick_folder()
+            } else {
+                dialog_app.dialog().file().blocking_pick_file()
+            }
         }
     })
     .await
@@ -3298,6 +3315,41 @@ pub async fn launch_tool(
     restart: Option<bool>,
     cwd: Option<String>,
 ) -> Result<bool, String> {
+    if tool == "dsh" || tool == "dsh-web" {
+        let custom = crate::app_store::get_desktop_app_path_from_store(&app, "dsh");
+        let source = custom
+            .as_ref()
+            .map(std::path::PathBuf::from)
+            .filter(|p| crate::desktop_app_detection::is_dsh_source(p));
+        if let Some(source) = source {
+            let command = if tool == "dsh-web" {
+                "pnpm dsh --profile web"
+            } else {
+                "pnpm run start:desktop"
+            };
+            // cwd is handed to the terminal launcher as a path, never interpolated into shell code.
+            tokio::task::spawn_blocking(move || {
+                launch_terminal_running(command, "tool_dsh", Some(&source))
+            })
+            .await
+            .map_err(|e| format!("DSH 启动失败: {e}"))??;
+            return Ok(true);
+        }
+        if tool == "dsh-web" {
+            if resolve_path_launch_command("dsh").is_none() {
+                return Err(
+                    "请先安装 DSH 命令行，或为 DSH 选择 deepseek-harness 源码目录，再启动本机 Web"
+                        .into(),
+                );
+            }
+            tokio::task::spawn_blocking(move || {
+                launch_terminal_running("dsh --profile web", "tool_dsh_web", None)
+            })
+            .await
+            .map_err(|e| format!("DSH Web 启动失败: {e}"))??;
+            return Ok(true);
+        }
+    }
     if matches!(tool.as_str(), "codex" | "chatgpt-desktop") {
         let state = app
             .try_state::<crate::store::AppState>()
@@ -3322,7 +3374,7 @@ pub async fn launch_tool(
     }
     if matches!(
         tool.as_str(),
-        "claude-desktop" | "chatgpt-desktop" | "workbuddy"
+        "claude-desktop" | "chatgpt-desktop" | "workbuddy" | "dsh"
     ) {
         let launch_tool = tool.clone();
         let custom_path = crate::app_store::get_desktop_app_path_from_store(&app, &tool);

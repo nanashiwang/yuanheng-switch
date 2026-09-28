@@ -45,12 +45,7 @@ import { useDesktopInstallFlow } from "./useDesktopInstallFlow";
 import { clearToolInventoryCache } from "./toolInventoryCache";
 import { useToolInventory } from "@/lib/query/toolInventory";
 
-export const providerIconOf = (app: YuanhengToolId) =>
-  app === "codex" || app === "chatgpt-desktop"
-    ? "openai"
-    : app === "claude-desktop"
-      ? "claude"
-      : app;
+export { toolIcon as providerIconOf } from "@/config/desktopTools";
 
 export type ModelSwitchBootstrapPhase = "loading" | "ready" | "error";
 

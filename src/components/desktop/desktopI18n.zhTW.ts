@@ -1,5 +1,10 @@
 // Generated from the desktop Simplified Chinese source strings, then normalized for Taiwan terminology.
 export const DESKTOP_ZH_TW: Record<string, string> = {
+  "启动 DSH Web": "啟動 DSH Web",
+  "同步桌面端和本机 Web 的模型目录。已有会话保留原模型；自定义 profile 和远程 Web 需单独配置。":
+    "同步桌面端和本機 Web 的模型目錄。既有對話保留原模型；自訂 profile 和遠端 Web 需個別設定。",
+  "可选择 DeepSeek Harness 应用，或 deepseek-harness 源码目录。源码启动需要已完成 DSH 构建并安装 pnpm。":
+    "可選擇 DeepSeek Harness 應用程式，或 deepseek-harness 原始碼目錄。從原始碼啟動需要已完成 DSH 建置並安裝 pnpm。",
   "新模型的目录未包含原分组 {{old}}。是否改用 {{next}}？取消将保留原配置。":
     "新模型的目錄未包含原群組 {{old}}。是否改用 {{next}}？取消將保留原設定。",
   "请先选择令牌分组，再配置或启动。": "請先選擇權杖群組，再設定或啟動。",

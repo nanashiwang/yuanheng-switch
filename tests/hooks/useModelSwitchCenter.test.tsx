@@ -219,7 +219,7 @@ describe("useModelSwitchCenter", () => {
 
     await waitFor(() => {
       expect(result.current.bootstrapPhase).toBe("loading");
-      expect(result.current.rows).toHaveLength(10);
+      expect(result.current.rows).toHaveLength(11);
       expect(result.current.runnableRows).toEqual([]);
     });
 
@@ -236,6 +236,7 @@ describe("useModelSwitchCenter", () => {
         "codex",
         "chatgpt-desktop",
         "workbuddy",
+        "dsh",
         "gemini",
         "grokbuild",
         "opencode",
@@ -262,7 +263,7 @@ describe("useModelSwitchCenter", () => {
 
     await waitFor(() => {
       expect(result.current.bootstrapPhase).toBe("error");
-      expect(result.current.rows).toHaveLength(10);
+      expect(result.current.rows).toHaveLength(11);
       expect(result.current.runnableRows).toEqual([]);
     });
   });
@@ -296,7 +297,7 @@ describe("useModelSwitchCenter", () => {
     const { result } = renderHook(() => useModelSwitchCenter(), { wrapper });
 
     await waitFor(() => {
-      expect(result.current.rows).toHaveLength(10);
+      expect(result.current.rows).toHaveLength(11);
       expect(result.current.rows).toContain("workbuddy");
       expect(result.current.runnableRows).toEqual(["codex"]);
       expect(result.current.installedApps).toEqual(new Set(["codex"]));
