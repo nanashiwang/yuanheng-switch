@@ -87,10 +87,12 @@ function FocusToolLoadingCard() {
 
 function FocusToolStateCard({
   error,
+  selectedTool,
   onOpenTools,
   onRetry,
 }: {
   error?: boolean;
+  selectedTool?: YuanhengToolId;
   onOpenTools: () => void;
   onRetry: () => Promise<void>;
 }) {
@@ -103,7 +105,11 @@ function FocusToolStateCard({
           <Icon className="h-5 w-5 text-[#e9b67c]" />
         </span>
         <h2 className="mt-3 font-display text-[16px] font-semibold">
-          {error ? dt("本机工具检测失败") : dt("尚未检测到已安装的 AI 工具")}
+          {selectedTool
+            ? toolLabel(selectedTool)
+            : error
+              ? dt("本机工具检测失败")
+              : dt("尚未检测到已安装的 AI 工具")}
         </h2>
         <p className="mt-1 max-w-sm text-[10.5px] text-white/55">
           {error
@@ -171,9 +177,7 @@ export function FocusToolCard({
     launch,
   } = switcher;
 
-  const app =
-    (focusApp && runnableRows.includes(focusApp) ? focusApp : undefined) ??
-    runnableRows[0];
+  const app = focusApp ?? runnableRows[0];
   const status = app ? statusMap.get(app) : undefined;
   const current = app ? models[app] : undefined;
   const currentGroup = app ? (groups[app] ?? status?.group) : undefined;
@@ -204,9 +208,13 @@ export function FocusToolCard({
       />
     );
   }
-  if (!app) {
+  if (!app || !runnableRows.includes(app)) {
     return (
-      <FocusToolStateCard onOpenTools={onOpenTools} onRetry={retryBootstrap} />
+      <FocusToolStateCard
+        selectedTool={app}
+        onOpenTools={onOpenTools}
+        onRetry={retryBootstrap}
+      />
     );
   }
 

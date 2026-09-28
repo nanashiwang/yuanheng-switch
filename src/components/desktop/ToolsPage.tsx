@@ -1,11 +1,11 @@
-import type { AppId } from "@/lib/api";
+import type { YuanhengToolId } from "@/lib/api";
 import { PageHeader } from "./PageHeader";
 import { dt } from "./desktopI18n";
 import { ToolSetupGrid } from "./ToolSetupGrid";
 
 interface ToolsPageProps {
-  activeApp: AppId;
-  onSetActiveApp: (app: AppId) => void;
+  activeApp: YuanhengToolId;
+  onSetActiveApp: (app: YuanhengToolId) => void;
 }
 
 export function ToolsPage({ activeApp, onSetActiveApp }: ToolsPageProps) {

@@ -13,9 +13,9 @@ import {
   WalletCards,
 } from "lucide-react";
 import { useTranslation } from "react-i18next";
-import type { AppId } from "@/lib/api";
+import type { YuanhengToolId } from "@/lib/api";
 import type { YuanhengConnectionStatus } from "@/lib/api/yuanheng";
-import { APP_ICON_MAP } from "@/config/appConfig";
+import { toolLabel, toolIcon as appProviderIcon } from "@/config/desktopTools";
 import { ProviderIcon } from "@/components/ProviderIcon";
 import { useProxyStatus } from "@/hooks/useProxyStatus";
 import { useUsageSummary } from "@/lib/query/usage";
@@ -30,17 +30,11 @@ import type { DesktopView } from "./types";
 import { dt } from "./desktopI18n";
 
 interface DesktopContextPanelProps {
-  activeApp: AppId;
+  activeApp: YuanhengToolId;
   connection?: YuanhengConnectionStatus;
   onNavigate: (view: DesktopView) => void;
   className?: string;
   footer?: ReactNode;
-}
-
-function appProviderIcon(app: AppId): string {
-  if (app === "codex") return "openai";
-  if (app === "claude-desktop") return "claude";
-  return app;
 }
 
 export function DesktopContextPanel({
@@ -135,7 +129,7 @@ export function DesktopContextPanel({
             <span className="flex h-10 w-10 items-center justify-center rounded-xl bg-background shadow-sm ring-1 ring-border/70">
               <ProviderIcon
                 icon={appProviderIcon(activeApp)}
-                name={APP_ICON_MAP[activeApp].label}
+                name={toolLabel(activeApp)}
                 size={20}
               />
             </span>
@@ -144,7 +138,7 @@ export function DesktopContextPanel({
                 {dt("焦点应用")}
               </span>
               <strong className="mt-0.5 block truncate text-sm">
-                {APP_ICON_MAP[activeApp].label}
+                {toolLabel(activeApp)}
               </strong>
             </span>
             <ArrowUpRight className="h-4 w-4 text-muted-foreground transition-transform group-hover:-translate-y-0.5 group-hover:translate-x-0.5" />

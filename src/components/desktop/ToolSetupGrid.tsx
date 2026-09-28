@@ -15,7 +15,6 @@ import {
 } from "lucide-react";
 import { toast } from "sonner";
 import {
-  type AppId,
   type YuanhengConnectionStatus,
   type YuanhengReasoningLevel,
   type YuanhengToolId,
@@ -32,7 +31,13 @@ import {
   useYuanhengConnection,
   useYuanhengToolStatuses,
 } from "@/lib/query/yuanheng";
-import { APP_ICON_MAP } from "@/config/appConfig";
+import { DESKTOP_TOOLS, isDesktopApp, toolLabel } from "@/config/desktopTools";
+export {
+  DESKTOP_TOOLS,
+  isCoreApp,
+  isDesktopApp,
+  toolLabel,
+} from "@/config/desktopTools";
 import { ProviderIcon } from "@/components/ProviderIcon";
 import { Button } from "@/components/ui/button";
 import { ModelPicker } from "./ModelPicker";
@@ -57,19 +62,6 @@ import {
 } from "./toolSetupSelection";
 export { pickPreferredGroup } from "./toolSetupSelection";
 
-export const DESKTOP_TOOLS: YuanhengToolId[] = [
-  "claude",
-  "claude-desktop",
-  "codex",
-  "chatgpt-desktop",
-  "workbuddy",
-  "gemini",
-  "grokbuild",
-  "opencode",
-  "openclaw",
-  "hermes",
-];
-
 export const TOOL_COMMANDS: Partial<Record<YuanhengToolId, string>> = {
   claude: "claude",
   codex: "codex",
@@ -89,20 +81,8 @@ export const TOOL_VERSION_TARGETS: Partial<Record<YuanhengToolId, string>> = {
 
 export const DESKTOP_DOWNLOAD_URLS: Partial<Record<YuanhengToolId, string>> = {
   "claude-desktop": "https://claude.ai/download",
-  "chatgpt-desktop": "https://openai.com/chatgpt/desktop/",
+  "chatgpt-desktop": "https://openai.com/codex/",
   workbuddy: "https://www.codebuddy.cn/work/",
-};
-
-export const isCoreApp = (app: YuanhengToolId): app is AppId =>
-  app !== "chatgpt-desktop" && app !== "workbuddy";
-
-export const isDesktopApp = (app: YuanhengToolId) =>
-  app === "claude-desktop" || app === "chatgpt-desktop" || app === "workbuddy";
-
-export const toolLabel = (app: YuanhengToolId) => {
-  if (app === "chatgpt-desktop") return "ChatGPT Desktop";
-  if (app === "workbuddy") return "WorkBuddy";
-  return APP_ICON_MAP[app].label;
 };
 
 export const REASONING_LABELS: Record<YuanhengReasoningLevel, string> = {
@@ -126,9 +106,9 @@ export const reasoningLabel = (
     : dt(REASONING_LABELS[level]);
 
 interface ToolSetupGridProps {
-  activeApp?: AppId;
+  activeApp?: YuanhengToolId;
   compact?: boolean;
-  onSetActiveApp?: (app: AppId) => void;
+  onSetActiveApp?: (app: YuanhengToolId) => void;
   onConfigured?: () => void;
 }
 
@@ -795,7 +775,7 @@ function ToolSetupGridContent({
               )}
               style={{ animationDelay: `${Math.min(index, 7) * 40}ms` }}
               onClick={() => {
-                if (isCoreApp(app)) onSetActiveApp?.(app);
+                onSetActiveApp?.(app);
               }}
             >
               <div className="flex items-start gap-3">

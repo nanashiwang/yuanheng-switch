@@ -13,6 +13,7 @@ import _code0 from "./code0.png";
 import _eflowcode from "./eflowcode.png";
 import _etok from "./etok.png";
 import _fenno from "./fenno-icon.webp";
+import _workbuddy from "./workbuddy.jpg";
 import _hermes from "./hermes.png";
 import _huoshan from "./huoshan.png";
 import _nekocode from "./nekocode-icon.png";
@@ -116,6 +117,7 @@ export const iconUrls: Record<string, string> = {
   etok: _etok,
   fenno: _fenno,
   hermes: _hermes,
+  workbuddy: _workbuddy,
   huoshan: _huoshan,
   nekocode: _nekocode,
   pateway: _pateway,

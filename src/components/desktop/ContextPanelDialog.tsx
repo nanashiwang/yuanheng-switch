@@ -1,4 +1,4 @@
-import type { AppId } from "@/lib/api";
+import type { YuanhengToolId } from "@/lib/api";
 import type { YuanhengConnectionStatus } from "@/lib/api/yuanheng";
 import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
 import { DesktopContextPanel } from "./DesktopContextPanel";
@@ -8,7 +8,7 @@ import { dt } from "./desktopI18n";
 interface ContextPanelDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
-  activeApp: AppId;
+  activeApp: YuanhengToolId;
   connection?: YuanhengConnectionStatus;
   onNavigate: (view: DesktopView) => void;
 }

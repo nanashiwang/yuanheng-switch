@@ -748,7 +748,76 @@ describe("App integration with MSW", { timeout: 15_000 }, () => {
     );
   });
 
-  it("configures ChatGPT Desktop and WorkBuddy as desktop apps", async () => {
+  it.each([
+    ["chatgpt-desktop", "Codex Desktop"],
+    ["workbuddy", "WorkBuddy"],
+  ] as const)(
+    "selects and restores %s from the toolbar",
+    async (app, label) => {
+      setSettings({ firstRunNoticeConfirmed: true });
+      setYuanhengConnection({ connected: true, models: ["gpt-5.6"] });
+      setYuanhengToolStatus(app, {
+        supported: true,
+        configured: true,
+        model: "gpt-5.6",
+      });
+      const { default: App } = await import("@/App");
+      const first = renderApp(App);
+      await screen.findByRole("heading", { name: "工作台" });
+      fireEvent.keyDown(
+        screen.getByRole("button", { name: "desktop.toolbar.switchTool" }),
+        { key: "ArrowDown" },
+      );
+      fireEvent.click(await screen.findByRole("menuitem", { name: label }));
+      await waitFor(() =>
+        expect(
+          screen.getByRole("button", { name: "desktop.toolbar.switchTool" }),
+        ).toHaveTextContent(label),
+      );
+      expect(localStorage.getItem("yuanheng-switch-last-app")).toBe(app);
+      expect(
+        (await screen.findAllByRole("button", { name: `启动 ${label}` }))[0],
+      ).toBeInTheDocument();
+      if (app === "workbuddy")
+        expect(screen.getAllByRole("img", { name: label })[0]).toHaveAttribute(
+          "src",
+          expect.stringContaining("workbuddy.jpg"),
+        );
+      first.unmount();
+      renderApp(App);
+      await waitFor(() =>
+        expect(
+          screen.getByRole("button", { name: "desktop.toolbar.switchTool" }),
+        ).toHaveTextContent(label),
+      );
+      expect(
+        (await screen.findAllByRole("button", { name: `启动 ${label}` }))[0],
+      ).toBeInTheDocument();
+    },
+  );
+
+  it("keeps an unavailable selected desktop tool instead of configuring another tool", async () => {
+    setSettings({ firstRunNoticeConfirmed: true });
+    setYuanhengConnection({ connected: true, models: ["gpt-5.6"] });
+    setYuanhengToolStatus("claude", {
+      supported: true,
+      configured: true,
+      model: "gpt-5.6",
+    });
+    setYuanhengToolStatus("workbuddy", { supported: false });
+    localStorage.setItem("yuanheng-switch-last-app", "workbuddy");
+    const { default: App } = await import("@/App");
+    renderApp(App);
+    expect(
+      await screen.findByRole("heading", { name: "WorkBuddy" }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: "安装与配置" }),
+    ).toBeInTheDocument();
+    expect(getConfiguredToolCalls()).toEqual([]);
+  });
+
+  it("configures Codex Desktop and WorkBuddy as desktop apps", async () => {
     setSettings({ firstRunNoticeConfirmed: true });
     setYuanhengConnection({
       connected: true,
@@ -767,24 +836,20 @@ describe("App integration with MSW", { timeout: 15_000 }, () => {
     });
     fireEvent.click(screen.getByRole("button", { name: "工具管理" }));
 
-    fireEvent.click(await screen.findByLabelText("ChatGPT Desktop 模型选择"));
+    fireEvent.click(await screen.findByLabelText("Codex Desktop 模型选择"));
     fireEvent.change(screen.getByPlaceholderText("搜索网站可用模型..."), {
       target: { value: "k3" },
     });
     fireEvent.click(await screen.findByText("k3"));
-    expect(screen.getByLabelText("ChatGPT Desktop 模型选择")).toHaveTextContent(
+    expect(screen.getByLabelText("Codex Desktop 模型选择")).toHaveTextContent(
       "k3",
     );
 
-    fireEvent.click(
-      screen.getByRole("button", { name: "配置 ChatGPT Desktop" }),
-    );
+    fireEvent.click(screen.getByRole("button", { name: "配置 Codex Desktop" }));
     await waitFor(() =>
       expect(getConfiguredToolCalls()).toEqual([["chatgpt-desktop"]]),
     );
-    fireEvent.click(
-      screen.getByRole("button", { name: "启动 ChatGPT Desktop" }),
-    );
+    fireEvent.click(screen.getByRole("button", { name: "启动 Codex Desktop" }));
     await waitFor(() =>
       expect(getRestartedToolCalls()).toEqual(["chatgpt-desktop"]),
     );

@@ -24,7 +24,7 @@ import {
 } from "lucide-react";
 import { toast } from "sonner";
 
-import type { AppId } from "@/lib/api";
+import type { AppId, YuanhengToolId } from "@/lib/api";
 import { settingsApi } from "@/lib/api";
 import { useSettingsQuery } from "@/lib/query";
 import { checkAllEnvConflicts } from "@/lib/api/env";
@@ -88,8 +88,14 @@ import { OnboardingWizard } from "@/components/desktop/OnboardingWizard";
 import { YuanhengAccessScreen } from "@/components/desktop/YuanhengAccessScreen";
 import type { DesktopView } from "@/components/desktop/types";
 import { useYuanhengConnection } from "@/lib/query/yuanheng";
-import { APP_ICON_MAP } from "@/config/appConfig";
 import { ProviderIcon } from "@/components/ProviderIcon";
+
+import {
+  DESKTOP_TOOLS,
+  isCoreApp,
+  toolLabel,
+  toolIcon as appProviderIcon,
+} from "@/config/desktopTools";
 
 const DEFAULT_DRAG_BAR_HEIGHT = isWindows() || isLinux() ? 0 : 28;
 const VIEW_KEY = "yuanheng-desktop-last-view";
@@ -156,15 +162,9 @@ const VIEW_PARENTS: Partial<Record<DesktopView, DesktopView>> = {
   skillsDiscovery: "skills",
 };
 
-function appProviderIcon(app: AppId): string {
-  if (app === "codex") return "openai";
-  if (app === "claude-desktop") return "claude";
-  return app;
-}
-
-function getInitialApp(): AppId {
-  const saved = localStorage.getItem(APP_KEY) as AppId | null;
-  return saved && ALL_APPS.includes(saved) ? saved : "claude";
+function getInitialTool(): YuanhengToolId {
+  const saved = localStorage.getItem(APP_KEY) as YuanhengToolId | null;
+  return saved && DESKTOP_TOOLS.includes(saved) ? saved : "claude";
 }
 
 function getInitialView(): DesktopView {
@@ -223,7 +223,12 @@ function App() {
   const { t } = useTranslation();
   const queryClient = useQueryClient();
   const [view, setView] = useState<DesktopView>(getInitialView);
-  const [activeApp, setActiveAppState] = useState<AppId>(getInitialApp);
+  const [activeTool, setActiveTool] = useState<YuanhengToolId>(getInitialTool);
+  // Capability APIs accept core app IDs only; desktop configuration has its own selection.
+  const [activeApp, setActiveAppState] = useState<AppId>(() => {
+    const tool = getInitialTool();
+    return isCoreApp(tool) ? tool : "codex";
+  });
   const [settingsDefaultTab, setSettingsDefaultTab] = useState("general");
   const [skillsSection, setSkillsSection] =
     useState<SkillsSection>("installed");
@@ -264,8 +269,9 @@ function App() {
     isLinux() && (settingsData?.useAppWindowControls ?? false);
   const dragBarHeight = useAppWindowControls ? 32 : DEFAULT_DRAG_BAR_HEIGHT;
 
-  const persistActiveApp = (app: AppId) => {
-    setActiveAppState(app);
+  const persistActiveApp = (app: YuanhengToolId) => {
+    setActiveTool(app);
+    if (isCoreApp(app)) setActiveAppState(app);
     localStorage.setItem(APP_KEY, app);
   };
 
@@ -281,11 +287,11 @@ function App() {
   };
 
   useEffect(() => {
-    if (visibleApps[activeApp] !== false) return;
+    if (!isCoreApp(activeTool) || visibleApps[activeTool] !== false) return;
     const fallback =
       ALL_APPS.find((app) => visibleApps[app] !== false) ?? "claude";
     persistActiveApp(fallback);
-  }, [activeApp, visibleApps]);
+  }, [activeTool, visibleApps]);
 
   const saveSettingsPatch = async (updates: Record<string, unknown>) => {
     if (!settingsData) return false;
@@ -451,11 +457,11 @@ function App() {
     switch (view) {
       case "home":
         return (
-          <WorkspaceDashboard focusApp={activeApp} onNavigate={navigate} />
+          <WorkspaceDashboard focusApp={activeTool} onNavigate={navigate} />
         );
       case "tools":
         return (
-          <ToolsPage activeApp={activeApp} onSetActiveApp={persistActiveApp} />
+          <ToolsPage activeApp={activeTool} onSetActiveApp={persistActiveApp} />
         );
       case "capabilities":
         return <CapabilityCenter activeApp={activeApp} onOpen={navigate} />;
@@ -811,36 +817,35 @@ function App() {
                       aria-label={t("desktop.toolbar.switchTool")}
                     >
                       <ProviderIcon
-                        icon={appProviderIcon(activeApp)}
-                        name={APP_ICON_MAP[activeApp].label}
+                        icon={appProviderIcon(activeTool)}
+                        name={toolLabel(activeTool)}
                         size={14}
                       />
-                      {APP_ICON_MAP[activeApp].label}
+                      {toolLabel(activeTool)}
                       <ChevronDown className="h-3 w-3 opacity-60" />
                     </button>
                   </DropdownMenuTrigger>
                   <DropdownMenuContent align="end" className="w-44">
-                    {ALL_APPS.filter((app) => visibleApps[app] !== false).map(
-                      (app) => (
-                        <DropdownMenuItem
-                          key={app}
-                          onClick={() => persistActiveApp(app)}
-                          className="gap-2 text-[12px]"
-                        >
-                          <ProviderIcon
-                            icon={appProviderIcon(app)}
-                            name={APP_ICON_MAP[app].label}
-                            size={14}
-                          />
-                          <span className="flex-1">
-                            {APP_ICON_MAP[app].label}
-                          </span>
-                          {app === activeApp && (
-                            <Check className="h-3.5 w-3.5 text-primary" />
-                          )}
-                        </DropdownMenuItem>
-                      ),
-                    )}
+                    {DESKTOP_TOOLS.filter(
+                      (app) => !isCoreApp(app) || visibleApps[app] !== false,
+                    ).map((app) => (
+                      <DropdownMenuItem
+                        aria-label={toolLabel(app)}
+                        key={app}
+                        onClick={() => persistActiveApp(app)}
+                        className="gap-2 text-[12px]"
+                      >
+                        <ProviderIcon
+                          icon={appProviderIcon(app)}
+                          name={toolLabel(app)}
+                          size={14}
+                        />
+                        <span className="flex-1">{toolLabel(app)}</span>
+                        {app === activeTool && (
+                          <Check className="h-3.5 w-3.5 text-primary" />
+                        )}
+                      </DropdownMenuItem>
+                    ))}
                   </DropdownMenuContent>
                 </DropdownMenu>
                 <button
@@ -903,7 +908,7 @@ function App() {
             </main>
           </section>
           <DesktopContextPanel
-            activeApp={activeApp}
+            activeApp={activeTool}
             connection={yuanhengConnection}
             onNavigate={navigate}
             className="hidden min-[1320px]:flex"
@@ -914,7 +919,7 @@ function App() {
       <GlobalCommandPalette
         open={commandPaletteOpen}
         onOpenChange={setCommandPaletteOpen}
-        activeApp={activeApp}
+        activeApp={activeTool}
         visibleApps={visibleApps}
         onNavigate={navigate}
         onSetActiveApp={persistActiveApp}
@@ -922,7 +927,7 @@ function App() {
       <ContextPanelDialog
         open={contextPanelOpen}
         onOpenChange={setContextPanelOpen}
-        activeApp={activeApp}
+        activeApp={activeTool}
         connection={yuanhengConnection}
         onNavigate={navigate}
       />

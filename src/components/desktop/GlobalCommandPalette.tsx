@@ -11,10 +11,15 @@ import {
   Settings,
 } from "lucide-react";
 import { toast } from "sonner";
-import type { AppId } from "@/lib/api";
+import type { YuanhengToolId } from "@/lib/api";
 import { settingsApi } from "@/lib/api";
 import type { VisibleApps } from "@/types";
-import { APP_ICON_MAP } from "@/config/appConfig";
+import {
+  DESKTOP_TOOLS,
+  isCoreApp,
+  toolLabel,
+  toolIcon as appProviderIcon,
+} from "@/config/desktopTools";
 import { YUANHENG_WEBSITE_URL } from "@/config/yuanhengBrand";
 import { useYuanhengTopup } from "@/hooks/useYuanhengTopup";
 import { ProviderIcon } from "@/components/ProviderIcon";
@@ -33,10 +38,10 @@ import { dt } from "./desktopI18n";
 interface GlobalCommandPaletteProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
-  activeApp: AppId;
+  activeApp: YuanhengToolId;
   visibleApps: VisibleApps;
   onNavigate: (view: DesktopView) => void;
-  onSetActiveApp: (app: AppId) => void;
+  onSetActiveApp: (app: YuanhengToolId) => void;
 }
 
 const pages: Array<{
@@ -78,12 +83,6 @@ const pages: Array<{
   },
   { view: "settings", label: "设置", description: "应用偏好", icon: Settings },
 ];
-
-function appProviderIcon(app: AppId): string {
-  if (app === "codex") return "openai";
-  if (app === "claude-desktop") return "claude";
-  return app;
-}
 
 export function GlobalCommandPalette({
   open,
@@ -140,32 +139,30 @@ export function GlobalCommandPalette({
               ))}
             </CommandGroup>
             <CommandGroup heading={dt("切换当前工具")}>
-              {(Object.keys(APP_ICON_MAP) as AppId[])
-                .filter((app) => visibleApps[app] !== false)
-                .map((app) => (
-                  <CommandItem
-                    key={app}
-                    value={dt("切换工具 {{v0}}", {
-                      v0: APP_ICON_MAP[app].label,
-                    })}
-                    onSelect={() => run(() => onSetActiveApp(app))}
-                    className="rounded-lg px-3 py-2.5"
-                  >
-                    <ProviderIcon
-                      icon={appProviderIcon(app)}
-                      name={APP_ICON_MAP[app].label}
-                      size={16}
-                    />
-                    <span className="flex-1 text-xs">
-                      {APP_ICON_MAP[app].label}
+              {DESKTOP_TOOLS.filter(
+                (app) => !isCoreApp(app) || visibleApps[app] !== false,
+              ).map((app) => (
+                <CommandItem
+                  key={app}
+                  value={dt("切换工具 {{v0}}", {
+                    v0: toolLabel(app),
+                  })}
+                  onSelect={() => run(() => onSetActiveApp(app))}
+                  className="rounded-lg px-3 py-2.5"
+                >
+                  <ProviderIcon
+                    icon={appProviderIcon(app)}
+                    name={toolLabel(app)}
+                    size={16}
+                  />
+                  <span className="flex-1 text-xs">{toolLabel(app)}</span>
+                  {activeApp === app && (
+                    <span className="text-[10px] font-medium text-primary">
+                      {dt("当前")}
                     </span>
-                    {activeApp === app && (
-                      <span className="text-[10px] font-medium text-primary">
-                        {dt("当前")}
-                      </span>
-                    )}
-                  </CommandItem>
-                ))}
+                  )}
+                </CommandItem>
+              ))}
             </CommandGroup>
             <CommandGroup heading={dt("快捷操作")}>
               <CommandItem
