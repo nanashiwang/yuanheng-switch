@@ -50,7 +50,7 @@ it.each(["success", "failure"])(
       lastSyncedAt: 1,
     };
     client.setQueryData(yuanhengKeys.connection, connection);
-    // Preload the currently shipped key, as well as the account-identity key.
+    // Seed the pre-fix key too, so this test demonstrates the original failure.
     const rows = [{ app: "claude", supported: true }];
     client.setQueryData([...yuanhengKeys.tools, "one", 1], rows);
     client.setQueryData(

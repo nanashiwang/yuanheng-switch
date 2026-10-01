@@ -422,6 +422,17 @@ fn run_tool_lifecycle_silently(command_line: &str, _label: &str) -> Result<(), S
     finish_lifecycle_output(&output)
 }
 
+/// Each Windows lifecycle job owns its temporary script, including concurrent tools.
+#[cfg(target_os = "windows")]
+fn lifecycle_batch_path(label: &str) -> PathBuf {
+    std::env::temp_dir().join(format!(
+        "yuanheng_switch_{}_{}_{}.bat",
+        label,
+        std::process::id(),
+        uuid::Uuid::new_v4()
+    ))
+}
+
 /// Windows 静默执行：command_line 是 .bat 内容（@echo off + call/wsl 行，CRLF 分隔），
 /// 写临时 .bat 后用 `cmd /C` 执行，`CREATE_NO_WINDOW` 抑制 console 窗口。
 #[cfg(target_os = "windows")]
@@ -429,11 +440,8 @@ fn run_tool_lifecycle_silently(command_line: &str, label: &str) -> Result<(), St
     use std::os::windows::process::CommandExt;
     use std::process::Command;
 
-    let bat_file = std::env::temp_dir().join(format!(
-        "yuanheng_switch_{}_{}.bat",
-        label,
-        std::process::id()
-    ));
+    // Different tools may install concurrently; PID + action alone collides.
+    let bat_file = lifecycle_batch_path(label);
     std::fs::write(&bat_file, command_line).map_err(|e| format!("写入批处理文件失败: {e}"))?;
 
     let output = Command::new("cmd")
@@ -2859,8 +2867,8 @@ fn static_fallback_command(tool: &str) -> String {
 /// - 对**有 npm 包**的工具(claude/grok/opencode),短路链(POSIX `||`)保证官方脚本不可达/
 ///   防火墙拦截时仍能装上,降级到裸 `npm i -g`。官方脚本本身不用 pipe,
 ///   所以这条路径在 WSL 的 `sh -c` 子 shell 中也不依赖外层 `pipefail`。
-/// - Windows 上 Claude/OpenCode 原生不启用（对应 installer 都是 bash 脚本）；Grok
-///   使用官方 PowerShell installer，并同样保留 npm fallback。WSL 作为 Linux 环境
+/// - Windows Claude 使用独立 PowerShell installer，不经过此 POSIX 分支；OpenCode
+///   仍使用 npm。Grok 使用 PowerShell installer 和 npm fallback。WSL 作为 Linux 环境
 ///   复用这套 POSIX 安装优先级。
 fn installer_with_npm_fallback(installer: &str, tool: &str) -> String {
     match npm_install_command_for(tool) {
@@ -4508,6 +4516,15 @@ pub async fn set_window_theme(window: tauri::Window, theme: String) -> Result<()
 
 #[cfg(test)]
 mod tests {
+    #[cfg(target_os = "windows")]
+    #[test]
+    fn independent_windows_installs_never_share_a_batch_file() {
+        let first = super::lifecycle_batch_path("tool_install");
+        let second = super::lifecycle_batch_path("tool_install");
+        assert_ne!(first, second);
+        assert_eq!(first.extension().unwrap(), "bat");
+    }
+
     #[test]
     fn lifecycle_lock_is_atomic_and_released_on_error() {
         use super::ToolLifecycleGuard;
@@ -6153,7 +6170,7 @@ mod tests {
 
         #[test]
         fn codex_install_keeps_static_npm() {
-            // OpenAI 暂无独立 native installer,保持原裸 npm,不引入兜底链(无东西可兜底)。
+            // 保留已选定的 npm 安装路线，不在本修复中改选包管理器或二进制分发。
             let cmd = install_command_for("codex");
             assert_eq!(cmd, "npm i -g @openai/codex@latest");
             assert!(!cmd.contains("||"));

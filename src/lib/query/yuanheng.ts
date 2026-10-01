@@ -158,6 +158,8 @@ export function useSignOutYuanheng() {
 export function useYuanhengToolStatuses() {
   const { data: connection } = useYuanhengConnection();
   return useQuery({
+    // A sync changes content, not identity. New timestamp keys would unmount
+    // open model pickers while the replacement query has no data.
     queryKey: [
       ...yuanhengKeys.tools,
       connection?.baseUrl ?? null,
