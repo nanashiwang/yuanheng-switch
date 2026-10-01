@@ -15,6 +15,11 @@ import {
 } from "lucide-react";
 import { toast } from "sonner";
 import {
+  isToolLifecycleBusy,
+  useToolLifecycleState,
+} from "@/lib/toolLifecycleState";
+import { showToolInstallError, toolInstallLabel } from "./toolInstallFeedback";
+import {
   type YuanhengConnectionStatus,
   type YuanhengReasoningLevel,
   type YuanhengToolId,
@@ -146,6 +151,7 @@ function ToolSetupGridContent({
   const codexAccountMode = useCodexAccountMode();
   const preflight = usePreflightYuanhengTool();
   const desktopInstall = useDesktopInstallFlow();
+  const cliLifecycle = useToolLifecycleState();
   const launchDirectoryState = useToolLaunchDirectories();
   const versions = useToolInventory();
   const [selected, setSelected] = useState<YuanhengToolId[]>([]);
@@ -430,6 +436,7 @@ function ToolSetupGridContent({
     const command = TOOL_COMMANDS[app];
     const downloadUrl = DESKTOP_DOWNLOAD_URLS[app];
     if (!command && !downloadUrl) return;
+    if (command && isToolLifecycleBusy(command)) return;
     try {
       if (downloadUrl) {
         const versionTarget = TOOL_VERSION_TARGETS[app];
@@ -473,10 +480,13 @@ function ToolSetupGridContent({
       }
       if (!command) return;
       await settingsApi.runToolLifecycleAction([command], "install");
-      toast.success(dt("{{v0}} 安装任务已完成", { v0: toolLabel(app) }));
+      toast.success(
+        dt("{{v0}} 安装完成并已验证可运行", { v0: toolLabel(app) }),
+      );
+      clearToolInventoryCache();
       await versions.refetch();
     } catch (error) {
-      toast.error(extractErrorMessage(error) || dt("安装失败"));
+      showToolInstallError(error);
     }
   };
 
@@ -705,7 +715,9 @@ function ToolSetupGridContent({
             : undefined;
           const canInstall = Boolean(command || DESKTOP_DOWNLOAD_URLS[app]);
           const installed = isInstalled(app);
-          const installing = desktopInstall.monitoringApps.has(app);
+          const cliPhase = cliLifecycle.get(TOOL_VERSION_TARGETS[app] ?? "");
+          const installing =
+            desktopInstall.monitoringApps.has(app) || Boolean(cliPhase);
           const status = statusMap.get(app);
           const configured = Boolean(status?.configured);
           const selectable = Boolean(
@@ -1220,7 +1232,9 @@ function ToolSetupGridContent({
                       <Download className="h-3.5 w-3.5" />
                     )}
                     {installing
-                      ? dt("等待安装")
+                      ? cliPhase
+                        ? toolInstallLabel(cliPhase)
+                        : dt("等待安装")
                       : DESKTOP_DOWNLOAD_URLS[app]
                         ? dt("官方下载")
                         : dt("一键安装")}

@@ -160,8 +160,9 @@ export function useYuanhengToolStatuses() {
   return useQuery({
     queryKey: [
       ...yuanhengKeys.tools,
+      connection?.baseUrl ?? null,
       connection?.userId ?? null,
-      connection?.lastSyncedAt ?? null,
+      Boolean(connection?.connected),
     ],
     queryFn: () => yuanhengApi.getToolStatuses(),
     enabled: Boolean(connection?.connected),

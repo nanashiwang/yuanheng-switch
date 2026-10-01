@@ -28,6 +28,9 @@ import {
 } from "./useModelSwitchCenter";
 import { dt } from "./desktopI18n";
 import { ToolActivationProgress } from "./ToolActivationProgress";
+import { useToolLifecycleState } from "@/lib/toolLifecycleState";
+import { toolInstallLabel } from "./toolInstallFeedback";
+import { TOOL_VERSION_TARGETS } from "./ToolSetupGrid";
 
 const controlsReasoning = (app: YuanhengToolId) =>
   app === "claude-desktop" || app === "codex" || app === "chatgpt-desktop";
@@ -41,6 +44,7 @@ export function ModelSwitchCenter({
   switcher,
   onOpenTools,
 }: ModelSwitchCenterProps) {
+  const cliLifecycle = useToolLifecycleState();
   const {
     connection,
     terminalModels,
@@ -357,7 +361,13 @@ export function ModelSwitchCenter({
                             <Download className="h-3.5 w-3.5" />
                           )}
                           {installing
-                            ? dt("等待安装")
+                            ? DESKTOP_DOWNLOAD_URLS[app]
+                              ? dt("等待安装")
+                              : toolInstallLabel(
+                                  cliLifecycle.get(
+                                    TOOL_VERSION_TARGETS[app] ?? "",
+                                  ),
+                                )
                             : DESKTOP_DOWNLOAD_URLS[app]
                               ? dt("官方下载")
                               : dt("一键安装")}

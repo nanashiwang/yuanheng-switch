@@ -6,6 +6,12 @@ import { DESKTOP_ZH_TW } from "./desktopI18n.zhTW";
 type Values = Record<string, string | number | null | undefined>;
 
 export const DESKTOP_EN: Record<string, string> = {
+  "正在验证安装…": "Verifying installation…",
+  "正在安装，请稍候…": "Installing, please wait…",
+  "下载 Node.js LTS": "Download Node.js LTS",
+  "无法打开下载页，请手动访问 nodejs.org":
+    "Could not open the download page. Please visit nodejs.org.",
+  "{{v0}} 安装完成并已验证可运行": "{{v0}} installed and verified",
   "默认体检不调用模型、不测试收费推理；服务运行、网关认证和桌面工作区是不同检查项。失败时可预览并导出同一份脱敏诊断。":
     "Default checks do not invoke models or billable inference. Service status, gateway authentication and the desktop workspace are separate checks. Preview and export the same redacted snapshot when troubleshooting.",
   "启动 DSH Web": "Launch DSH Web",

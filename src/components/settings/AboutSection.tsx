@@ -28,6 +28,8 @@ import { useTranslation } from "react-i18next";
 import { toast } from "sonner";
 import { getVersion } from "@tauri-apps/api/app";
 import { settingsApi } from "@/lib/api";
+import { useToolLifecycleState } from "@/lib/toolLifecycleState";
+import { toolInstallLabel } from "@/components/desktop/toolInstallFeedback";
 import type {
   ToolInstallation,
   ToolInstallationReport,
@@ -148,7 +150,8 @@ npm i -g openclaw@latest
 ${posixScriptInstallCommand("https://raw.githubusercontent.com/NousResearch/hermes-agent/main/scripts/install.sh")}`;
 
 const WINDOWS_ONE_CLICK_INSTALL_COMMANDS = `# Claude Code
-npm i -g @anthropic-ai/claude-code@latest
+irm https://claude.ai/install.ps1 | iex
+# 以下 npm 工具需要先安装 Node.js LTS：https://nodejs.org/en/download
 # Codex
 npm i -g @openai/codex@latest
 # Gemini CLI
@@ -220,6 +223,7 @@ function mergeToolVersions(
 }
 
 export function AboutSection({ isPortable }: AboutSectionProps) {
+  const cliLifecycle = useToolLifecycleState();
   // ... (use hooks as before) ...
   const { t } = useTranslation();
   // 惰性初始化自模块缓存：重挂时首帧即渲染上次的值，避免 loading 闪烁；首次挂载缓存
@@ -782,6 +786,7 @@ export function AboutSection({ isPortable }: AboutSectionProps) {
   // preflightTools 覆盖升级前的 probe 阶段——那段在 executeRun 之前、toolActions
   // 还没置位,如果不算进 busy 会留出 1-3 秒的并发触发窗口。
   const isAnyBusy =
+    cliLifecycle.size > 0 ||
     Boolean(batchAction) ||
     Object.keys(toolActions).length > 0 ||
     preflightTools.size > 0;
@@ -1052,7 +1057,8 @@ export function AboutSection({ isPortable }: AboutSectionProps) {
                   : isOutdated
                     ? "update"
                     : null;
-            const runningAction = toolActions[toolName];
+            const runningAction =
+              toolActions[toolName] ?? cliLifecycle.get(toolName);
             const errorDetail = localizeToolVersionError(tool?.error);
             const title =
               tool?.version || errorDetail || t("common.notInstalled");
@@ -1220,11 +1226,11 @@ export function AboutSection({ isPortable }: AboutSectionProps) {
                       ) : (
                         <ArrowUpCircle className="h-3.5 w-3.5" />
                       )}
-                      {/* loading 时文案保持不变、仅图标切换为 spinner，
-                          按钮宽度恒定，避免"升级"→"升级中…"导致的抖动。 */}
-                      {action === "install"
-                        ? t("settings.toolInstall")
-                        : t("settings.toolUpdate")}
+                      {runningAction && action === "install"
+                        ? toolInstallLabel(cliLifecycle.get(toolName))
+                        : action === "install"
+                          ? t("settings.toolInstall")
+                          : t("settings.toolUpdate")}
                     </Button>
                   ) : (
                     <span className="text-xs text-muted-foreground">

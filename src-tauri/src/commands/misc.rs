@@ -358,6 +358,7 @@ pub async fn run_tool_lifecycle_action(
     if requested.is_empty() {
         return Err("No supported tools selected".to_string());
     }
+    let guard = ToolLifecycleGuard::acquire(&requested)?;
 
     let label = match action {
         ToolLifecycleAction::Install => "tool_install",
@@ -367,12 +368,41 @@ pub async fn run_tool_lifecycle_action(
     // build 阶段含锚定探测（对每个工具跑 `--version` 定位命令行实际命中那处），
     // 与执行一并放进 blocking 线程，避免阻塞 async runtime。
     tokio::task::spawn_blocking(move || {
+        let _guard = guard;
         let command_line =
             build_tool_lifecycle_command(&requested, action, wsl_shell_by_tool.as_ref())?;
         run_tool_lifecycle_silently(&command_line, label)
     })
     .await
     .map_err(|e| format!("tool lifecycle task join error: {e}"))?
+}
+
+static RUNNING_TOOL_ACTIONS: Lazy<std::sync::Mutex<std::collections::HashSet<&'static str>>> =
+    Lazy::new(|| std::sync::Mutex::new(std::collections::HashSet::new()));
+
+struct ToolLifecycleGuard(Vec<&'static str>);
+
+impl ToolLifecycleGuard {
+    fn acquire(tools: &[&'static str]) -> Result<Self, String> {
+        let mut active = RUNNING_TOOL_ACTIONS
+            .lock()
+            .map_err(|_| "安装状态不可用，请重启客户端".to_string())?;
+        if tools.iter().any(|tool| active.contains(tool)) {
+            return Err("该工具正在安装或更新，请等待当前任务完成".to_string());
+        }
+        active.extend(tools.iter().copied());
+        Ok(Self(tools.to_vec()))
+    }
+}
+
+impl Drop for ToolLifecycleGuard {
+    fn drop(&mut self) {
+        if let Ok(mut active) = RUNNING_TOOL_ACTIONS.lock() {
+            for tool in &self.0 {
+                active.remove(tool);
+            }
+        }
+    }
 }
 
 /// 静默执行工具安装/更新脚本：直接捕获子进程输出并阻塞到命令真正结束，
@@ -424,6 +454,9 @@ fn finish_lifecycle_output(output: &std::process::Output) -> Result<(), String> 
     }
     let stderr = decode_command_output(&output.stderr);
     let stdout = decode_command_output(&output.stdout);
+    if stderr.contains("[NODE_RUNTIME_REQUIRED]") || stdout.contains("[NODE_RUNTIME_REQUIRED]") {
+        return Err("[NODE_RUNTIME_REQUIRED] 当前执行环境未检测到可用的 Node.js/npm。请从 https://nodejs.org/en/download 安装 Node.js LTS（包含 npm），重启客户端后重试；WSL 工具须在对应发行版内安装。".to_string());
+    }
     let raw = if stderr.trim().is_empty() {
         stdout.trim()
     } else {
@@ -631,6 +664,9 @@ const HERMES_INSTALL_WINDOWS_SCRIPT: &str =
     "irm https://raw.githubusercontent.com/NousResearch/hermes-agent/main/scripts/install.ps1 | iex";
 #[cfg(target_os = "windows")]
 const GROK_INSTALL_WINDOWS_SCRIPT: &str = "irm https://x.ai/cli/install.ps1 | iex";
+#[cfg(target_os = "windows")]
+const CLAUDE_INSTALL_WINDOWS_SCRIPT: &str =
+    "$ErrorActionPreference = 'Stop'; try { $installer = Invoke-RestMethod https://claude.ai/install.ps1; & ([scriptblock]::Create($installer)); if ($null -ne $LASTEXITCODE -and $LASTEXITCODE -ne 0) { exit $LASTEXITCODE } } catch { Write-Error $_; exit 1 }";
 
 #[cfg(target_os = "windows")]
 fn powershell_encoded_command(script: &str) -> String {
@@ -719,6 +755,17 @@ fn tool_action_shell_command_for_shell(
     action: ToolLifecycleAction,
     shell: LifecycleCommandShell,
 ) -> Option<String> {
+    // Native Windows Claude must not require npm on a clean machine.
+    #[cfg(target_os = "windows")]
+    if tool == "claude"
+        && matches!(action, ToolLifecycleAction::Install)
+        && matches!(shell, LifecycleCommandShell::WindowsBatch)
+    {
+        return Some(format!(
+            "powershell -NoProfile -NonInteractive -EncodedCommand {}",
+            powershell_encoded_command(CLAUDE_INSTALL_WINDOWS_SCRIPT)
+        ));
+    }
     // xAI's primary Windows distribution is the native PowerShell installer.
     // Keep npm as the network/policy fallback, matching the POSIX installer chain.
     #[cfg(target_os = "windows")]
@@ -787,7 +834,7 @@ fn wsl_tool_action_shell_command(tool: &str, action: ToolLifecycleAction) -> Opt
             if command.is_empty() {
                 None
             } else {
-                Some(command)
+                Some(guard_posix_npm_install(tool, command))
             }
         }
         ToolLifecycleAction::Update => {
@@ -834,6 +881,9 @@ fn build_tool_action_line(
         if command.is_empty() {
             return Err(format!("Unsupported tool action target: {tool}"));
         }
+        if matches!(action, ToolLifecycleAction::Install) {
+            return Ok(guard_windows_npm_install(tool, &command));
+        }
         // .bat 调用 .cmd/.bat 必须用 `call` 否则当前脚本被替换、后续 `if errorlevel`
         // 行被跳过;对 .exe 加 call 无害(等同直接调用)。锚定命令头部可能是 .cmd
         // (npm/pnpm)或 .exe(volta),静态命令头部是 `npm`(也是 .cmd)、`py` 等——
@@ -854,13 +904,44 @@ fn build_tool_action_line(
                 installs_anchored_command(tool, &installs)
                     .unwrap_or_else(|| static_fallback_command(tool))
             }
-            ToolLifecycleAction::Install => install_command_for(tool),
+            ToolLifecycleAction::Install => guard_posix_npm_install(tool, install_command_for(tool)),
         };
         if command.is_empty() {
             return Err(format!("Unsupported tool action target: {tool}"));
         }
         Ok(command)
     }
+}
+
+/// Check only the npm branch, inside the actual POSIX/WSL environment. A native
+/// installer may succeed without Node; never block it with a host-side preflight.
+fn guard_posix_npm_install(tool: &str, command: String) -> String {
+    match npm_install_command_for(tool) {
+        Some(npm) => command.replace(
+            npm,
+            &format!(
+                "if node --version >/dev/null 2>&1 && npm --version >/dev/null 2>&1; then {npm}; else echo '[NODE_RUNTIME_REQUIRED]' >&2; exit 86; fi"
+            ),
+        ),
+        None => command,
+    }
+}
+
+#[cfg(target_os = "windows")]
+fn guard_windows_npm_install(tool: &str, command: &str) -> String {
+    let check = "node --version >nul 2>nul\r\nif errorlevel 1 (echo [NODE_RUNTIME_REQUIRED] 1>&2 & exit /b 86)\r\ncall npm --version >nul 2>nul\r\nif errorlevel 1 (echo [NODE_RUNTIME_REQUIRED] 1>&2 & exit /b 86)";
+    if command.starts_with("npm ") {
+        return format!("{check}\r\ncall {command}");
+    }
+    // Only check Node when the native installer actually falls back to npm.
+    let guarded = match npm_install_command_for(tool) {
+        Some(npm) => command.replace(
+            &format!(" || call {npm}"),
+            &format!(" || (\r\n{check}\r\ncall {npm}\r\n)"),
+        ),
+        None => command.to_string(),
+    };
+    format!("call {guarded}")
 }
 
 #[cfg(target_os = "windows")]
@@ -4425,6 +4506,82 @@ pub async fn set_window_theme(window: tauri::Window, theme: String) -> Result<()
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn lifecycle_lock_is_atomic_and_released_on_error() {
+        use super::ToolLifecycleGuard;
+        let first = ToolLifecycleGuard::acquire(&["test-cli-a"]).unwrap();
+        assert!(ToolLifecycleGuard::acquire(&["test-cli-b", "test-cli-a"]).is_err());
+        let independent = ToolLifecycleGuard::acquire(&["test-cli-b"]).unwrap();
+        drop(first);
+        let retry = ToolLifecycleGuard::acquire(&["test-cli-a"]).unwrap();
+        drop(retry);
+        drop(independent);
+    }
+
+    #[test]
+    fn posix_npm_dependency_check_is_only_on_the_fallback_branch() {
+        let cmd = super::guard_posix_npm_install(
+            "claude",
+            super::posix_install_command_for("claude"),
+        );
+        assert!(cmd.starts_with(super::CLAUDE_INSTALL_UNIX));
+        assert!(cmd.contains(" || if node --version"));
+        assert!(cmd.contains("[NODE_RUNTIME_REQUIRED]"));
+        assert!(cmd.contains("exit 86"));
+    }
+
+    #[cfg(not(target_os = "windows"))]
+    #[test]
+    fn missing_node_fails_before_npm_without_network_or_installing_anything() {
+        use std::os::unix::fs::PermissionsExt;
+        let dir = tempfile::tempdir().unwrap();
+        let npm = dir.path().join("npm");
+        std::fs::write(&npm, "#!/bin/sh\nexit 99\n").unwrap();
+        std::fs::set_permissions(&npm, std::fs::Permissions::from_mode(0o755)).unwrap();
+        let command = super::guard_posix_npm_install(
+            "codex",
+            super::npm_install_command_for("codex").unwrap().to_string(),
+        );
+        let output = std::process::Command::new("/bin/sh")
+            .args(["-c", &command])
+            .env("PATH", dir.path())
+            .output()
+            .unwrap();
+        assert_eq!(output.status.code(), Some(86));
+        assert!(super::finish_lifecycle_output(&output)
+            .unwrap_err()
+            .contains("Node.js LTS"));
+    }
+
+    #[cfg(target_os = "windows")]
+    #[test]
+    fn windows_claude_installs_without_npm_or_execution_policy_override() {
+        let command = super::tool_action_shell_command("claude", super::ToolLifecycleAction::Install)
+            .unwrap();
+        assert!(command.starts_with("powershell -NoProfile -NonInteractive"));
+        assert!(!command.contains("npm"));
+        assert!(!command.contains("Bypass"));
+        assert!(super::CLAUDE_INSTALL_WINDOWS_SCRIPT.contains("https://claude.ai/install.ps1"));
+        assert!(super::CLAUDE_INSTALL_WINDOWS_SCRIPT.contains("exit 1"));
+        assert!(!super::guard_windows_npm_install("claude", &command)
+            .contains("[NODE_RUNTIME_REQUIRED]"));
+    }
+
+    #[cfg(target_os = "windows")]
+    #[test]
+    fn windows_npm_check_preserves_batch_call_and_failure_exit() {
+        let command = super::guard_windows_npm_install("codex", "npm i -g @openai/codex@latest");
+        assert!(command.starts_with("node --version"));
+        assert!(command.contains("call npm --version"));
+        assert!(command.contains("exit /b 86"));
+        assert!(command.ends_with("call npm i -g @openai/codex@latest"));
+        let grok = super::tool_action_shell_command("grok", super::ToolLifecycleAction::Install)
+            .unwrap();
+        let guarded = super::guard_windows_npm_install("grok", &grok);
+        assert!(guarded.starts_with("call powershell"));
+        assert!(guarded.contains(" || (\r\nnode --version"));
+    }
+
     #[tokio::test]
     async fn local_probe_global_limit_is_three_even_across_independent_requests() {
         use std::sync::{
@@ -5257,7 +5414,7 @@ mod tests {
                 wsl_tool_action_shell_command("claude", ToolLifecycleAction::Install).unwrap();
             assert!(
                 claude.starts_with("bash -c 'tmp=$(mktemp) && curl -fsSL https://claude.ai/install.sh ")
-                    && claude.contains(" || npm i -g @anthropic-ai/claude-code@latest"),
+                    && claude.contains("then npm i -g @anthropic-ai/claude-code@latest"),
                 "WSL claude install should prefer native POSIX installer with npm fallback: {claude}"
             );
             assert!(!claude.contains("| bash"));
@@ -5267,20 +5424,21 @@ mod tests {
             assert!(
                 opencode.starts_with(
                     "bash -c 'tmp=$(mktemp) && curl -fsSL https://opencode.ai/install "
-                ) && opencode.contains(" || npm i -g opencode-ai@latest"),
+                ) && opencode.contains("then npm i -g opencode-ai@latest"),
                 "WSL opencode install should prefer native POSIX installer with npm fallback: {opencode}"
             );
             assert!(!opencode.contains("| bash"));
 
             let codex =
                 wsl_tool_action_shell_command("codex", ToolLifecycleAction::Install).unwrap();
-            assert_eq!(codex, "npm i -g @openai/codex@latest");
+            assert!(codex.starts_with("if node --version"));
+            assert!(codex.contains("then npm i -g @openai/codex@latest"));
 
             let grok = wsl_tool_action_shell_command("grok", ToolLifecycleAction::Install).unwrap();
             assert!(
                 grok.starts_with(
                     "bash -c 'tmp=$(mktemp) && curl -fsSL https://x.ai/cli/install.sh "
-                ) && grok.contains(" || npm i -g @xai-official/grok@latest"),
+                ) && grok.contains("then npm i -g @xai-official/grok@latest"),
                 "WSL grok install should prefer native POSIX installer with npm fallback: {grok}"
             );
             assert!(!grok.contains("| bash"));
