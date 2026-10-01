@@ -1603,6 +1603,8 @@ pub fn run() {
             commands::resume_codex_history_migration,
             commands::rollback_codex_history_migration,
             commands::run_tool_lifecycle_action,
+            commands::native_tool_install_supported,
+            commands::cancel_tool_installation,
             commands::probe_tool_installations,
             // Provider terminal
             commands::open_provider_terminal,

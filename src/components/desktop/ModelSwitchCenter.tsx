@@ -30,6 +30,7 @@ import { dt } from "./desktopI18n";
 import { ToolActivationProgress } from "./ToolActivationProgress";
 import { useToolLifecycleState } from "@/lib/toolLifecycleState";
 import { toolInstallLabel } from "./toolInstallFeedback";
+import { ToolInstallCancel } from "./ToolInstallCancel";
 import { TOOL_VERSION_TARGETS } from "./ToolSetupGrid";
 
 const controlsReasoning = (app: YuanhengToolId) =>
@@ -208,8 +209,8 @@ export function ModelSwitchCenter({
             const configured = Boolean(
               installed && (usesOfficialCodexAccount || status?.configured),
             );
-            const pending = pendingApps.has(app);
             const installing = installingApps.has(app);
+            const pending = pendingApps.has(app) || installing;
             const selectedModel =
               models[app] ??
               status?.model ??
@@ -310,6 +311,7 @@ export function ModelSwitchCenter({
                       )}
                     </p>
                   </div>
+                  <ToolInstallCancel tool={TOOL_VERSION_TARGETS[app] ?? ""} />
                   {runnable ? (
                     <Button
                       variant="outline"

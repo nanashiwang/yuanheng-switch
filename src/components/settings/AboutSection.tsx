@@ -29,7 +29,11 @@ import { toast } from "sonner";
 import { getVersion } from "@tauri-apps/api/app";
 import { settingsApi } from "@/lib/api";
 import { useToolLifecycleState } from "@/lib/toolLifecycleState";
-import { toolInstallLabel } from "@/components/desktop/toolInstallFeedback";
+import {
+  showToolInstallError,
+  toolInstallLabel,
+} from "@/components/desktop/toolInstallFeedback";
+import { ToolInstallCancel } from "@/components/desktop/ToolInstallCancel";
 import type {
   ToolInstallation,
   ToolInstallationReport,
@@ -682,10 +686,18 @@ export function AboutSection({ isPortable }: AboutSectionProps) {
           },
         );
       } else if (succeeded === 0) {
-        toast.error(t("settings.toolActionFailed"), {
-          description: failureDescription || undefined,
-          closeButton: true,
-        });
+        if (
+          failures.every((failure) =>
+            failure.detail.includes("[INSTALL_CANCELLED]"),
+          )
+        ) {
+          showToolInstallError(failures[0].detail);
+        } else {
+          toast.error(t("settings.toolActionFailed"), {
+            description: failureDescription || undefined,
+            closeButton: true,
+          });
+        }
       } else {
         // 部分成功：用 warning 汇总成败数量，详情列出失败的工具。
         toast.warning(
@@ -1202,6 +1214,7 @@ export function AboutSection({ isPortable }: AboutSectionProps) {
                 )}
 
                 <div className="mt-auto flex items-center justify-end">
+                  <ToolInstallCancel tool={toolName} />
                   {isToolVersionLoading ? (
                     <span className="text-xs text-muted-foreground">
                       {t("common.loading")}

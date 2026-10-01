@@ -434,12 +434,32 @@ export const settingsApi = {
     await runToolLifecycleJob(
       tools,
       action,
-      () =>
-        invoke("run_tool_lifecycle_action", {
+      async (setCancel) => {
+        const operationId = crypto.randomUUID();
+        const native =
+          action === "install" &&
+          (await invoke<boolean>("native_tool_install_supported", { tools }));
+        const execution = invoke<void>("run_tool_lifecycle_action", {
           tools,
           action,
           wslShellByTool,
-        }),
+          operationId,
+        });
+        if (action === "install") {
+          setCancel(
+            native
+              ? () =>
+                  invoke<boolean>("cancel_tool_installation", { operationId })
+              : undefined,
+          );
+        }
+        try {
+          await execution;
+        } finally {
+          // Partial writes after failure/cancel invalidate negative detection cache too.
+          invalidateToolDetection();
+        }
+      },
       action === "install"
         ? async () => {
             invalidateToolDetection();

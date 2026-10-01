@@ -352,6 +352,7 @@ pub async fn run_tool_lifecycle_action(
     tools: Vec<String>,
     action: String,
     wsl_shell_by_tool: Option<HashMap<String, WslShellPreferenceInput>>,
+    operation_id: Option<String>,
 ) -> Result<(), String> {
     let action = ToolLifecycleAction::from_str(&action)?;
     let requested = normalize_requested_tools(&tools);
@@ -359,6 +360,15 @@ pub async fn run_tool_lifecycle_action(
         return Err("No supported tools selected".to_string());
     }
     let guard = ToolLifecycleGuard::acquire(&requested)?;
+    let supervised = matches!(action, ToolLifecycleAction::Install)
+        && requested.iter().all(|tool| native_install_supported(tool));
+    let operation = if supervised {
+        Some(super::tool_install_process::Operation::register(
+            operation_id.unwrap_or_else(|| uuid::Uuid::new_v4().to_string()),
+        )?)
+    } else {
+        None
+    };
 
     let label = match action {
         ToolLifecycleAction::Install => "tool_install",
@@ -367,14 +377,93 @@ pub async fn run_tool_lifecycle_action(
 
     // build 阶段含锚定探测（对每个工具跑 `--version` 定位命令行实际命中那处），
     // 与执行一并放进 blocking 线程，避免阻塞 async runtime。
-    tokio::task::spawn_blocking(move || {
-        let _guard = guard;
+    if let Some(operation) = operation {
+        // Install command construction never probes existing CLI versions.
         let command_line =
             build_tool_lifecycle_command(&requested, action, wsl_shell_by_tool.as_ref())?;
-        run_tool_lifecycle_silently(&command_line, label)
-    })
-    .await
-    .map_err(|e| format!("tool lifecycle task join error: {e}"))?
+        let result = run_supervised_install(&command_line, operation.cancelled.clone()).await;
+        if result
+            .as_ref()
+            .err()
+            .is_some_and(|error| error.contains("[INSTALL_CLEANUP_FAILED]"))
+        {
+            // Fail closed: unknown surviving writers must not overlap with retries.
+            std::mem::forget(guard);
+        }
+        result
+    } else {
+        tokio::task::spawn_blocking(move || {
+            let _guard = guard;
+            let command_line =
+                build_tool_lifecycle_command(&requested, action, wsl_shell_by_tool.as_ref())?;
+            run_tool_lifecycle_silently(&command_line, label)
+        })
+        .await
+        .map_err(|e| format!("tool lifecycle task join error: {e}"))?
+    }
+}
+
+fn native_install_supported(_tool: &str) -> bool {
+    #[cfg(windows)]
+    {
+        wsl_distro_for_tool(_tool).is_none()
+    }
+    #[cfg(not(windows))]
+    {
+        true
+    }
+}
+
+#[tauri::command]
+pub fn native_tool_install_supported(tools: Vec<String>) -> bool {
+    let requested = normalize_requested_tools(&tools);
+    !requested.is_empty()
+        && requested.len() == tools.len()
+        && requested.iter().all(|tool| native_install_supported(tool))
+}
+
+#[tauri::command]
+pub fn cancel_tool_installation(operation_id: String) -> Result<bool, String> {
+    super::tool_install_process::cancel(&operation_id)
+}
+
+async fn run_supervised_install(
+    command_line: &str,
+    cancelled: std::sync::Arc<std::sync::atomic::AtomicBool>,
+) -> Result<(), String> {
+    #[cfg(not(windows))]
+    let command = {
+        let mut command = tokio::process::Command::new("bash");
+        command.args(["-c", command_line]);
+        command
+    };
+    #[cfg(windows)]
+    let (_script, command) = {
+        use std::io::Write;
+        // No shared PID-based filename; tempfile owns cleanup on every exit path.
+        let mut script = tempfile::Builder::new()
+            .prefix("yuanheng-install-")
+            .suffix(".bat")
+            .tempfile()
+            .map_err(|_| "无法创建安装脚本，请检查临时目录权限".to_string())?;
+        write!(
+            script,
+            "{}{}",
+            super::tool_install_process::GATE,
+            command_line
+        )
+        .map_err(|_| "无法写入安装脚本，请检查磁盘空间和权限".to_string())?;
+        let mut command = tokio::process::Command::new("cmd");
+        command.args(["/D", "/C"]).arg(script.path());
+        (script, command)
+    };
+    let output = super::tool_install_process::run(
+        command,
+        cancelled,
+        std::time::Duration::from_secs(10 * 60),
+    )
+    .await?;
+    finish_lifecycle_output(&output)
 }
 
 static RUNNING_TOOL_ACTIONS: Lazy<std::sync::Mutex<std::collections::HashSet<&'static str>>> =

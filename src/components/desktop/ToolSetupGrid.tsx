@@ -19,6 +19,7 @@ import {
   useToolLifecycleState,
 } from "@/lib/toolLifecycleState";
 import { showToolInstallError, toolInstallLabel } from "./toolInstallFeedback";
+import { ToolInstallCancel } from "./ToolInstallCancel";
 import {
   type YuanhengConnectionStatus,
   type YuanhengReasoningLevel,
@@ -1211,6 +1212,7 @@ function ToolSetupGridContent({
               )}
 
               <div className="mt-auto flex gap-2 pt-3">
+                <ToolInstallCancel tool={versionTarget ?? ""} />
                 {!installed && canInstall ? (
                   <Button
                     size="sm"
