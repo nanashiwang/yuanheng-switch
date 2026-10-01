@@ -4,6 +4,7 @@ import {
   isToolLifecycleBusy,
   runToolLifecycleJob,
   useToolLifecycleState,
+  cancelToolInstall,
 } from "@/lib/toolLifecycleState";
 import { settingsApi } from "@/lib/api/settings";
 
@@ -18,6 +19,39 @@ const deferred = () => {
 };
 
 describe("shared tool installation lifecycle", () => {
+  it("cancels by operation ID and does not verify or report success after cancellation", async () => {
+    let rejectExecution!: (error: Error) => void;
+    let operationId = "";
+    invoke.mockImplementation(async (command, payload) => {
+      if (command === "native_tool_install_supported") return true;
+      if (command === "run_tool_lifecycle_action") {
+        operationId = payload.operationId;
+        return new Promise<void>((_, reject) => {
+          rejectExecution = reject;
+        });
+      }
+      if (command === "cancel_tool_installation") {
+        expect(payload.operationId).toBe(operationId);
+        rejectExecution(new Error("[INSTALL_CANCELLED] stopped"));
+        return true;
+      }
+      throw new Error("Unexpected verification after cancellation");
+    });
+    const task = settingsApi.runToolLifecycleAction(["claude"], "install");
+    const rejection = expect(task).rejects.toThrow("[INSTALL_CANCELLED]");
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(operationId).toMatch(/^[0-9a-f-]{36}$/);
+    expect(await cancelToolInstall("claude")).toBe(true);
+    await rejection;
+    expect(isToolLifecycleBusy("claude")).toBe(false);
+    expect(
+      invoke.mock.calls.some(
+        ([command]) => command === "get_installed_tool_versions",
+      ),
+    ).toBe(false);
+  });
+
   it("publishes immediately across views, blocks re-entry and holds the lock through verification", async () => {
     const command = deferred();
     const verification = deferred();

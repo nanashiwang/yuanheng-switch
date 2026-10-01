@@ -74,6 +74,13 @@ async fn drain(mut reader: impl tokio::io::AsyncRead + Unpin) -> Vec<u8> {
     }
 }
 
+struct PipeReader(tokio::task::JoinHandle<Vec<u8>>);
+impl Drop for PipeReader {
+    fn drop(&mut self) {
+        self.0.abort();
+    }
+}
+
 #[cfg(unix)]
 struct Tree(Option<i32>);
 #[cfg(unix)]
@@ -218,8 +225,8 @@ pub(super) async fn run(
             return Err("无法启动受控安装任务".to_string());
         }
     }
-    let mut stdout = tokio::spawn(drain(child.stdout.take().expect("piped stdout")));
-    let mut stderr = tokio::spawn(drain(child.stderr.take().expect("piped stderr")));
+    let mut stdout = PipeReader(tokio::spawn(drain(child.stdout.take().expect("piped stdout"))));
+    let mut stderr = PipeReader(tokio::spawn(drain(child.stderr.take().expect("piped stderr"))));
     let deadline = tokio::time::Instant::now() + timeout;
     let outcome = loop {
         if cancelled.load(Ordering::SeqCst) {
@@ -255,10 +262,8 @@ pub(super) async fn run(
         result
     };
     // A detached process must never keep a pipe reader or the UI alive indefinitely.
-    let read_out = tokio::time::timeout(Duration::from_secs(2), &mut stdout).await;
-    let read_err = tokio::time::timeout(Duration::from_secs(2), &mut stderr).await;
-    stdout.abort();
-    stderr.abort();
+    let read_out = tokio::time::timeout(Duration::from_secs(2), &mut stdout.0).await;
+    let read_err = tokio::time::timeout(Duration::from_secs(2), &mut stderr.0).await;
     if cleanup.is_err() || !matches!(reaped, Ok(Ok(_))) {
         return Err(
             "[INSTALL_CLEANUP_FAILED] 无法确认安装进程已停止，请退出客户端并检查安装进程后再重试"
@@ -429,5 +434,42 @@ mod tests {
         let second = Operation::register(uuid::Uuid::new_v4().to_string()).unwrap();
         assert!(!cancel(&id).unwrap());
         assert!(!second.cancelled.load(Ordering::SeqCst));
+    }
+
+    #[tokio::test]
+    async fn stopping_one_job_does_not_kill_an_unrelated_process() {
+        #[cfg(unix)]
+        let mut unrelated = {
+            let mut command = tokio::process::Command::new("/bin/sleep");
+            command.arg("20");
+            command
+        };
+        #[cfg(windows)]
+        let mut unrelated = {
+            let mut command = tokio::process::Command::new("ping");
+            command.args(["-n", "20", "127.0.0.1"]);
+            command
+        };
+        let mut unrelated = unrelated
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .kill_on_drop(true)
+            .spawn()
+            .unwrap();
+        #[cfg(unix)]
+        let script = "sleep 5";
+        #[cfg(windows)]
+        let script = "ping -n 6 127.0.0.1 >nul";
+        let (_dir, cmd) = command(script);
+        let result = run(
+            cmd,
+            Arc::new(AtomicBool::new(false)),
+            Duration::from_millis(100),
+        )
+        .await;
+        let still_running = unrelated.try_wait().unwrap().is_none();
+        unrelated.kill().await.unwrap();
+        assert!(result.unwrap_err().contains("[INSTALL_TIMEOUT]"));
+        assert!(still_running);
     }
 }
