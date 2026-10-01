@@ -224,8 +224,21 @@ pub async fn handle_messages(
 pub async fn handle_claude_desktop_messages(
     State(state): State<ProxyState>,
     request: axum::extract::Request,
+) -> axum::response::Response {
+    crate::core_diagnostics::observe(async move {
+        handle_claude_desktop_messages_inner(state, request)
+            .await
+            .into_response()
+    })
+    .await
+}
+
+async fn handle_claude_desktop_messages_inner(
+    state: ProxyState,
+    request: axum::extract::Request,
 ) -> Result<axum::response::Response, ProxyError> {
     validate_claude_desktop_gateway_auth(&state, request.headers())?;
+    crate::core_diagnostics::stage(crate::core_diagnostics::Stage::Authorized);
     handle_messages_for_app(
         state,
         request,
@@ -274,8 +287,10 @@ async fn handle_messages_for_app(
     let body: Value = serde_json::from_slice(&body_bytes)
         .map_err(|e| ProxyError::Internal(format!("Failed to parse request body: {e}")))?;
 
+    crate::core_diagnostics::stage(crate::core_diagnostics::Stage::Parsed);
     let mut ctx =
         RequestContext::new(&state, &body, &headers, app_type.clone(), tag, app_type_str).await?;
+    crate::core_diagnostics::stage(crate::core_diagnostics::Stage::ProviderSelected);
 
     let raw_endpoint = uri
         .path_and_query()

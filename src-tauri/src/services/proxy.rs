@@ -3163,6 +3163,14 @@ impl ProxyService {
 
     // ==================== 原有方法 ====================
 
+    /// Keep real Core version/capabilities distinct from the GUI's version.
+    pub(crate) async fn core_support_info(&self) -> Result<crate::core_daemon::CoreInfo, String> {
+        if !self.uses_managed_core() {
+            return Err("embedded_proxy".into());
+        }
+        self.core_supervisor().status(&self.db).await
+    }
+
     /// 获取服务器状态
     pub async fn get_status(&self) -> Result<ProxyStatus, String> {
         if self.uses_managed_core() {

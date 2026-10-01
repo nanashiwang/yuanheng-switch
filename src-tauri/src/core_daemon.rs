@@ -96,6 +96,9 @@ pub struct CoreInfo {
     pub binary_id: String,
     pub config_dir: String,
     pub status: ProxyStatus,
+    /// Optional for older Core binaries; absence must not mean a healthy probe.
+    #[serde(default)]
+    pub(crate) request_diagnostics: Option<crate::core_diagnostics::Snapshot>,
 }
 
 impl CoreInfo {
@@ -112,6 +115,7 @@ impl CoreInfo {
             binary_id: control.binary_id.to_string(),
             config_dir: control.config_dir.display().to_string(),
             status,
+            request_diagnostics: crate::core_diagnostics::snapshot(),
         }
     }
 }
@@ -486,7 +490,7 @@ pub fn run_core_cli() -> Result<(), String> {
         .build()
         .map_err(|error| format!("创建 Core runtime 失败: {error}"))?;
 
-    runtime.block_on(async move {
+    let result = runtime.block_on(async move {
         match command.as_str() {
             "run" => run_core(config_dir).await,
             "start" | "recover" => {
@@ -535,11 +539,14 @@ pub fn run_core_cli() -> Result<(), String> {
                 "未知命令 {other}，可用命令: run/start/status/reload/stop/recover"
             )),
         }
-    })
+    });
+    runtime.block_on(crate::core_diagnostics::shutdown());
+    result
 }
 
 async fn run_core(config_dir: PathBuf) -> Result<(), String> {
     init_core_logger();
+    crate::core_diagnostics::init(&config_dir);
     app_store::set_app_config_dir_override_for_process(Some(config_dir.clone()));
     crate::settings::reload_settings().map_err(|error| error.to_string())?;
 

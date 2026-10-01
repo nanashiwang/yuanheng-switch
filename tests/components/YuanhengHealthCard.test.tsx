@@ -29,9 +29,17 @@ vi.mock("@/lib/api", () => ({ yuanhengApi: api, settingsApi: api }));
 vi.mock("@/lib/clipboard", () => ({ copyText: clipboard }));
 vi.mock("sonner", () => ({ toast }));
 const safe = JSON.stringify({
-  schemaVersion: 2,
+  schemaVersion: 3,
   snapshotId: "one",
   proxy: { running: true, port: 15721 },
+  core: {
+    version: "0.1.61",
+    pendingWrites: 3,
+    droppedEvents: 2,
+    writeFailures: 0,
+    writerRunning: true,
+    events: [{ stage: "upstream_send", outcome: "panic", status: 500 }],
+  },
   recentRequests: [{ status: 401, latencyMs: 99 }],
 });
 describe("diagnostic snapshots", () => {
@@ -57,6 +65,7 @@ describe("diagnostic snapshots", () => {
   it("preview, copy and export refer to the identical snapshot, without another health check", async () => {
     render(<YuanhengHealthCard />);
     fireEvent.click(screen.getByRole("button", { name: "检查详情" }));
+    expect(screen.getByText(/默认体检不调用模型/)).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "预览脱敏报告" }));
     expect(screen.getByText(safe)).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: /^关闭$/ }));

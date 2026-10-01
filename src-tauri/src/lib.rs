@@ -11,6 +11,7 @@ mod codex_state_db;
 mod commands;
 mod config;
 mod core_daemon;
+mod core_diagnostics;
 mod database;
 mod deeplink;
 mod desktop_app_detection;

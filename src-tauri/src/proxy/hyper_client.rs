@@ -10,7 +10,7 @@ use futures::{stream::Stream, StreamExt};
 use http_body_util::BodyExt;
 use hyper_rustls::HttpsConnectorBuilder;
 use hyper_util::{client::legacy::Client, rt::TokioExecutor};
-use std::sync::OnceLock;
+use std::sync::{Arc, OnceLock};
 
 /// Our own header case map: maps lowercase header name → original wire-casing bytes.
 ///
@@ -59,8 +59,10 @@ type HyperClient = Client<
 fn global_hyper_client() -> &'static HyperClient {
     static CLIENT: OnceLock<HyperClient> = OnceLock::new();
     CLIENT.get_or_init(|| {
+        let mut roots = rustls::RootCertStore::empty();
+        roots.extend(webpki_roots::TLS_SERVER_ROOTS.iter().cloned());
         let connector = HttpsConnectorBuilder::new()
-            .with_webpki_roots()
+            .with_tls_config(ring_tls_config(roots))
             .https_or_http()
             .enable_http1()
             .build();
@@ -70,6 +72,18 @@ fn global_hyper_client() -> &'static HyperClient {
             .http1_title_case_headers(true)
             .build(connector)
     })
+}
+
+/// Core is a separate process: the GUI's process-wide CryptoProvider does not
+/// reach it. Both ring and aws-lc are enabled transitively, so implicit builders
+/// panic. Pin the same provider used by the GUI at the actual use site.
+/// Certificate and hostname verification remain rustls defaults.
+fn ring_tls_config(roots: rustls::RootCertStore) -> rustls::ClientConfig {
+    rustls::ClientConfig::builder_with_provider(Arc::new(rustls::crypto::ring::default_provider()))
+        .with_safe_default_protocol_versions()
+        .expect("ring supports the configured default TLS versions")
+        .with_root_certificates(roots)
+        .with_no_client_auth()
 }
 
 /// 响应体读取上限（128 MiB）。正常非流式补全响应只有几十到几百 KiB；超过则视为
@@ -586,11 +600,53 @@ fn global_tls_connector() -> &'static tokio_rustls::TlsConnector {
         let native = rustls_native_certs::load_native_certs();
         let (added, _errors) = root_store.add_parsable_certificates(native.certs);
         log::debug!("[HyperClient] TLS root store: webpki + {added} native certs");
-        let config = rustls::ClientConfig::builder()
-            .with_root_certificates(root_store)
-            .with_no_client_auth();
+        let config = ring_tls_config(root_store);
         tokio_rustls::TlsConnector::from(std::sync::Arc::new(config))
     })
+}
+
+#[cfg(test)]
+mod headless_tls_tests {
+    /// A fresh process matters: GUI initialization or another test can install
+    /// the global provider and conceal the missing headless initialization.
+    #[tokio::test]
+    async fn tls_connectors_do_not_require_gui_startup() {
+        const CHILD: &str = "YUANHENG_HEADLESS_TLS_TEST_CHILD";
+        if std::env::var(CHILD).as_deref() == Ok("1") {
+            assert!(rustls::crypto::CryptoProvider::get_default().is_none());
+            let raw = std::panic::catch_unwind(super::global_tls_connector);
+            let fallback = std::panic::catch_unwind(super::global_hyper_client);
+            assert!(
+                raw.is_ok(),
+                "raw TLS connector panicked without GUI startup"
+            );
+            assert!(
+                fallback.is_ok(),
+                "fallback TLS connector panicked without GUI startup"
+            );
+            assert!(
+                rustls::crypto::CryptoProvider::get_default().is_none(),
+                "connectors must not depend on or install global crypto state"
+            );
+            return;
+        }
+        let mut child = tokio::process::Command::new(std::env::current_exe().unwrap());
+        child.args([
+            "--exact",
+            "proxy::hyper_client::headless_tls_tests::tls_connectors_do_not_require_gui_startup",
+            "--nocapture",
+        ]);
+        child.env(CHILD, "1").kill_on_drop(true);
+        let output = tokio::time::timeout(std::time::Duration::from_secs(30), child.output())
+            .await
+            .expect("TLS child timed out")
+            .expect("spawn isolated TLS test");
+        assert!(
+            output.status.success(),
+            "{}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+    }
 }
 
 /// Build raw HTTP/1.1 request bytes with original header casing.

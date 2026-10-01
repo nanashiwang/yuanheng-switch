@@ -480,7 +480,10 @@ struct StoreAppInfo {
     version: Option<String>,
 }
 
-#[cfg(target_os = "windows")]
+#[cfg(any(target_os = "windows", test))]
+const CLAUDE_STORE_PACKAGE_FAMILY: &str = "claude_pzs8sxrjxfjjc";
+
+#[cfg(any(target_os = "windows", test))]
 fn is_trusted_store_aumid(tool: &str, value: &str) -> bool {
     let Some((package_family, app_id)) = value.trim().split_once('!') else {
         return false;
@@ -498,7 +501,11 @@ fn is_trusted_store_aumid(tool: &str, value: &str) -> bool {
             family.starts_with("openai.")
                 && (family.contains("chatgpt") || family.contains("codex"))
         }
-        "claude-desktop" => family.starts_with("anthropic.") && family.contains("claude"),
+        "claude-desktop" => {
+            // New official MSIX identity observed with Anthropic's signature.
+            // Match the full family (including publisher ID), never "Claude_*".
+            family == CLAUDE_STORE_PACKAGE_FAMILY
+        }
         _ => false,
     };
     family_is_valid
@@ -522,6 +529,7 @@ fn powershell_encoded_command(script: &str) -> String {
 fn windows_store_resolution(tool: &str) -> Option<DesktopAppResolution> {
     use std::os::windows::process::CommandExt;
 
+    let claude_family_pattern = format!("(?i)^{}!", regex::escape(CLAUDE_STORE_PACKAGE_FAMILY));
     let (package_pattern, publisher_pattern, start_name_pattern, start_family_pattern) = match tool
     {
         "chatgpt-desktop" => (
@@ -534,7 +542,7 @@ fn windows_store_resolution(tool: &str) -> Option<DesktopAppResolution> {
             "(?i)claude",
             "(?i)anthropic",
             "(?i)^claude(\\s+desktop)?$",
-            "(?i)^anthropic\\.",
+            claude_family_pattern.as_str(),
         ),
         _ => return None,
     };
@@ -549,8 +557,10 @@ $packagePattern = '__PACKAGE_PATTERN__'
 $publisherPattern = '__PUBLISHER_PATTERN__'
 $startNamePattern = '__START_NAME_PATTERN__'
 $startFamilyPattern = '__START_FAMILY_PATTERN__'
+$requiredFamily = '__REQUIRED_FAMILY__'
 $packages = @(Get-AppxPackage -PackageTypeFilter Main -ErrorAction SilentlyContinue) |
   Where-Object {
+    ($requiredFamily -eq '' -or $_.PackageFamilyName -ieq $requiredFamily) -and
     ($_.Name -match $packagePattern -or $_.PackageFamilyName -match $packagePattern) -and
     ($_.Publisher -match $publisherPattern -or $_.PublisherDisplayName -match $publisherPattern)
   } | Sort-Object @{ Expression = { [version]$_.Version }; Descending = $true }
@@ -610,6 +620,14 @@ foreach ($start in $startApps) {
 "#
     .replace("__PACKAGE_PATTERN__", package_pattern)
     .replace("__PUBLISHER_PATTERN__", publisher_pattern)
+    .replace(
+        "__REQUIRED_FAMILY__",
+        if tool == "claude-desktop" {
+            CLAUDE_STORE_PACKAGE_FAMILY
+        } else {
+            ""
+        },
+    )
     .replace("__START_NAME_PATTERN__", start_name_pattern)
     .replace("__START_FAMILY_PATTERN__", start_family_pattern);
 
@@ -939,9 +957,25 @@ mod tests {
         )));
     }
 
-    #[cfg(target_os = "windows")]
     #[test]
     fn trusted_store_aumid_rejects_same_name_shortcuts_and_paths() {
+        assert!(is_trusted_store_aumid(
+            "claude-desktop",
+            "Claude_pzs8sxrjxfjjc!Claude"
+        ));
+        for value in [
+            "Claude_otherpublisher!Claude",
+            "Claude_pzs8sxrjxfjjc.evil!App",
+            "Claude_pzs8sxrjxfjjc!",
+            "Claude_pzs8sxrjxfjjc!App!Extra",
+            "Claude_pzs8sxrjxfjjc!../App",
+            "Untrusted.Claude_pzs8sxrjxfjjc!App",
+            "Anthropic.Claude_1234567890abc!Claude",
+            "Anthropic.FakeClaude_pzs8sxrjxfjjc!App",
+            "Anthropic.Claude_pzs8sxrjxfjjc!Claude",
+        ] {
+            assert!(!is_trusted_store_aumid("claude-desktop", value), "{value}");
+        }
         assert!(is_trusted_store_aumid(
             "chatgpt-desktop",
             "OpenAI.Codex_2p2nqsd0c76g0!App"
@@ -962,10 +996,6 @@ mod tests {
         assert!(!is_trusted_store_aumid(
             "chatgpt-desktop",
             "OpenAI.Codex_2p2nqsd0c76g0!../../evil"
-        ));
-        assert!(is_trusted_store_aumid(
-            "claude-desktop",
-            "Anthropic.Claude_1234567890abc!Claude"
         ));
         assert!(!is_trusted_store_aumid(
             "claude-desktop",
