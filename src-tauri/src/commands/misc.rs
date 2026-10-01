@@ -904,7 +904,9 @@ fn build_tool_action_line(
                 installs_anchored_command(tool, &installs)
                     .unwrap_or_else(|| static_fallback_command(tool))
             }
-            ToolLifecycleAction::Install => guard_posix_npm_install(tool, install_command_for(tool)),
+            ToolLifecycleAction::Install => {
+                guard_posix_npm_install(tool, install_command_for(tool))
+            }
         };
         if command.is_empty() {
             return Err(format!("Unsupported tool action target: {tool}"));
@@ -4520,10 +4522,8 @@ mod tests {
 
     #[test]
     fn posix_npm_dependency_check_is_only_on_the_fallback_branch() {
-        let cmd = super::guard_posix_npm_install(
-            "claude",
-            super::posix_install_command_for("claude"),
-        );
+        let cmd =
+            super::guard_posix_npm_install("claude", super::posix_install_command_for("claude"));
         assert!(cmd.starts_with(super::CLAUDE_INSTALL_UNIX));
         assert!(cmd.contains(" || if node --version"));
         assert!(cmd.contains("[NODE_RUNTIME_REQUIRED]"));
@@ -4556,8 +4556,9 @@ mod tests {
     #[cfg(target_os = "windows")]
     #[test]
     fn windows_claude_installs_without_npm_or_execution_policy_override() {
-        let command = super::tool_action_shell_command("claude", super::ToolLifecycleAction::Install)
-            .unwrap();
+        let command =
+            super::tool_action_shell_command("claude", super::ToolLifecycleAction::Install)
+                .unwrap();
         assert!(command.starts_with("powershell -NoProfile -NonInteractive"));
         assert!(!command.contains("npm"));
         assert!(!command.contains("Bypass"));
@@ -4575,11 +4576,34 @@ mod tests {
         assert!(command.contains("call npm --version"));
         assert!(command.contains("exit /b 86"));
         assert!(command.ends_with("call npm i -g @openai/codex@latest"));
-        let grok = super::tool_action_shell_command("grok", super::ToolLifecycleAction::Install)
-            .unwrap();
+        let grok =
+            super::tool_action_shell_command("grok", super::ToolLifecycleAction::Install).unwrap();
         let guarded = super::guard_windows_npm_install("grok", &grok);
         assert!(guarded.starts_with("call powershell"));
         assert!(guarded.contains(" || (\r\nnode --version"));
+    }
+
+    #[cfg(target_os = "windows")]
+    #[test]
+    fn windows_missing_node_fails_before_running_npm() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(dir.path().join("npm.cmd"), "@echo off\r\nexit /b 99\r\n").unwrap();
+        let script = dir.path().join("install.bat");
+        let guarded = super::guard_windows_npm_install("codex", "npm i -g @openai/codex@latest");
+        std::fs::write(&script, format!("@echo off\r\n{guarded}\r\n")).unwrap();
+        let output = std::process::Command::new(
+            std::env::var_os("COMSPEC").expect("Windows command processor"),
+        )
+        .args(["/D", "/C"])
+        .arg(&script)
+        .env("PATH", dir.path())
+        .current_dir(dir.path())
+        .output()
+        .unwrap();
+        assert_eq!(output.status.code(), Some(86));
+        assert!(super::finish_lifecycle_output(&output)
+            .unwrap_err()
+            .contains("Node.js LTS"));
     }
 
     #[tokio::test]
