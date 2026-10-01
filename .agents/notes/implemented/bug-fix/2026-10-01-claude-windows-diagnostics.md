@@ -8,6 +8,8 @@ Claude Desktop 在 Windows 上出现连接空响应；本机健康与认证检�
 
 ## Existing capabilities and impact
 
+工具安装与模型列表缓存的生命周期见 [安装与选择连续性](2026-10-01-tool-install-and-model-picker.md)；其同账号刷新保留数据规则不放宽本笔记的诊断账号隔离。
+
 复用 `YuanhengHealthCard` 的检查详情、预览、复制和导出，同一快照维持当前账号边界。扩展 `core_daemon`、本地路由和 `support_diagnostics`，不另建日志上传服务。调整 `desktop_app_detection` 的已知包身份识别。
 
 检索活跃笔记中的 Claude/Core/日志/诊断/Windows，无相关 owner note；已有流程笔记不涉及运行行为，不修改。

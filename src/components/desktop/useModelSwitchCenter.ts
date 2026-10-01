@@ -2,6 +2,11 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import {
+  isToolLifecycleBusy,
+  useToolLifecycleState,
+} from "@/lib/toolLifecycleState";
+import { showToolInstallError } from "./toolInstallFeedback";
+import {
   type CodexAccountMode,
   isYuanhengCliTool,
   type YuanhengReasoningLevel,
@@ -65,6 +70,7 @@ export function useModelSwitchCenter() {
   const switchCodexAccountMode = useSwitchCodexAccountMode();
   const codexBridge = useCodexSessionBridgeStatus();
   const desktopInstall = useDesktopInstallFlow();
+  const cliLifecycle = useToolLifecycleState();
   const inventory = useToolInventory();
   const [models, setModels] = useState<Partial<Record<YuanhengToolId, string>>>(
     {},
@@ -306,6 +312,7 @@ export function useModelSwitchCenter() {
     const command = TOOL_VERSION_TARGETS[app];
     const downloadUrl = DESKTOP_DOWNLOAD_URLS[app];
     if (!command && !downloadUrl) return;
+    if (command && isToolLifecycleBusy(command)) return;
     try {
       if (downloadUrl) {
         if (!command) return;
@@ -372,10 +379,13 @@ export function useModelSwitchCenter() {
       }
       if (!command) return;
       await settingsApi.runToolLifecycleAction([command], "install");
-      toast.success(dt("{{v0}} 安装任务已完成", { v0: toolLabel(app) }));
+      toast.success(
+        dt("{{v0}} 安装完成并已验证可运行", { v0: toolLabel(app) }),
+      );
+      clearToolInventoryCache();
       await inventory.refetch();
     } catch (error) {
-      toast.error(extractErrorMessage(error) || dt("安装失败"));
+      showToolInstallError(error);
     }
   };
 
@@ -741,7 +751,12 @@ export function useModelSwitchCenter() {
     groups,
     reasoning,
     pendingApps,
-    installingApps: desktopInstall.monitoringApps,
+    installingApps: new Set([
+      ...desktopInstall.monitoringApps,
+      ...DESKTOP_TOOLS.filter((app) =>
+        cliLifecycle.has(TOOL_VERSION_TARGETS[app] ?? ""),
+      ),
+    ]),
     restartRequiredApps,
     launchDirectories: launchDirectoryState.directories,
     launchDirectoryPendingApps: launchDirectoryState.pendingApps,

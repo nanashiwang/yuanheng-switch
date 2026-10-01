@@ -1,5 +1,11 @@
 // Generated from the desktop Simplified Chinese source strings, then normalized for Taiwan terminology.
 export const DESKTOP_ZH_TW: Record<string, string> = {
+  "正在验证安装…": "正在驗證安裝…",
+  "正在安装，请稍候…": "正在安裝，請稍候…",
+  "下载 Node.js LTS": "下載 Node.js LTS",
+  "无法打开下载页，请手动访问 nodejs.org":
+    "無法開啟下載頁，請手動造訪 nodejs.org",
+  "{{v0}} 安装完成并已验证可运行": "{{v0}} 安裝完成並已驗證可執行",
   "默认体检不调用模型、不测试收费推理；服务运行、网关认证和桌面工作区是不同检查项。失败时可预览并导出同一份脱敏诊断。":
     "預設檢查不呼叫模型、不測試付費推論；服務執行、閘道驗證和桌面工作區是不同檢查項目。失敗時可預覽並匯出同一份去識別化診斷。",
   "启动 DSH Web": "啟動 DSH Web",

@@ -8,6 +8,8 @@ Status: implemented
 
 ## Existing capabilities and impact
 
+[安装与选择连续性](2026-10-01-tool-install-and-model-picker.md) 复用本机检测边界，独立处理安装任务与模型列表刷新；不改诊断队列或 MSIX 身份信任规则。
+
 复用 `core_diagnostics` 的固定枚举、128 条内存记录、轮转和账号边界，以及智能体检快照；不新增原始日志上传或外部服务。`desktop_app_detection` 已识别一个确认的 Claude 包族；本轮收紧自动候选筛选与最终 AUMID 校验，不改其它 Agent 规则。
 
 活跃笔记检索：与 [上一轮诊断修复](2026-10-01-claude-windows-diagnostics.md) 部分重叠。保留其 TLS、请求异常保护和体检设计；本决策替代同步日志写盘取舍，并删除未验证的旧包前缀信任。流程笔记无关。

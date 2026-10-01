@@ -317,7 +317,13 @@ describe("useModelSwitchCenter", () => {
     act(() => {
       queryClient.setQueryData(["yuanheng", "connection"], connection);
       queryClient.setQueryData(
-        ["yuanheng", "tools", connection.userId, connection.lastSyncedAt],
+        [
+          "yuanheng",
+          "tools",
+          connection.baseUrl,
+          connection.userId,
+          connection.connected,
+        ],
         statuses,
       );
     });

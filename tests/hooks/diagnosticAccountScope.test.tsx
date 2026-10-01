@@ -10,47 +10,62 @@ import {
 import { createTestQueryClient } from "../utils/testQueryClient";
 
 describe("account-scoped diagnostic and tool cache", () => {
-  it("changing account does not display the previous account's report or tool models", async () => {
-    const client = createTestQueryClient();
-    const connection = { userId: "one", connected: true, lastSyncedAt: 1 };
-    client.setQueryData(yuanhengKeys.connection, connection);
-    client.setQueryData([...yuanhengKeys.diagnostics, "one", true, 1], {
-      status: "ok",
-      snapshotId: "private-one",
-    });
-    client.setQueryData(
-      [...yuanhengKeys.tools, "one", 1],
-      [{ app: "codex", model: "old-account-model" }],
-    );
-    const wrapper = ({ children }: { children: ReactNode }) => (
-      <QueryClientProvider client={client}>{children}</QueryClientProvider>
-    );
-    const view = renderHook(
-      () => ({
-        report: useYuanhengDiagnostics(false),
-        tools: useYuanhengToolStatuses(),
-      }),
-      { wrapper },
-    );
-    expect(view.result.current.report.data?.snapshotId).toBe("private-one");
-    await act(async () => {
-      client.setQueryData(yuanhengKeys.connection, {
-        ...connection,
-        userId: "two",
-        lastSyncedAt: 2,
+  it.each([
+    { userId: "two", connected: true, baseUrl: "https://example.test" },
+    { userId: "one", connected: false, baseUrl: "https://example.test" },
+    { userId: "one", connected: true, baseUrl: "https://other.test" },
+  ])(
+    "does not retain tool models across identity boundaries: %j",
+    async (next) => {
+      const client = createTestQueryClient();
+      const connection = {
+        baseUrl: "https://example.test",
+        userId: "one",
+        connected: true,
+        lastSyncedAt: 1,
+      };
+      client.setQueryData(yuanhengKeys.connection, connection);
+      client.setQueryData([...yuanhengKeys.diagnostics, "one", true, 1], {
+        status: "ok",
+        snapshotId: "private-one",
       });
-    });
-    await waitFor(() =>
-      expect(view.result.current.report.data).toBeUndefined(),
-    );
-    await waitFor(() =>
-      expect(
-        view.result.current.tools.data?.some(
-          (row) => row.model === "old-account-model",
-        ) ?? false,
-      ).toBe(false),
-    );
-    view.unmount();
-    client.clear();
-  });
+      client.setQueryData(
+        [...yuanhengKeys.tools, connection.baseUrl, "one", true],
+        [{ app: "codex", model: "old-account-model" }],
+      );
+      const wrapper = ({ children }: { children: ReactNode }) => (
+        <QueryClientProvider client={client}>{children}</QueryClientProvider>
+      );
+      const view = renderHook(
+        () => ({
+          report: useYuanhengDiagnostics(false),
+          tools: useYuanhengToolStatuses(),
+        }),
+        { wrapper },
+      );
+      expect(view.result.current.report.data?.snapshotId).toBe("private-one");
+      expect(view.result.current.tools.data?.[0].model).toBe(
+        "old-account-model",
+      );
+      await act(async () => {
+        client.setQueryData(yuanhengKeys.connection, {
+          ...connection,
+          ...next,
+          lastSyncedAt: 2,
+        });
+      });
+      await waitFor(() =>
+        expect(view.result.current.report.data).toBeUndefined(),
+      );
+      await waitFor(() =>
+        expect(
+          view.result.current.tools.data?.some(
+            (row) => row.model === "old-account-model",
+          ) ?? false,
+        ).toBe(false),
+      );
+      view.unmount();
+      client.clear();
+    },
+  );
 });

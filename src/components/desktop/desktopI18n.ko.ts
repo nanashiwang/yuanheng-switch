@@ -1,5 +1,11 @@
 // ko translations for the desktop Simplified Chinese source strings.
 export const DESKTOP_KO: Record<string, string> = {
+  "正在验证安装…": "설치를 확인하는 중…",
+  "正在安装，请稍候…": "설치 중입니다. 잠시 기다려 주세요…",
+  "下载 Node.js LTS": "Node.js LTS 다운로드",
+  "无法打开下载页，请手动访问 nodejs.org":
+    "다운로드 페이지를 열 수 없습니다. nodejs.org에 직접 방문하세요.",
+  "{{v0}} 安装完成并已验证可运行": "{{v0}} 설치 및 실행 확인 완료",
   "默认体检不调用模型、不测试收费推理；服务运行、网关认证和桌面工作区是不同检查项。失败时可预览并导出同一份脱敏诊断。":
     "기본 진단은 모델이나 유료 추론을 호출하지 않습니다. 서비스 실행, 게이트웨이 인증, 데스크톱 작업 환경은 별도로 확인합니다. 문제 발생 시 동일한 비식별 진단을 미리 보고 내보낼 수 있습니다.",
   "启动 DSH Web": "DSH Web 실행",

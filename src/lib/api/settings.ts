@@ -7,7 +7,11 @@ import type {
 } from "@/types";
 import type { AppId } from "./types";
 import { createSingleFlight } from "@/lib/singleFlight";
-import { toolDetectionEpoch } from "@/lib/toolDetectionEpoch";
+import {
+  invalidateToolDetection,
+  toolDetectionEpoch,
+} from "@/lib/toolDetectionEpoch";
+import { runToolLifecycleJob } from "@/lib/toolLifecycleState";
 
 const toolDetectionFlight = createSingleFlight();
 function detectionKey(
@@ -427,11 +431,35 @@ export const settingsApi = {
       { wslShell?: string | null; wslShellFlag?: string | null }
     >,
   ): Promise<void> {
-    await invoke("run_tool_lifecycle_action", {
+    await runToolLifecycleJob(
       tools,
       action,
-      wslShellByTool,
-    });
+      () =>
+        invoke("run_tool_lifecycle_action", {
+          tools,
+          action,
+          wslShellByTool,
+        }),
+      action === "install"
+        ? async () => {
+            invalidateToolDetection();
+            const versions = await settingsApi.getInstalledToolVersions(
+              tools,
+              wslShellByTool,
+            );
+            if (
+              tools.some((tool) => {
+                const detected = versions.find((item) => item.name === tool);
+                return !detected?.version || detected.installed_but_broken;
+              })
+            ) {
+              throw new Error(
+                "安装命令已结束，但工具尚无法运行。请检查运行环境或重启客户端后重新检测，不要重复安装。",
+              );
+            }
+          }
+        : undefined,
+    );
   },
 
   /** 探测各工具安装分布：枚举所有安装、标记冲突、生成锚定升级命令。
