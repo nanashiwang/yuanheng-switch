@@ -225,8 +225,12 @@ pub(super) async fn run(
             return Err("无法启动受控安装任务".to_string());
         }
     }
-    let mut stdout = PipeReader(tokio::spawn(drain(child.stdout.take().expect("piped stdout"))));
-    let mut stderr = PipeReader(tokio::spawn(drain(child.stderr.take().expect("piped stderr"))));
+    let mut stdout = PipeReader(tokio::spawn(drain(
+        child.stdout.take().expect("piped stdout"),
+    )));
+    let mut stderr = PipeReader(tokio::spawn(drain(
+        child.stderr.take().expect("piped stderr"),
+    )));
     let deadline = tokio::time::Instant::now() + timeout;
     let outcome = loop {
         if cancelled.load(Ordering::SeqCst) {
