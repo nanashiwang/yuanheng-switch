@@ -30,6 +30,7 @@ import { getVersion } from "@tauri-apps/api/app";
 import { settingsApi } from "@/lib/api";
 import { useToolLifecycleState } from "@/lib/toolLifecycleState";
 import { toolInstallLabel } from "@/components/desktop/toolInstallFeedback";
+import { ToolInstallCancel } from "@/components/desktop/ToolInstallCancel";
 import type {
   ToolInstallation,
   ToolInstallationReport,
@@ -1202,6 +1203,7 @@ export function AboutSection({ isPortable }: AboutSectionProps) {
                 )}
 
                 <div className="mt-auto flex items-center justify-end">
+                  <ToolInstallCancel tool={toolName} />
                   {isToolVersionLoading ? (
                     <span className="text-xs text-muted-foreground">
                       {t("common.loading")}

@@ -1,0 +1,291 @@
+//! Own the native install process tree, not merely the shell or UI promise.
+use std::collections::HashMap;
+use std::process::{Output, Stdio};
+use std::sync::{atomic::{AtomicBool, Ordering}, Arc, Mutex};
+use std::time::Duration;
+use once_cell::sync::Lazy;
+use tokio::io::AsyncReadExt;
+
+pub(super) const CANCELLED: &str = "[INSTALL_CANCELLED] 安装已停止；已写入的文件不会回滚，请先重新检测工具再决定是否重试。";
+pub(super) const TIMED_OUT: &str = "[INSTALL_TIMEOUT] 安装超过 10 分钟，已停止本次安装进程。请检查网络与依赖，重新检测工具后再决定是否重试。";
+const OUTPUT_LIMIT: usize = 64 * 1024;
+static OPERATIONS: Lazy<Mutex<HashMap<String, Arc<AtomicBool>>>> = Lazy::new(|| Mutex::new(HashMap::new()));
+
+pub(super) struct Operation {
+    id: String,
+    pub cancelled: Arc<AtomicBool>,
+}
+impl Operation {
+    pub fn register(id: String) -> Result<Self, String> {
+        uuid::Uuid::parse_str(&id).map_err(|_| "无效的安装任务标识".to_string())?;
+        let mut operations = OPERATIONS.lock().map_err(|_| "安装状态不可用".to_string())?;
+        if operations.contains_key(&id) { return Err("安装任务标识已占用".to_string()); }
+        let cancelled = Arc::new(AtomicBool::new(false));
+        operations.insert(id.clone(), cancelled.clone());
+        Ok(Self { id, cancelled })
+    }
+}
+impl Drop for Operation {
+    fn drop(&mut self) {
+        if let Ok(mut operations) = OPERATIONS.lock() { operations.remove(&self.id); }
+    }
+}
+pub(super) fn cancel(id: &str) -> Result<bool, String> {
+    let operations = OPERATIONS.lock().map_err(|_| "安装状态不可用".to_string())?;
+    if let Some(cancelled) = operations.get(id) {
+        cancelled.store(true, Ordering::SeqCst);
+        Ok(true)
+    } else { Ok(false) }
+}
+
+fn append_tail(tail: &mut Vec<u8>, bytes: &[u8]) {
+    if bytes.len() >= OUTPUT_LIMIT {
+        tail.clear(); tail.extend_from_slice(&bytes[bytes.len() - OUTPUT_LIMIT..]);
+    } else {
+        let excess = (tail.len() + bytes.len()).saturating_sub(OUTPUT_LIMIT);
+        tail.drain(..excess);
+        tail.extend_from_slice(bytes);
+    }
+}
+async fn drain(mut reader: impl tokio::io::AsyncRead + Unpin) -> Vec<u8> {
+    let mut tail = Vec::new();
+    let mut chunk = [0u8; 8192];
+    loop {
+        match reader.read(&mut chunk).await {
+            Ok(0) | Err(_) => return tail,
+            Ok(n) => append_tail(&mut tail, &chunk[..n]),
+        }
+    }
+}
+
+#[cfg(unix)]
+struct Tree(i32);
+#[cfg(unix)]
+impl Tree {
+    fn terminate(&self) -> std::io::Result<()> {
+        // Negative PID targets only the group created for this child.
+        let result = unsafe { libc::kill(-self.0, libc::SIGKILL) };
+        if result == 0 { return Ok(()); }
+        let error = std::io::Error::last_os_error();
+        if error.raw_os_error() == Some(libc::ESRCH) { Ok(()) } else { Err(error) }
+    }
+}
+#[cfg(unix)]
+impl Drop for Tree { fn drop(&mut self) { let _ = self.terminate(); } }
+
+#[cfg(windows)]
+struct Tree(windows_sys::Win32::Foundation::HANDLE);
+// The handle is owned by the supervisor, never shared with another task.
+#[cfg(windows)]
+unsafe impl Send for Tree {}
+#[cfg(windows)]
+impl Tree {
+    fn new(child: &tokio::process::Child) -> std::io::Result<Self> {
+        use windows_sys::Win32::System::JobObjects::*;
+        unsafe {
+            let handle = CreateJobObjectW(std::ptr::null(), std::ptr::null());
+            if handle.is_null() { return Err(std::io::Error::last_os_error()); }
+            let job = Self(handle);
+            let mut info: JOBOBJECT_EXTENDED_LIMIT_INFORMATION = std::mem::zeroed();
+            info.BasicLimitInformation.LimitFlags = JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE;
+            if SetInformationJobObject(handle, JobObjectExtendedLimitInformation,
+                &info as *const _ as *const _, std::mem::size_of_val(&info) as u32) == 0
+                || AssignProcessToJobObject(handle, child.raw_handle().ok_or_else(std::io::Error::last_os_error)? as _) == 0 {
+                return Err(std::io::Error::last_os_error());
+            }
+            Ok(job)
+        }
+    }
+    fn terminate(&self) -> std::io::Result<()> {
+        if unsafe { windows_sys::Win32::System::JobObjects::TerminateJobObject(self.0, 1) } == 0 {
+            Err(std::io::Error::last_os_error())
+        } else { Ok(()) }
+    }
+    fn empty(&self) -> std::io::Result<bool> {
+        use windows_sys::Win32::System::JobObjects::*;
+        unsafe {
+            let mut info: JOBOBJECT_BASIC_ACCOUNTING_INFORMATION = std::mem::zeroed();
+            if QueryInformationJobObject(self.0, JobObjectBasicAccountingInformation,
+                &mut info as *mut _ as *mut _, std::mem::size_of_val(&info) as u32, std::ptr::null_mut()) == 0 {
+                return Err(std::io::Error::last_os_error());
+            }
+            Ok(info.ActiveProcesses == 0)
+        }
+    }
+}
+#[cfg(windows)]
+impl Drop for Tree {
+    fn drop(&mut self) { unsafe { windows_sys::Win32::Foundation::CloseHandle(self.0); } }
+}
+
+/// Windows command must start with our stdin gate; callers never supply commands via IPC.
+/// Unix creates the group before exec. Always kill remaining descendants, even on success.
+pub(super) async fn run(
+    mut command: tokio::process::Command,
+    cancelled: Arc<AtomicBool>,
+    timeout: Duration,
+) -> Result<Output, String> {
+    if cancelled.load(Ordering::SeqCst) { return Err(CANCELLED.to_string()); }
+    command.stdout(Stdio::piped()).stderr(Stdio::piped()).kill_on_drop(true);
+    #[cfg(unix)] {
+        command.process_group(0).stdin(Stdio::null());
+    }
+    #[cfg(windows)] {
+        command.creation_flags(0x08000000).stdin(Stdio::piped());
+    }
+    let mut child = command.spawn().map_err(|_| "无法启动安装进程，请检查系统环境与执行权限".to_string())?;
+    #[cfg(unix)]
+    let tree = Tree(child.id().expect("new child has PID") as i32);
+    #[cfg(windows)]
+    let tree = match Tree::new(&child) {
+        Ok(tree) => tree,
+        Err(_) => {
+            let _ = child.kill().await;
+            return Err("无法隔离安装进程，已拒绝执行，请检查系统权限".to_string());
+        }
+    };
+    #[cfg(windows)] {
+        use tokio::io::AsyncWriteExt;
+        let mut input = child.stdin.take().expect("piped stdin");
+        if input.write_all(b"YUANHENG_GO\r\n").await.is_err() {
+            let _ = tree.terminate(); let _ = child.kill().await;
+            return Err("无法启动受控安装任务".to_string());
+        }
+    }
+    let mut stdout = tokio::spawn(drain(child.stdout.take().expect("piped stdout")));
+    let mut stderr = tokio::spawn(drain(child.stderr.take().expect("piped stderr")));
+    let deadline = tokio::time::Instant::now() + timeout;
+    let outcome = loop {
+        if cancelled.load(Ordering::SeqCst) { break Err(CANCELLED.to_string()); }
+        if tokio::time::Instant::now() >= deadline { break Err(TIMED_OUT.to_string()); }
+        match child.try_wait() {
+            Ok(Some(status)) => break Ok(status),
+            Ok(None) => tokio::time::sleep(Duration::from_millis(50)).await,
+            Err(_) => break Err("无法读取安装进程状态".to_string()),
+        }
+    };
+    let cleanup = tree.terminate();
+    let reaped = tokio::time::timeout(Duration::from_secs(5), child.wait()).await;
+    #[cfg(windows)]
+    let cleanup = {
+        let deadline = tokio::time::Instant::now() + Duration::from_secs(5);
+        let mut result = cleanup;
+        while result.is_ok() {
+            match tree.empty() {
+                Ok(true) => break,
+                Ok(false) if tokio::time::Instant::now() < deadline =>
+                    tokio::time::sleep(Duration::from_millis(25)).await,
+                _ => { result = Err(std::io::Error::other("job did not stop")); break; }
+            }
+        }
+        result
+    };
+    // A detached process must never keep a pipe reader or the UI alive indefinitely.
+    let read_out = tokio::time::timeout(Duration::from_secs(2), &mut stdout).await;
+    let read_err = tokio::time::timeout(Duration::from_secs(2), &mut stderr).await;
+    stdout.abort(); stderr.abort();
+    if cleanup.is_err() || !matches!(reaped, Ok(Ok(_))) {
+        return Err("[INSTALL_CLEANUP_FAILED] 无法确认安装进程已停止，请退出客户端并检查安装进程后再重试".to_string());
+    }
+    let status = outcome?;
+    if cancelled.load(Ordering::SeqCst) { return Err(CANCELLED.to_string()); }
+    let stdout = read_out.map_err(|_| "安装输出未正常关闭".to_string())?.map_err(|_| "安装输出读取失败".to_string())?;
+    let stderr = read_err.map_err(|_| "安装输出未正常关闭".to_string())?.map_err(|_| "安装输出读取失败".to_string())?;
+    Ok(Output { status, stdout, stderr })
+}
+
+#[cfg(windows)]
+pub(super) const GATE: &str = "@echo off\r\nset \"YUANHENG_INSTALL_GATE=\"\r\nset /p YUANHENG_INSTALL_GATE=\r\nif not \"%YUANHENG_INSTALL_GATE%\"==\"YUANHENG_GO\" exit /b 87\r\n";
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn command(script: &str) -> (tempfile::TempDir, tokio::process::Command) {
+        let dir = tempfile::tempdir().unwrap();
+        #[cfg(unix)]
+        let command = {
+            let mut command = tokio::process::Command::new("/bin/sh");
+            command.args(["-c", script]).current_dir(dir.path());
+            command
+        };
+        #[cfg(windows)]
+        let command = {
+            let path = dir.path().join("test.bat");
+            std::fs::write(&path, format!("{GATE}{script}")).unwrap();
+            let mut command = tokio::process::Command::new("cmd");
+            command.args(["/D", "/C"]).arg(path).current_dir(dir.path());
+            command
+        };
+        (dir, command)
+    }
+
+    #[tokio::test]
+    async fn real_process_success_failure_and_bounded_output() {
+        let (_dir, cmd) = command("echo installation-test");
+        let out = run(cmd, Arc::new(AtomicBool::new(false)), Duration::from_secs(10)).await.unwrap();
+        assert!(out.status.success());
+        assert!(String::from_utf8_lossy(&out.stdout).contains("installation-test"));
+        #[cfg(unix)]
+        let failure = "echo failure >&2; exit 7";
+        #[cfg(windows)]
+        let failure = "echo failure 1>&2\r\nexit /b 7";
+        let (_dir, cmd) = command(failure);
+        let out = run(cmd, Arc::new(AtomicBool::new(false)), Duration::from_secs(10)).await.unwrap();
+        assert_eq!(out.status.code(), Some(7));
+        assert!(String::from_utf8_lossy(&out.stderr).contains("failure"));
+        #[cfg(unix)]
+        let flood = "i=0; while [ $i -lt 12000 ]; do echo 0123456789abcdef; i=$((i+1)); done";
+        #[cfg(windows)]
+        let flood = "for /L %%i in (1,1,12000) do @echo 0123456789abcdef";
+        let (_dir, cmd) = command(flood);
+        let out = run(cmd, Arc::new(AtomicBool::new(false)), Duration::from_secs(20)).await.unwrap();
+        assert!(out.status.success());
+        assert_eq!(out.stdout.len(), OUTPUT_LIMIT);
+    }
+
+    #[tokio::test]
+    async fn timeout_and_cancel_terminate_real_descendant_before_it_can_write() {
+        for cancel_requested in [false, true] {
+            #[cfg(unix)]
+            let script = "(sleep 2; echo escaped > escaped.txt) & wait";
+            #[cfg(windows)]
+            let script = "powershell -NoProfile -NonInteractive -Command \"Start-Sleep -Seconds 2; Set-Content escaped.txt escaped\"";
+            let (dir, cmd) = command(script);
+            let cancelled = Arc::new(AtomicBool::new(false));
+            let signal = cancelled.clone();
+            let canceller = tokio::spawn(async move {
+                tokio::time::sleep(Duration::from_millis(150)).await;
+                if cancel_requested { signal.store(true, Ordering::SeqCst); }
+            });
+            let error = run(cmd, cancelled, Duration::from_millis(400)).await.unwrap_err();
+            canceller.await.unwrap();
+            assert!(error.contains(if cancel_requested { "[INSTALL_CANCELLED]" } else { "[INSTALL_TIMEOUT]" }));
+            tokio::time::sleep(Duration::from_millis(2200)).await;
+            assert!(!dir.path().join("escaped.txt").exists());
+        }
+    }
+
+    #[tokio::test]
+    async fn cancellation_before_spawn_and_invalid_executable_do_not_start_tasks() {
+        let (dir, cmd) = command("echo started > started.txt");
+        assert!(run(cmd, Arc::new(AtomicBool::new(true)), Duration::from_secs(1))
+            .await.unwrap_err().contains("[INSTALL_CANCELLED]"));
+        assert!(!dir.path().join("started.txt").exists());
+        assert!(run(tokio::process::Command::new(dir.path().join("nonexistent")), Arc::new(AtomicBool::new(false)),
+            Duration::from_secs(1)).await.is_err());
+    }
+
+    #[test]
+    fn late_cancel_cannot_target_a_new_operation_or_reuse_an_active_id() {
+        let first = Operation::register(uuid::Uuid::new_v4().to_string()).unwrap();
+        let id = first.id.clone();
+        assert!(Operation::register(id.clone()).is_err());
+        assert!(cancel(&id).unwrap());
+        assert!(first.cancelled.load(Ordering::SeqCst));
+        drop(first);
+        let second = Operation::register(uuid::Uuid::new_v4().to_string()).unwrap();
+        assert!(!cancel(&id).unwrap());
+        assert!(!second.cancelled.load(Ordering::SeqCst));
+    }
+}

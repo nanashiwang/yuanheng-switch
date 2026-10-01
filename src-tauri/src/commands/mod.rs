@@ -15,6 +15,7 @@ mod hermes;
 mod import_export;
 mod mcp;
 mod misc;
+mod tool_install_process;
 mod model_fetch;
 mod omo;
 mod openclaw;

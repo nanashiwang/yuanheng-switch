@@ -30,6 +30,7 @@ import { dt } from "./desktopI18n";
 import { ToolActivationProgress } from "./ToolActivationProgress";
 import { useToolLifecycleState } from "@/lib/toolLifecycleState";
 import { toolInstallLabel } from "./toolInstallFeedback";
+import { ToolInstallCancel } from "./ToolInstallCancel";
 import { TOOL_VERSION_TARGETS } from "./ToolSetupGrid";
 
 const controlsReasoning = (app: YuanhengToolId) =>
@@ -348,6 +349,9 @@ export function ModelSwitchCenter({
                           {dt("选择路径")}
                         </Button>
                       )}
+                      <ToolInstallCancel
+                        tool={TOOL_VERSION_TARGETS[app] ?? ""}
+                      />
                       {!installed && !detectionFailed && (
                         <Button
                           size="sm"
