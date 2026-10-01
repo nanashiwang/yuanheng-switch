@@ -1,5 +1,7 @@
 // Generated from the desktop Simplified Chinese source strings, then normalized for Taiwan terminology.
 export const DESKTOP_ZH_TW: Record<string, string> = {
+  "默认体检不调用模型、不测试收费推理；服务运行、网关认证和桌面工作区是不同检查项。失败时可预览并导出同一份脱敏诊断。":
+    "預設檢查不呼叫模型、不測試付費推論；服務執行、閘道驗證和桌面工作區是不同檢查項目。失敗時可預覽並匯出同一份去識別化診斷。",
   "启动 DSH Web": "啟動 DSH Web",
   "同步桌面端和本机 Web 的模型目录。已有会话保留原模型；自定义 profile 和远程 Web 需单独配置。":
     "同步桌面端和本機 Web 的模型目錄。既有對話保留原模型；自訂 profile 和遠端 Web 需個別設定。",

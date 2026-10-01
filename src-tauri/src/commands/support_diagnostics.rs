@@ -233,6 +233,12 @@ pub fn safe_checks(report: &YuanhengDiagnosticReport) -> Vec<serde_json::Value> 
                 "tools",
                 "timeout",
                 "recent_requests",
+                "codex_history",
+                "claude_desktop_gateway",
+                "claude_desktop_environment",
+                "core_diagnostics",
+                "core_version",
+                "core_request_flow",
             ]
             .contains(&check.id.as_str())
             {

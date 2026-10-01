@@ -213,6 +213,31 @@ pub fn get_config_library_path() -> Result<PathBuf, AppError> {
     Ok(current_platform_paths()?.config_library_path)
 }
 
+/// Read the applied credential, not a newly generated one. Probe only a current
+/// local proxy profile; direct providers are outside this non-billable check.
+pub(crate) fn local_gateway_probe_config(db: &Database) -> Result<(String, String), AppError> {
+    let paths = current_platform_paths()?;
+    if fs::metadata(&paths.profile_path)
+        .map_err(|e| AppError::io(&paths.profile_path, e))?
+        .len()
+        > 64 * 1024
+    {
+        return Err(AppError::Message("桌面网关配置过大".into()));
+    }
+    let profile = read_json_or_empty(&paths.profile_path)?;
+    let base = profile
+        .get("inferenceGatewayBaseUrl")
+        .and_then(Value::as_str)
+        .filter(|base| Some(*base) == proxy_gateway_base_url_from_db(db).ok().as_deref())
+        .ok_or_else(|| AppError::Message("不是当前本机网关配置".into()))?;
+    let token = profile
+        .get("inferenceGatewayApiKey")
+        .and_then(Value::as_str)
+        .filter(|token| !token.is_empty())
+        .ok_or_else(|| AppError::Message("网关凭据缺失".into()))?;
+    Ok((base.into(), token.into()))
+}
+
 pub fn default_proxy_routes() -> Vec<ClaudeDesktopDefaultRoute> {
     DEFAULT_PROXY_ROUTES.to_vec()
 }

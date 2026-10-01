@@ -4476,8 +4476,9 @@ async fn diagnose_yuanheng_inner(state: &AppState) -> Result<YuanhengDiagnosticR
             checks.push(YuanhengDiagnosticCheck {
                 id: "local_route".to_string(),
                 status: "ok".to_string(),
-                title: "本地模型路由正常".to_string(),
-                message: "需要本地协议适配的桌面工具可以访问元衡。".to_string(),
+                title: "本地 Core 正在运行".to_string(),
+                message: "仅确认 Core 运行状态；不代表桌面工具连接、工作区启动或模型请求成功。"
+                    .to_string(),
                 action: None,
             });
         } else {
@@ -4512,7 +4513,9 @@ async fn diagnose_yuanheng_inner(state: &AppState) -> Result<YuanhengDiagnosticR
             id: "tools".to_string(),
             status: "ok".to_string(),
             title: "工具配置正常".to_string(),
-            message: format!("{ready_tools} 个工具已经就绪。"),
+            message: format!(
+                "{ready_tools} 个工具通过配置检查；实际请求与桌面运行环境需单独验证。"
+            ),
             action: None,
         });
     } else {
@@ -4693,6 +4696,114 @@ pub async fn get_yuanheng_diagnostics(
     };
     let mut group_labels: HashMap<String, String> = HashMap::new();
     let tool_statuses = all_tool_statuses(&state, &connection);
+    let core_support = match tokio::time::timeout(
+        std::time::Duration::from_secs(4),
+        state.proxy_service.core_support_info(),
+    )
+    .await
+    {
+        Ok(Ok(info)) => {
+            let events = info
+                .request_diagnostics
+                .as_ref()
+                .map(|snapshot| {
+                    crate::core_diagnostics::support_events(&snapshot.events, since, now)
+                })
+                .unwrap_or_default();
+            let available = info
+                .request_diagnostics
+                .as_ref()
+                .is_some_and(|s| s.schema_version == 1);
+            let persistence_ok = info
+                .request_diagnostics
+                .as_ref()
+                .is_some_and(|s| s.persistence_ok);
+            report.checks.push(YuanhengDiagnosticCheck {
+                id: "core_version".into(),
+                status: "ok".into(),
+                title: "实际运行的 Core".into(),
+                message: format!(
+                    "Core {}；版本来自正在运行的进程，不是客户端安装版本。",
+                    support::safe_version(&info.version).unwrap_or_else(|| "未知".into())
+                ),
+                action: None,
+            });
+            if !available || !persistence_ok {
+                report.checks.push(YuanhengDiagnosticCheck {
+                    id: "core_diagnostics".into(), status: "warning".into(),
+                    title: "Core 故障记录能力".into(),
+                    message: if !available {
+                        "当前 Core 尚不支持阶段诊断；客户端版本不代表后台 Core 已更新。请在空闲时通过客户端更新，勿强制结束活跃请求。"
+                    } else {
+                        "Core 日志存在队列丢弃、写入失败或写入线程不可用；内存记录仍可导出，请查看计数，磁盘记录可能不完整。"
+                    }.into(), action: None,
+                });
+            }
+            json!({
+                "version": support::safe_version(&info.version),
+                "protocolVersion": info.protocol_version,
+                "stageDiagnosticsAvailable": available, "persistenceOk": persistence_ok,
+                "pendingWrites": info.request_diagnostics.as_ref().map(|s| s.pending_writes),
+                "droppedEvents": info.request_diagnostics.as_ref().map(|s| s.dropped_events),
+                "writeFailures": info.request_diagnostics.as_ref().map(|s| s.write_failures),
+                "writerRunning": info.request_diagnostics.as_ref().map(|s| s.writer_running),
+                "writerCounterScope": "Device-local Core lifetime; includes pending writes, not account request or billing counts.",
+                "events": if connection.connected { events } else { vec![] },
+                "scope": "Claude Desktop messages only; progress is not inference success. Request bodies, raw errors and identifiers are excluded.",
+            })
+        }
+        _ => {
+            warnings.push("core_info_unavailable");
+            // Recover only closed-schema records; never export arbitrary log text.
+            let events =
+                crate::core_diagnostics::persisted_events(&crate::config::get_app_config_dir());
+            json!({
+                "version": null, "stageDiagnosticsAvailable": false,
+                "source": "persisted_previous_core",
+                "events": if connection.connected {
+                    crate::core_diagnostics::support_events(&events, since, now)
+                } else { vec![] },
+            })
+        }
+    };
+    if core_support
+        .get("events")
+        .and_then(Value::as_array)
+        .is_some_and(|events| {
+            events.iter().any(|event| {
+                matches!(
+                    event.get("outcome").and_then(Value::as_str),
+                    Some("panic" | "body_error")
+                ) || event
+                    .get("status")
+                    .and_then(Value::as_u64)
+                    .is_some_and(|s| s >= 400)
+            })
+        })
+    {
+        report.checks.push(YuanhengDiagnosticCheck {
+            id: "core_request_flow".into(), status: "warning".into(),
+            title: "Claude Desktop 请求阶段记录".into(),
+            message: "观察窗口内存在失败或响应中断，记录已随脱敏报告导出；历史失败不代表当前仍失败，阶段记录也不等于上游计费结果。".into(),
+            action: None,
+        });
+    }
+    if tool_statuses
+        .iter()
+        .any(|t| t.app == "claude-desktop" && t.configured)
+    {
+        let (gateway, environment) = tokio::join!(
+            super::claude_desktop_diagnostics::gateway(&state.db),
+            super::claude_desktop_diagnostics::windows_environment(),
+        );
+        report.checks.push(gateway);
+        if let Some(environment) = environment {
+            report.checks.push(environment);
+        }
+    }
+    if report.status == "ok" && report.checks.iter().any(|c| c.status != "ok") {
+        report.status = "warning".into();
+    }
     let configured_at = tool_statuses
         .iter()
         .filter(|tool| tool.configured)
@@ -4738,7 +4849,7 @@ pub async fn get_yuanheng_diagnostics(
     }
     let snapshot_id = uuid::Uuid::new_v4().to_string();
     let document = json!({
-        "schemaVersion": 2, "snapshotId": snapshot_id,
+        "schemaVersion": 3, "snapshotId": snapshot_id,
         "product": "YuanHeng Desktop", "version": env!("CARGO_PKG_VERSION"),
         "platform": std::env::consts::OS, "architecture": std::env::consts::ARCH,
         "capturedAt": chrono::Utc::now().to_rfc3339(),
@@ -4747,7 +4858,8 @@ pub async fn get_yuanheng_diagnostics(
         "status": report.status, "checks": support::safe_checks(&report),
         "tools": tools, "configLocations": support::config_locations(),
         "detectedInstallations": installations,
-        "proxy": proxy, "recentRequests": requests, "requestWindowStart": since,
+        "proxy": proxy, "core": core_support,
+        "recentRequests": requests, "requestWindowStart": since,
         "warnings": warnings,
         "privacy": "No account names, tokens, raw paths, headers, conversation content, raw errors or request IDs. Groups are aliases; custom models are hidden.",
         "scope": "Latest 20 completed local proxy records since the current account sync, within one hour. Direct/official traffic outside the local proxy is not observable. HTTP status alone does not identify fault ownership.",

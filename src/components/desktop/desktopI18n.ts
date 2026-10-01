@@ -6,6 +6,8 @@ import { DESKTOP_ZH_TW } from "./desktopI18n.zhTW";
 type Values = Record<string, string | number | null | undefined>;
 
 export const DESKTOP_EN: Record<string, string> = {
+  "默认体检不调用模型、不测试收费推理；服务运行、网关认证和桌面工作区是不同检查项。失败时可预览并导出同一份脱敏诊断。":
+    "Default checks do not invoke models or billable inference. Service status, gateway authentication and the desktop workspace are separate checks. Preview and export the same redacted snapshot when troubleshooting.",
   "启动 DSH Web": "Launch DSH Web",
   "同步桌面端和本机 Web 的模型目录。已有会话保留原模型；自定义 profile 和远程 Web 需单独配置。":
     "Sync model catalogs for Desktop and local Web. Existing sessions keep their model; custom profiles and remote Web require separate configuration.",

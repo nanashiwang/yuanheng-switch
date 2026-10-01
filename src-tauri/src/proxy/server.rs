@@ -468,6 +468,72 @@ mod image_route_tests {
     };
 
     #[tokio::test]
+    #[serial_test::serial]
+    async fn desktop_gateway_auth_parse_and_mapping_failures_are_http_responses() {
+        use http_body_util::BodyExt;
+        struct RestoreHome(Option<std::ffi::OsString>);
+        impl Drop for RestoreHome {
+            fn drop(&mut self) {
+                match self.0.take() {
+                    Some(value) => std::env::set_var("YUANHENG_SWITCH_TEST_HOME", value),
+                    None => std::env::remove_var("YUANHENG_SWITCH_TEST_HOME"),
+                }
+                let _ = crate::settings::reload_settings();
+            }
+        }
+        let dir = tempfile::tempdir().unwrap();
+        let _restore = RestoreHome(std::env::var_os("YUANHENG_SWITCH_TEST_HOME"));
+        std::env::set_var("YUANHENG_SWITCH_TEST_HOME", dir.path());
+        crate::settings::reload_settings().unwrap();
+        let db = Arc::new(Database::memory().unwrap());
+        let token = crate::claude_desktop_config::get_or_create_gateway_token(&db).unwrap();
+        let provider = crate::provider::Provider::with_id(
+            "synthetic-provider".into(),
+            "Synthetic".into(),
+            serde_json::json!({"env": {
+                "ANTHROPIC_BASE_URL": "http://127.0.0.1:1",
+                "ANTHROPIC_AUTH_TOKEN": "synthetic-upstream-token"
+            }}),
+            None,
+        );
+        // Intentionally omit routes: a valid Messages request must fail locally
+        // with 400, never contact even the synthetic upstream.
+        db.save_provider("claude-desktop", &provider).unwrap();
+        db.set_current_provider("claude-desktop", &provider.id)
+            .unwrap();
+        let server = ProxyServer::new(ProxyConfig::default(), db, None);
+        for (auth, body, expected) in [
+            (None, "{}", 401),
+            (Some("wrong-token"), "{", 401),
+            (Some(token.as_str()), "{", 500),
+            (
+                Some(token.as_str()),
+                r#"{"model":"claude-sonnet-5","messages":[{"role":"user","content":"synthetic"}],"max_tokens":1}"#,
+                400,
+            ),
+        ] {
+            let mut request = Request::builder()
+                .method("POST")
+                .uri("/claude-desktop/v1/messages")
+                .header("content-type", "application/json");
+            if let Some(auth) = auth {
+                request = request.header("authorization", format!("Bearer {auth}"));
+            }
+            let response = tower::Service::call(
+                &mut server.build_router(),
+                request.body(Body::from(body)).unwrap(),
+            )
+            .await
+            .unwrap();
+            assert_eq!(response.status().as_u16(), expected);
+            let bytes = response.into_body().collect().await.unwrap().to_bytes();
+            let json: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
+            assert!(json.get("error").is_some());
+            assert!(!String::from_utf8_lossy(&bytes).contains(&token));
+        }
+    }
+
+    #[tokio::test]
     async fn image_routes_and_existing_chat_routes_are_registered() {
         let server = ProxyServer::new(
             ProxyConfig::default(),

@@ -1,5 +1,7 @@
 // Japanese translations for the desktop Simplified Chinese source strings.
 export const DESKTOP_JA: Record<string, string> = {
+  "默认体检不调用模型、不测试收费推理；服务运行、网关认证和桌面工作区是不同检查项。失败时可预览并导出同一份脱敏诊断。":
+    "通常の診断ではモデルや有料推論を呼び出しません。サービス稼働、ゲートウェイ認証、デスクトップ作業環境は別々に確認します。問題発生時は同じ匿名化診断をプレビューしてエクスポートできます。",
   "启动 DSH Web": "DSH Web を起動",
   "同步桌面端和本机 Web 的模型目录。已有会话保留原模型；自定义 profile 和远程 Web 需单独配置。":
     "デスクトップとローカル Web のモデル一覧を同期します。既存の会話は元のモデルを維持します。カスタム profile とリモート Web は個別に設定してください。",

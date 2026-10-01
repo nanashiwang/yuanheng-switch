@@ -321,6 +321,11 @@ export function YuanhengHealthCard({
 
       {expanded && report && (
         <div className="space-y-2 border-t px-4 py-3">
+          <p className="text-[11px] leading-5 text-muted-foreground">
+            {dt(
+              "默认体检不调用模型、不测试收费推理；服务运行、网关认证和桌面工作区是不同检查项。失败时可预览并导出同一份脱敏诊断。",
+            )}
+          </p>
           {report.checks.map((check) => (
             <div
               key={check.id}

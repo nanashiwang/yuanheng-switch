@@ -1350,6 +1350,7 @@ impl RequestForwarder {
         };
 
         // 与 CCH 对齐：请求前不做 thinking 主动改写（仅保留兼容入口）
+        crate::core_diagnostics::stage(crate::core_diagnostics::Stage::ModelMapped);
         let mut mapped_body = normalize_thinking_type(mapped_body);
         let is_context_compaction = matches!(app_type, AppType::ClaudeDesktop)
             && super::copilot_optimizer::is_compact_request(&mapped_body);
@@ -2331,6 +2332,7 @@ impl RequestForwarder {
         );
 
         // 发送请求
+        crate::core_diagnostics::stage(crate::core_diagnostics::Stage::UpstreamSend);
         let response = if is_socks_proxy || !preserve_exact_header_case {
             // OpenAI / Copilot / Codex 类后端不依赖原始 header 大小写；走 reqwest
             // 连接池，避免 raw TCP/TLS path 每次请求都重新握手。SOCKS5 也只能走 reqwest。
@@ -2389,6 +2391,7 @@ impl RequestForwarder {
         };
 
         // 检查响应状态
+        crate::core_diagnostics::stage(crate::core_diagnostics::Stage::UpstreamResponse);
         let status = response.status();
 
         if status.is_success() {

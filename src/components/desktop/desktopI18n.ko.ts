@@ -1,5 +1,7 @@
 // ko translations for the desktop Simplified Chinese source strings.
 export const DESKTOP_KO: Record<string, string> = {
+  "默认体检不调用模型、不测试收费推理；服务运行、网关认证和桌面工作区是不同检查项。失败时可预览并导出同一份脱敏诊断。":
+    "기본 진단은 모델이나 유료 추론을 호출하지 않습니다. 서비스 실행, 게이트웨이 인증, 데스크톱 작업 환경은 별도로 확인합니다. 문제 발생 시 동일한 비식별 진단을 미리 보고 내보낼 수 있습니다.",
   "启动 DSH Web": "DSH Web 실행",
   "同步桌面端和本机 Web 的模型目录。已有会话保留原模型；自定义 profile 和远程 Web 需单独配置。":
     "데스크톱과 로컬 Web의 모델 목록을 동기화합니다. 기존 대화는 원래 모델을 유지합니다. 사용자 지정 profile과 원격 Web은 별도 설정이 필요합니다.",
