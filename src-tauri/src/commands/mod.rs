@@ -15,7 +15,6 @@ mod hermes;
 mod import_export;
 mod mcp;
 mod misc;
-mod tool_install_process;
 mod model_fetch;
 mod omo;
 mod openclaw;
@@ -32,6 +31,7 @@ mod stream_check;
 mod subscription;
 pub(crate) mod support_diagnostics;
 mod sync_support;
+mod tool_install_process;
 mod xai_oauth;
 
 mod lightweight;

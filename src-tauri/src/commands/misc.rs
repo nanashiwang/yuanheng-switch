@@ -382,7 +382,11 @@ pub async fn run_tool_lifecycle_action(
         let command_line =
             build_tool_lifecycle_command(&requested, action, wsl_shell_by_tool.as_ref())?;
         let result = run_supervised_install(&command_line, operation.cancelled.clone()).await;
-        if result.as_ref().err().is_some_and(|error| error.contains("[INSTALL_CLEANUP_FAILED]")) {
+        if result
+            .as_ref()
+            .err()
+            .is_some_and(|error| error.contains("[INSTALL_CLEANUP_FAILED]"))
+        {
             // Fail closed: unknown surviving writers must not overlap with retries.
             std::mem::forget(guard);
         }
@@ -401,15 +405,20 @@ pub async fn run_tool_lifecycle_action(
 
 fn native_install_supported(_tool: &str) -> bool {
     #[cfg(windows)]
-    { wsl_distro_for_tool(_tool).is_none() }
+    {
+        wsl_distro_for_tool(_tool).is_none()
+    }
     #[cfg(not(windows))]
-    { true }
+    {
+        true
+    }
 }
 
 #[tauri::command]
 pub fn native_tool_install_supported(tools: Vec<String>) -> bool {
     let requested = normalize_requested_tools(&tools);
-    !requested.is_empty() && requested.len() == tools.len()
+    !requested.is_empty()
+        && requested.len() == tools.len()
         && requested.iter().all(|tool| native_install_supported(tool))
 }
 
@@ -432,17 +441,28 @@ async fn run_supervised_install(
     let (_script, command) = {
         use std::io::Write;
         // No shared PID-based filename; tempfile owns cleanup on every exit path.
-        let mut script = tempfile::Builder::new().prefix("yuanheng-install-").suffix(".bat")
-            .tempfile().map_err(|_| "无法创建安装脚本，请检查临时目录权限".to_string())?;
-        write!(script, "{}{}", super::tool_install_process::GATE, command_line)
-            .map_err(|_| "无法写入安装脚本，请检查磁盘空间和权限".to_string())?;
+        let mut script = tempfile::Builder::new()
+            .prefix("yuanheng-install-")
+            .suffix(".bat")
+            .tempfile()
+            .map_err(|_| "无法创建安装脚本，请检查临时目录权限".to_string())?;
+        write!(
+            script,
+            "{}{}",
+            super::tool_install_process::GATE,
+            command_line
+        )
+        .map_err(|_| "无法写入安装脚本，请检查磁盘空间和权限".to_string())?;
         let mut command = tokio::process::Command::new("cmd");
         command.args(["/D", "/C"]).arg(script.path());
         (script, command)
     };
     let output = super::tool_install_process::run(
-        command, cancelled, std::time::Duration::from_secs(10 * 60),
-    ).await?;
+        command,
+        cancelled,
+        std::time::Duration::from_secs(10 * 60),
+    )
+    .await?;
     finish_lifecycle_output(&output)
 }
 
