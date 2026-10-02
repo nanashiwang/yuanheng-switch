@@ -405,7 +405,9 @@ export function useConfigureYuanhengTools() {
       groups?: Partial<Record<YuanhengToolId, string>>;
       reasoning?: Partial<Record<YuanhengToolId, YuanhengReasoningLevel>>;
     }) => yuanhengApi.configureTools(apps, models, groups, reasoning),
-    onSuccess: () => {
+    // System preparation may be deferred after configuration has been saved.
+    // Refresh saved choices on either outcome so resuming cannot show stale data.
+    onSettled: () => {
       queryClient.invalidateQueries({ queryKey: yuanhengKeys.tools });
       queryClient.invalidateQueries({ queryKey: yuanhengKeys.diagnostics });
       queryClient.invalidateQueries({

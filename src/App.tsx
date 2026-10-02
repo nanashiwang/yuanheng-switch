@@ -53,6 +53,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { UpdateBadge } from "@/components/UpdateBadge";
+import { ClaudeWorkspacePreparation } from "@/components/desktop/ClaudeWorkspacePreparation";
 import { ModeToggle } from "@/components/mode-toggle";
 import { LanguageSwitcher } from "@/components/desktop/LanguageSwitcher";
 import { EnvWarningBanner } from "@/components/env/EnvWarningBanner";
@@ -710,6 +711,7 @@ function App() {
       className="h-screen overflow-hidden bg-background text-foreground selection:bg-primary/20"
       style={{ paddingTop: dragBarHeight }}
     >
+      <ClaudeWorkspacePreparation onContinue={() => setView("tools")} />
       {(dragBarHeight > 0 || useAppWindowControls) && (
         <div
           className={cn(

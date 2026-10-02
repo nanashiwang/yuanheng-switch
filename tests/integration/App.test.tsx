@@ -495,7 +495,7 @@ describe("App integration with MSW", { timeout: 15_000 }, () => {
     fireEvent.click(screen.getByRole("button", { name: "工具管理" }));
 
     fireEvent.click(await screen.findByLabelText("Codex 模型选择"));
-    fireEvent.change(screen.getByPlaceholderText("搜索网站可用模型..."), {
+    fireEvent.change(screen.getByPlaceholderText("搜索模型名称或厂商…"), {
       target: { value: "k3" },
     });
     fireEvent.click(await screen.findByText("k3"));
@@ -838,7 +838,7 @@ describe("App integration with MSW", { timeout: 15_000 }, () => {
     fireEvent.click(screen.getByRole("button", { name: "工具管理" }));
 
     fireEvent.click(await screen.findByLabelText("Codex Desktop 模型选择"));
-    fireEvent.change(screen.getByPlaceholderText("搜索网站可用模型..."), {
+    fireEvent.change(screen.getByPlaceholderText("搜索模型名称或厂商…"), {
       target: { value: "k3" },
     });
     fireEvent.click(await screen.findByText("k3"));
@@ -896,7 +896,7 @@ describe("App integration with MSW", { timeout: 15_000 }, () => {
     await screen.findByRole("heading", { name: "工具管理" });
 
     fireEvent.click(await screen.findByLabelText("Claude 模型选择"));
-    fireEvent.change(screen.getByPlaceholderText("搜索网站可用模型..."), {
+    fireEvent.change(screen.getByPlaceholderText("搜索模型名称或厂商…"), {
       target: { value: "deepseek" },
     });
     fireEvent.click(await screen.findByText("deepseek-v3.2"));
@@ -930,7 +930,7 @@ describe("App integration with MSW", { timeout: 15_000 }, () => {
     });
     fireEvent.click(screen.getByRole("button", { name: "工具管理" }));
     fireEvent.click(await screen.findByLabelText("Claude Desktop 模型选择"));
-    fireEvent.change(screen.getByPlaceholderText("搜索网站可用模型..."), {
+    fireEvent.change(screen.getByPlaceholderText("搜索模型名称或厂商…"), {
       target: { value: "k3" },
     });
     fireEvent.click(await screen.findByText("k3"));

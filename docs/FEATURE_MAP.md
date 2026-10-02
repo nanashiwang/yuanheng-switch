@@ -16,6 +16,12 @@ Before adding a feature, inspect adjacent flows and the current source of truth;
 
 Claude diagnostic persistence uses a bounded background writer, not disk I/O on the request path. Snapshot writer counters describe Core-local logging health, not billing. Claude Store discovery accepts only the verified full package family; unknown legacy identities are not trusted by a name prefix.
 
+## Claude Desktop Windows 首次准备（2026-10-02，本地）
+
+`claudeWorkspaceSetup` 共享安装/配置/启动意图，`ClaudeWorkspacePreparation` 在主界面显示必要组件、UAC、准备和重启状态；`useDesktopInstallFlow` 只在基础准备通过后打开官方页面。`claude_workspace_setup.rs` 仅提权系统目录下 DISM 的固定 VirtualMachinePlatform `/All /NoRestart` 参数；不接受任意程序、参数，不重启或强杀 Windows servicing。后端启动入口再次校验，智能体检使用同一只读状态机。
+
+系统启动时间和任务完成标记只在本地保存，不包含密钥；跨重启恢复只读检查后由用户点击继续，使用现有工具配置。已保存配置但准备延期用专门错误类型与普通配置失败区分，刷新保存状态而不回退模型选择。默认不调用模型，基础就绪不等于 Claude 官方工作区组件已下载。说明及 Windows 验收边界见 [首次使用准备](guides/claude-windows-first-run.md)。
+
 ## 安装与模型选择连续性（2026-10-01）
 
 | 能力/入口 | 复用链路 | 不变量与边界 |
@@ -31,3 +37,17 @@ Claude diagnostic persistence uses a bounded background writer, not disk I/O on 
 工具页、快捷控制台、关于页共用 `ToolInstallCancel` / `toolLifecycleState`；`native_tool_install_supported` 只判断任务隔离能力，不宣称网络或完整环境就绪。原生安装经 `tool_install_process` 监督，执行上限 10 分钟，每个 stdout/stderr 保留最多 64 KiB 尾部。取消按 operation ID 定位，不按工具名或全局进程名杀进程；清理失败保留后端工具锁。Unix 使用独立进程组，Windows 先绑定 Job Object 再放行脚本，父进程成功退出后仍回收任务内子进程。
 
 取消不回滚第三方已写文件，先重新检测再决定是否重试；失败也使本机版本探测缓存失效。WSL 明确不提供原生进程树取消/超时承诺，不终止整个发行版；升级与安装后的只读验证沿用已有流程，不显示“取消安装”按钮。脚本需要用户交互、主动脱离 Unix 进程组或提权到任务外的行为不在支持范围。回归：`ToolInstallCancel.test.tsx` 与 `tool_install_process::tests`。
+
+## Windows Claude 安装响应检查（2026-10-02，本地）
+
+原生安装与关于页复制命令共用 `src-tauri/scripts/install-claude-windows.ps1`。脚本检查 HTTP 状态、最终 HTTPS 地址、MIME、正文形态/长度和 PowerShell 语法后才执行；失败不自动回退 npm。`misc.rs::lifecycle_error_detail` 将固定安装失败分类和 CLIXML/截断 XML 转成简短提示，普通失败最多 8 行/1200 字符。错误不输出正文、查询参数或原始异常，HTTP 元数据仅限本机进程输出；不新增上传。校验不等于签名验证，也不保证官方端点可达。
+
+回归入口：`scripts/test_claude_windows_installer.py`（模拟响应的实际 PowerShell）、`tests/lib/claudeInstallerSafety.test.ts`（共享源契约）和 Rust 错误格式测试。Windows PowerShell 5.1 与本地 Rust 编译未验证，不等于完整安装验收。
+
+## 桌面应用安装等待与重新检测（2026-10-02，本地）
+
+`useDesktopInstallFlow` 将外部下载页和本机安装观察分开：打开失败会清理状态；重新检测先停止所有旧观察；每次观察有独立 AbortController 和五分钟总上限；旧 IPC 结果晚到时不得触发检测成功或清除新观察。停止只取消客户端观察，不宣称取消浏览器下载或杀共享检测进程。回归入口：`tests/hooks/useDesktopInstallFlow.test.tsx`。
+
+## 模型选择器信息层级（2026-10-02，本地）
+
+所有现有 `ModelPicker` 入口复用 `modelVendors` 识别与排序：当前模型单独分区且不重复，其余厂商分组；固定搜索、厂商筛选和匹配数量，列表独立滚动。厂商/名称搜索取交集，禁用项保持禁用，不补造目录外模型，不改 onChange/onRefresh、配置写入与权限。推荐保留标签并在组内优先，不宣称官方最新顺序；重新打开重置筛选。回归：`ModelPicker.groups.test.tsx`、`ModelPicker.refresh.test.tsx` 和应用集成切换流程。

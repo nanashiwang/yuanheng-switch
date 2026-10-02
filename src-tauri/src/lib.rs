@@ -1622,6 +1622,8 @@ pub fn run() {
             commands::get_codex_account_mode,
             commands::switch_codex_account_mode,
             commands::get_yuanheng_diagnostics,
+            commands::get_claude_workspace_preparation,
+            commands::prepare_claude_workspace,
             commands::get_yuanheng_diagnostic_snapshot,
             commands::export_yuanheng_diagnostics,
             commands::configure_yuanheng_tools,

@@ -559,12 +559,42 @@ fn finish_lifecycle_output(output: &std::process::Output) -> Result<(), String> 
     } else {
         stderr.trim()
     };
-    let detail = last_lines(raw, 8);
+    let detail = lifecycle_error_detail(raw);
     Err(if detail.is_empty() {
         format!("命令执行失败 (exit code: {:?})", output.status.code())
     } else {
         detail
     })
+}
+
+/// Installer output is untrusted and may contain a whole web page or CLIXML.
+fn lifecycle_error_detail(raw: &str) -> String {
+    for (marker, message) in [
+        ("[INSTALL_INVALID_RESPONSE]", "安装地址返回的内容不是有效的 PowerShell 安装脚本，已拒绝执行。请检查网络、代理或下载地址后重试。"),
+        ("[INSTALL_DOWNLOAD_FAILED]", "下载安装脚本失败。请检查网络、代理与官方下载地址是否可访问后重试。"),
+        ("[INSTALL_EXECUTION_FAILED]", "安装脚本执行失败。请重新检测工具并检查依赖和权限；不要反复安装。"),
+    ] {
+        if raw.contains(marker) {
+            return message.to_string();
+        }
+    }
+    let lower = raw.to_ascii_lowercase();
+    if lower.contains("clixml")
+        || lower.contains("<objs")
+        || lower.contains("<s s=\"error\"")
+        || lower.contains("_x000d_")
+        || lower.contains("_x000a_")
+        || lower.contains("schemas.microsoft.com/powershell")
+        || lower.contains("<script")
+        || lower.contains("<!doctype")
+    {
+        return "安装命令失败，已隐藏 PowerShell XML 或网页错误详情。请检查官方安装地址、网络和代理，再重新检测工具。".to_string();
+    }
+    last_lines(raw, 8)
+        .chars()
+        .filter(|c| !c.is_control() || *c == '\n' || *c == '\t')
+        .take(1200)
+        .collect()
 }
 
 /// 取文本末尾最多 `n` 行（npm / pip 的关键错误通常出现在输出尾部）。
@@ -763,7 +793,7 @@ const HERMES_INSTALL_WINDOWS_SCRIPT: &str =
 const GROK_INSTALL_WINDOWS_SCRIPT: &str = "irm https://x.ai/cli/install.ps1 | iex";
 #[cfg(target_os = "windows")]
 const CLAUDE_INSTALL_WINDOWS_SCRIPT: &str =
-    "$ErrorActionPreference = 'Stop'; try { $installer = Invoke-RestMethod https://claude.ai/install.ps1; & ([scriptblock]::Create($installer)); if ($null -ne $LASTEXITCODE -and $LASTEXITCODE -ne 0) { exit $LASTEXITCODE } } catch { Write-Error $_; exit 1 }";
+    include_str!("../../scripts/install-claude-windows.ps1");
 
 #[cfg(target_os = "windows")]
 fn powershell_encoded_command(script: &str) -> String {
@@ -3544,6 +3574,7 @@ pub async fn launch_tool(
         }
     }
     if tool == "claude-desktop" {
+        crate::commands::ensure_workspace_ready().await?;
         #[cfg(target_os = "macos")]
         {
             tokio::task::spawn_blocking(move || launch_claude_desktop(restart.unwrap_or(false)))
@@ -4605,6 +4636,42 @@ pub async fn set_window_theme(window: tauri::Window, theme: String) -> Result<()
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn installer_response_failures_hide_raw_page_and_powershell_details() {
+        let page = "#< CLIXML <Objs><S S=\"Error\">secret &lt;script&gt;var x=1</S></Objs>";
+        let safe = super::lifecycle_error_detail(page);
+        assert!(!safe.contains("secret"));
+        assert!(!safe.contains("<Objs"));
+        for marker in [
+            "INSTALL_INVALID_RESPONSE",
+            "INSTALL_DOWNLOAD_FAILED",
+            "INSTALL_EXECUTION_FAILED",
+        ] {
+            let safe = super::lifecycle_error_detail(&format!("{page} [{marker}]"));
+            assert!(!safe.contains("secret"));
+            assert!(!safe.contains("CLIXML"));
+            assert!(safe.chars().count() < 200);
+        }
+        for partial in [
+            "<S S=\"Error\">truncated",
+            "_x000D__x000A_",
+            "<!DOCTYPE html>",
+            "<script>var",
+        ] {
+            assert!(!super::lifecycle_error_detail(partial).contains(partial));
+        }
+        assert_eq!(
+            super::lifecycle_error_detail("normal failure"),
+            "normal failure"
+        );
+        assert_eq!(
+            super::lifecycle_error_detail(&"错".repeat(10000))
+                .chars()
+                .count(),
+            1200
+        );
+    }
+
     #[cfg(target_os = "windows")]
     #[test]
     fn independent_windows_installs_never_share_a_batch_file() {
