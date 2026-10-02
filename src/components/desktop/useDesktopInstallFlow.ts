@@ -3,6 +3,7 @@ import { useEffect, useRef, useState } from "react";
 import { settingsApi } from "@/lib/api";
 import type { ToolVersionInfo } from "@/lib/api/settings";
 import type { YuanhengToolId } from "@/lib/api/yuanheng";
+import { ensureClaudeWorkspaceReady } from "@/lib/claudeWorkspaceSetup";
 
 const OFFICIAL_DOWNLOAD_HOSTS = new Set([
   "claude.ai",
@@ -13,9 +14,6 @@ const OFFICIAL_DOWNLOAD_HOSTS = new Set([
 ]);
 const POLL_INTERVAL_MS = 3_000;
 const INSTALL_MONITOR_TIMEOUT_MS = 5 * 60_000;
-
-const wait = (duration: number) =>
-  new Promise<void>((resolve) => window.setTimeout(resolve, duration));
 
 function assertOfficialDownloadUrl(rawUrl: string) {
   const url = new URL(rawUrl);
@@ -29,32 +27,73 @@ export type DesktopInstallMonitorResult =
   | { status: "timeout" }
   | { status: "cancelled" };
 
-/**
- * 打开官方安装入口后，以低频本机探测等待安装完成。
- * 不自动执行下载文件；检测到应用后由调用方继续配置和验证。
- */
+/** Stop observing an IPC without pretending to cancel its shared backend work. */
+function observe<T>(
+  promise: Promise<T>,
+  signal: AbortSignal,
+): Promise<T | undefined> {
+  return new Promise((resolve, reject) => {
+    const stop = () => resolve(undefined);
+    if (signal.aborted) {
+      resolve(undefined);
+      return;
+    }
+    signal.addEventListener("abort", stop, { once: true });
+    promise.then(
+      (value) => {
+        signal.removeEventListener("abort", stop);
+        resolve(signal.aborted ? undefined : value);
+      },
+      (error) => {
+        signal.removeEventListener("abort", stop);
+        if (signal.aborted) resolve(undefined);
+        else reject(error);
+      },
+    );
+  });
+}
+
+function pause(signal: AbortSignal): Promise<void> {
+  return new Promise((resolve) => {
+    const finish = () => {
+      window.clearTimeout(timer);
+      signal.removeEventListener("abort", finish);
+      resolve();
+    };
+    const timer = window.setTimeout(finish, POLL_INTERVAL_MS);
+    if (signal.aborted) finish();
+    else signal.addEventListener("abort", finish, { once: true });
+  });
+}
+
+/** Opening a web page is not a download task. Observe local installation only. */
 export function useDesktopInstallFlow() {
   const [monitoringApps, setMonitoringApps] = useState<Set<YuanhengToolId>>(
     () => new Set(),
   );
-  const generations = useRef(new Map<YuanhengToolId, number>());
+  const monitors = useRef(new Map<YuanhengToolId, AbortController>());
 
   useEffect(
     () => () => {
-      for (const app of generations.current.keys()) {
-        generations.current.set(app, (generations.current.get(app) ?? 0) + 1);
-      }
+      for (const controller of monitors.current.values()) controller.abort();
+      monitors.current.clear();
     },
     [],
   );
 
   const stop = (app: YuanhengToolId) => {
-    generations.current.set(app, (generations.current.get(app) ?? 0) + 1);
+    monitors.current.get(app)?.abort();
+    monitors.current.delete(app);
     setMonitoringApps((current) => {
       const next = new Set(current);
       next.delete(app);
       return next;
     });
+  };
+  const stopAll = () => {
+    for (const controller of monitors.current.values()) controller.abort();
+    monitors.current.clear();
+    setMonitoringApps(new Set());
   };
 
   const openAndMonitor = async (
@@ -63,28 +102,43 @@ export function useDesktopInstallFlow() {
     downloadUrl: string,
   ): Promise<DesktopInstallMonitorResult> => {
     assertOfficialDownloadUrl(downloadUrl);
-    const generation = (generations.current.get(app) ?? 0) + 1;
-    generations.current.set(app, generation);
+    monitors.current.get(app)?.abort();
+    const controller = new AbortController();
+    monitors.current.set(app, controller);
     setMonitoringApps((current) => new Set(current).add(app));
-    await settingsApi.openExternal(downloadUrl);
-
-    const deadline = Date.now() + INSTALL_MONITOR_TIMEOUT_MS;
+    let timedOut = false;
+    let timeout: number | undefined;
+    const stopped = (): DesktopInstallMonitorResult => ({
+      status: timedOut ? "timeout" : "cancelled",
+    });
     try {
-      while (Date.now() < deadline) {
-        if (generations.current.get(app) !== generation) {
-          return { status: "cancelled" };
-        }
-        const [tool] = await settingsApi.getInstalledToolVersions([
-          versionTarget,
-        ]);
-        if (tool?.version || tool?.install_path) {
-          return { status: "detected", tool };
-        }
-        await wait(POLL_INTERVAL_MS);
+      if (app === "claude-desktop") {
+        await observe(ensureClaudeWorkspaceReady(), controller.signal);
+        if (controller.signal.aborted) return stopped();
       }
-      return { status: "timeout" };
+      // The five-minute browser/install observation budget starts after system
+      // preparation. Stopping this observer never cancels Windows servicing.
+      timeout = window.setTimeout(() => {
+        timedOut = true;
+        controller.abort();
+      }, INSTALL_MONITOR_TIMEOUT_MS);
+      await observe(settingsApi.openExternal(downloadUrl), controller.signal);
+      while (!controller.signal.aborted) {
+        const tools = await observe(
+          settingsApi.getInstalledToolVersions([versionTarget]),
+          controller.signal,
+        );
+        if (controller.signal.aborted) return stopped();
+        const tool = tools?.[0];
+        if (tool?.version || tool?.install_path)
+          return { status: "detected", tool };
+        await pause(controller.signal);
+      }
+      return stopped();
     } finally {
-      if (generations.current.get(app) === generation) {
+      window.clearTimeout(timeout);
+      if (monitors.current.get(app) === controller) {
+        monitors.current.delete(app);
         setMonitoringApps((current) => {
           const next = new Set(current);
           next.delete(app);
@@ -93,6 +147,5 @@ export function useDesktopInstallFlow() {
       }
     }
   };
-
-  return { monitoringApps, openAndMonitor, stop };
+  return { monitoringApps, openAndMonitor, stop, stopAll };
 }

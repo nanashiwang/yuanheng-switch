@@ -3,6 +3,7 @@
 mod auth;
 mod balance;
 mod claude_desktop_diagnostics;
+mod claude_workspace_setup;
 mod codex_oauth;
 mod coding_plan;
 mod config;
@@ -44,6 +45,7 @@ mod yuanheng;
 
 pub use auth::*;
 pub use balance::*;
+pub use claude_workspace_setup::*;
 pub use codex_oauth::*;
 pub use coding_plan::*;
 pub use config::*;

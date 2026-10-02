@@ -55,7 +55,11 @@ vi.mock("@/lib/query/toolInventory", () => ({
   }),
 }));
 vi.mock("@/components/desktop/useDesktopInstallFlow", () => ({
-  useDesktopInstallFlow: () => ({ monitoringApps: new Set(), stop: vi.fn() }),
+  useDesktopInstallFlow: () => ({
+    monitoringApps: new Set(),
+    stop: vi.fn(),
+    stopAll: vi.fn(),
+  }),
 }));
 vi.mock("@/components/desktop/useToolLaunchDirectories", () => ({
   useToolLaunchDirectories: () => ({ directories: {}, pendingApps: new Set() }),

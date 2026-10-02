@@ -1,4 +1,15 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import {
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  useSyncExternalStore,
+} from "react";
+import {
+  claudeWorkspaceSetup,
+  ClaudeWorkspaceDeferredError,
+} from "@/lib/claudeWorkspaceSetup";
+import { isWindows } from "@/lib/platform";
 import {
   Check,
   CheckCircle2,
@@ -152,6 +163,10 @@ function ToolSetupGridContent({
   const codexAccountMode = useCodexAccountMode();
   const preflight = usePreflightYuanhengTool();
   const desktopInstall = useDesktopInstallFlow();
+  const workspaceSetup = useSyncExternalStore(
+    claudeWorkspaceSetup.subscribe,
+    claudeWorkspaceSetup.getSnapshot,
+  );
   const cliLifecycle = useToolLifecycleState();
   const launchDirectoryState = useToolLaunchDirectories();
   const versions = useToolInventory();
@@ -360,6 +375,11 @@ function ToolSetupGridContent({
       }
       return succeeded.length > 0 && failed.length === 0;
     } catch (error) {
+      if (error instanceof ClaudeWorkspaceDeferredError) {
+        toast.info(error.message);
+        onConfigured?.();
+        return false;
+      }
       toast.error(extractErrorMessage(error) || dt("工具配置失败"));
       return false;
     } finally {
@@ -447,10 +467,16 @@ function ToolSetupGridContent({
           versionTarget,
           downloadUrl,
         );
-        toast.success(
-          dt("已打开 {{v0}} 官方下载页，安装完成后请刷新检测", {
-            v0: toolLabel(app),
-          }),
+        const notifyDownload =
+          app === "claude-desktop" && isWindows() ? toast.info : toast.success;
+        notifyDownload(
+          app === "claude-desktop" && isWindows()
+            ? dt(
+                "先准备 Claude 必要组件，通过后自动打开官方下载页；可能需要管理员授权及重启。",
+              )
+            : dt("已打开 {{v0}} 官方下载页，安装完成后请刷新检测", {
+                v0: toolLabel(app),
+              }),
         );
         const result = await monitor;
         if (result.status === "cancelled") return;
@@ -611,6 +637,7 @@ function ToolSetupGridContent({
   };
 
   const refresh = async () => {
+    desktopInstall.stopAll();
     clearToolInventoryCache();
     // Local re-detection must not wait on the model directory/network.
     // Models retain their own explicit refresh action.
@@ -623,6 +650,40 @@ function ToolSetupGridContent({
       toast.error(dt("网站模型同步失败，已保留上次可用列表"));
     });
   };
+
+  useEffect(() => {
+    if (
+      !workspaceSetup.resumeRequested ||
+      versions.isLoading ||
+      statuses.isLoading ||
+      busy
+    )
+      return;
+    if (!claudeWorkspaceSetup.consumeContinue()) return;
+    if (versions.isError || statuses.isError) {
+      toast.info(
+        dt(
+          "基础环境已就绪，但工具检测未完成。请先点击重新检测，再继续配置 Claude。",
+        ),
+      );
+      return;
+    }
+    if (!isInstalled("claude-desktop")) {
+      void installTool("claude-desktop");
+    } else if (connection?.connected) {
+      void launchTool("claude-desktop", false);
+    } else {
+      toast.info(dt("运行环境已准备，请先连接元衡账号，再配置 Claude。"));
+    }
+  }, [
+    workspaceSetup.resumeRequested,
+    versions.isLoading,
+    statuses.isLoading,
+    versions.isError,
+    statuses.isError,
+    busy,
+    connection?.connected,
+  ]);
 
   return (
     <div className="space-y-4">
@@ -718,7 +779,9 @@ function ToolSetupGridContent({
           const installed = isInstalled(app);
           const cliPhase = cliLifecycle.get(TOOL_VERSION_TARGETS[app] ?? "");
           const installing =
-            desktopInstall.monitoringApps.has(app) || Boolean(cliPhase);
+            desktopInstall.monitoringApps.has(app) ||
+            Boolean(cliPhase) ||
+            (app === "claude-desktop" && workspaceSetup.busy);
           const status = statusMap.get(app);
           const configured = Boolean(status?.configured);
           const selectable = Boolean(
@@ -1219,9 +1282,11 @@ function ToolSetupGridContent({
                     className="flex-1"
                     disabled={installing}
                     aria-label={
-                      DESKTOP_DOWNLOAD_URLS[app]
-                        ? dt("打开 {{v0}} 官方下载页", { v0: toolLabel(app) })
-                        : dt("一键安装 {{v0}}", { v0: toolLabel(app) })
+                      app === "claude-desktop" && isWindows()
+                        ? dt("安装并准备 Claude Desktop")
+                        : DESKTOP_DOWNLOAD_URLS[app]
+                          ? dt("打开 {{v0}} 官方下载页", { v0: toolLabel(app) })
+                          : dt("一键安装 {{v0}}", { v0: toolLabel(app) })
                     }
                     onClick={(event) => {
                       event.stopPropagation();
@@ -1234,12 +1299,16 @@ function ToolSetupGridContent({
                       <Download className="h-3.5 w-3.5" />
                     )}
                     {installing
-                      ? cliPhase
-                        ? toolInstallLabel(cliPhase)
-                        : dt("等待安装")
-                      : DESKTOP_DOWNLOAD_URLS[app]
-                        ? dt("官方下载")
-                        : dt("一键安装")}
+                      ? app === "claude-desktop" && workspaceSetup.busy
+                        ? dt("准备运行环境")
+                        : cliPhase
+                          ? toolInstallLabel(cliPhase)
+                          : dt("等待安装")
+                      : app === "claude-desktop" && isWindows()
+                        ? dt("安装并准备")
+                        : DESKTOP_DOWNLOAD_URLS[app]
+                          ? dt("官方下载")
+                          : dt("一键安装")}
                   </Button>
                 ) : (
                   <Button

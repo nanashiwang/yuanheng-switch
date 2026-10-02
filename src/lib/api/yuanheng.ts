@@ -1,5 +1,9 @@
 import { invoke } from "@tauri-apps/api/core";
 import type { AppId } from "./types";
+import {
+  ensureClaudeWorkspaceReady,
+  ClaudeWorkspaceDeferredError,
+} from "@/lib/claudeWorkspaceSetup";
 
 export type YuanhengToolId = AppId | "chatgpt-desktop" | "workbuddy" | "dsh";
 
@@ -316,18 +320,35 @@ export const yuanhengApi = {
     return invoke("export_yuanheng_diagnostics", { filePath, snapshotId });
   },
 
-  configureTools(
+  async configureTools(
     apps: YuanhengToolId[],
     models?: Partial<Record<YuanhengToolId, string>>,
     groups?: Partial<Record<YuanhengToolId, string>>,
     reasoning?: Partial<Record<YuanhengToolId, YuanhengReasoningLevel>>,
   ): Promise<YuanhengToolConfigureResult[]> {
-    return invoke("configure_yuanheng_tools", {
-      apps,
-      models,
-      groups,
-      reasoning,
-    });
+    // Save the selected account/model/group through the existing transactional
+    // path before a required reboot; no credentials go into the UI resume marker.
+    const result = await invoke<YuanhengToolConfigureResult[]>(
+      "configure_yuanheng_tools",
+      {
+        apps,
+        models,
+        groups,
+        reasoning,
+      },
+    );
+    if (
+      result.some((item) => item.app === "claude-desktop" && item.configured)
+    ) {
+      try {
+        await ensureClaudeWorkspaceReady();
+      } catch (error) {
+        throw new ClaudeWorkspaceDeferredError(
+          `Claude 配置已保存，运行环境尚未准备完成。${error instanceof Error ? error.message : "请在准备窗口中继续。"}`,
+        );
+      }
+    }
+    return result;
   },
 
   getLaunchDirectory(app: YuanhengToolId): Promise<string | null> {
@@ -338,11 +359,12 @@ export const yuanhengApi = {
     return invoke("set_tool_launch_cwd", { tool: app, cwd });
   },
 
-  launchTool(
+  async launchTool(
     app: YuanhengToolId | "dsh-web",
     restart = false,
     cwd?: string,
   ): Promise<boolean> {
+    if (app === "claude-desktop") await ensureClaudeWorkspaceReady();
     return invoke(
       "launch_tool",
       cwd ? { tool: app, restart, cwd } : { tool: app, restart },

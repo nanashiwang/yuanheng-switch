@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
+import { ClaudeWorkspaceDeferredError } from "@/lib/claudeWorkspaceSetup";
 import { useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import {
@@ -249,6 +250,7 @@ export function useModelSwitchCenter() {
         : "ready";
 
   const retryBootstrap = async () => {
+    desktopInstall.stopAll();
     clearToolInventoryCache();
     preflightCache.current.clear();
     await Promise.all([
@@ -321,10 +323,14 @@ export function useModelSwitchCenter() {
           command,
           downloadUrl,
         );
-        toast.success(
-          dt("已打开 {{v0}} 官方下载页，安装完成后请刷新检测", {
-            v0: toolLabel(app),
-          }),
+        toast.info(
+          app === "claude-desktop"
+            ? dt(
+                "先检查 Claude 必要组件，通过后打开官方下载页；安装完成后自动检测。",
+              )
+            : dt("已打开 {{v0}} 官方下载页，安装完成后请刷新检测", {
+                v0: toolLabel(app),
+              }),
         );
         const result = await monitor;
         if (result.status === "cancelled") return;
@@ -566,6 +572,13 @@ export function useModelSwitchCenter() {
       await queryClient.invalidateQueries({ queryKey: ["yuanheng"] });
       await activationStatuses.refetch();
     } catch (error) {
+      if (error instanceof ClaudeWorkspaceDeferredError) {
+        if (isCurrentOperation(app, operationId)) {
+          markRestartRequired(app);
+          toast.info(error.message);
+        }
+        return;
+      }
       if (isCurrentOperation(app, operationId)) {
         setModels((current) => {
           const next = { ...current };

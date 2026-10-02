@@ -6,6 +6,36 @@ import { DESKTOP_ZH_TW } from "./desktopI18n.zhTW";
 type Values = Record<string, string | number | null | undefined>;
 
 export const DESKTOP_EN: Record<string, string> = {
+  "基础环境已就绪，但工具检测未完成。请先点击重新检测，再继续配置 Claude。":
+    "Prerequisites are ready, but tool detection did not finish. Redetect tools before continuing Claude setup.",
+  "准备 Claude Desktop 运行环境": "Prepare Claude Desktop",
+  "安装应用、Windows 基础环境、官方工作区下载和模型连接分别检查；准备过程中不会自动重启或调用收费模型。":
+    "App installation, Windows prerequisites, official workspace downloads and model connectivity are separate checks. Preparation never reboots automatically or invokes paid models.",
+  "正在检查 Windows 运行环境…": "Checking Windows prerequisites…",
+  "请保存工作后重启 Windows。重新打开元衡会恢复检查，之后点击继续即可，不需要重新填写密钥。":
+    "Save your work and restart Windows. Reopen YuanHeng to resume checks, then continue without re-entering keys.",
+  "继续安装或配置 Claude": "Continue Claude setup",
+  准备必要组件: "Prepare required components",
+  "正在准备，请稍候": "Preparing, please wait",
+  "继续准备 Claude": "Resume Claude setup",
+  后台继续: "Continue in background",
+  "安装并准备 Claude Desktop": "Install and prepare Claude Desktop",
+  安装并准备: "Install and prepare",
+  准备运行环境: "Preparing environment",
+  "运行环境已准备，请先连接元衡账号，再配置 Claude。":
+    "Prerequisites are ready. Connect your YuanHeng account before configuring Claude.",
+  "先准备 Claude 必要组件，通过后自动打开官方下载页；可能需要管理员授权及重启。":
+    "Preparing Claude prerequisites before opening the official download page. Administrator approval and a restart may be required.",
+  "先检查 Claude 必要组件，通过后打开官方下载页；安装完成后自动检测。":
+    "Checking Claude prerequisites before opening the official download page. Installation is detected automatically.",
+  "搜索模型名称或厂商…": "Search models or vendors…",
+  按厂商筛选: "Filter by vendor",
+  "显示 {{visible}} / {{total}} 个模型":
+    "Showing {{visible}} / {{total}} models",
+  清除筛选: "Clear filters",
+  当前使用: "Currently selected",
+  "{{count}} 个可用分组": "{{count}} available groups",
+  "{{count}} 档推理等级": "{{count}} reasoning levels",
   "WSL 安装暂不支持安全取消，请在对应发行版检查进程":
     "Safe cancellation is unavailable for WSL. Check processes in the target distribution.",
   "取消不回滚已写文件；停止后请先重新检测":

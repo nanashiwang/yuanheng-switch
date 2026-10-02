@@ -2,8 +2,6 @@
 //! features or exports the local gateway credential.
 use super::yuanheng::YuanhengDiagnosticCheck;
 use crate::database::Database;
-#[cfg(any(windows, test))]
-use serde::Deserialize;
 use std::time::Duration;
 
 fn check(id: &str, ok: bool, title: &str, message: &str) -> YuanhengDiagnosticCheck {
@@ -95,56 +93,36 @@ fn probe_url(base: &str) -> Option<url::Url> {
     Some(url)
 }
 
-#[derive(Default, Deserialize)]
-#[serde(rename_all = "camelCase")]
 #[cfg(any(windows, test))]
-struct WindowsFeatures {
-    virtual_machine_platform: Option<u32>,
-    hypervisor_present: Option<bool>,
-}
-
-#[cfg(any(windows, test))]
-fn environment_check(output: Option<&[u8]>) -> YuanhengDiagnosticCheck {
-    let features = output
-        .filter(|bytes| bytes.len() <= 4096)
-        .and_then(|bytes| serde_json::from_slice::<WindowsFeatures>(bytes).ok())
-        .unwrap_or_default();
-    let (ok, message) = match (features.virtual_machine_platform, features.hypervisor_present) {
-        (Some(1), Some(true)) => (true, "Windows 虚拟化基础检查通过；未验证 Claude 工作区组件下载、虚拟机启动或实际模型请求。"),
-        (Some(2 | 3), _) => (false, "Windows 虚拟机平台未启用或未安装，可能阻止 Claude 工作区启动；请按官方指引处理，不代表本地网关故障的唯一原因。"),
-        (_, Some(false)) => (false, "未检测到运行中的 Windows Hypervisor；请确认硬件虚拟化、系统功能及重启状态，不自动修改系统设置。"),
-        _ => (false, "Windows 虚拟化状态未能确认（权限、超时或系统接口不可用）；未知不等于未启用，请在系统功能中核对。"),
+fn environment_check(
+    result: Result<super::claude_workspace_setup::WorkspacePreparation, String>,
+) -> YuanhengDiagnosticCheck {
+    let (ok, message) = match result {
+        Ok(state) => (
+            state.phase == super::claude_workspace_setup::WorkspacePhase::Ready,
+            state.message,
+        ),
+        Err(_) => (
+            false,
+            "Windows 运行环境状态未能确认；请在工具管理中重新检查，未知不等于未启用。".into(),
+        ),
     };
     check(
         "claude_desktop_environment",
         ok,
         "Claude Desktop Windows 运行环境",
-        message,
+        &message,
     )
 }
 
 pub(crate) async fn windows_environment() -> Option<YuanhengDiagnosticCheck> {
     #[cfg(windows)]
     {
-        // CIM queries are read-only and need no UAC prompt. Failure stays unknown.
-        let script = r#"
-$ErrorActionPreference = 'Stop'
-try {
-  $feature = Get-CimInstance Win32_OptionalFeature -Filter "Name='VirtualMachinePlatform'"
-  $computer = Get-CimInstance Win32_ComputerSystem
-  @{virtualMachinePlatform=$feature.InstallState; hypervisorPresent=$computer.HypervisorPresent} |
-    ConvertTo-Json -Compress
-} catch { Write-Output '{}' }
-"#;
-        let mut command = tokio::process::Command::new("powershell.exe");
-        command.args(["-NoProfile", "-NonInteractive", "-Command", script]);
-        command.creation_flags(0x08000000).kill_on_drop(true);
-        let output = tokio::time::timeout(Duration::from_secs(5), command.output()).await;
-        let bytes = match &output {
-            Ok(Ok(output)) if output.status.success() => Some(output.stdout.as_slice()),
-            _ => None,
-        };
-        Some(environment_check(bytes))
+        // Same read-only state machine as install/launch: a pending reboot must
+        // not be green here while the preparation dialog says it is not ready.
+        Some(environment_check(
+            super::claude_workspace_setup::get_claude_workspace_preparation().await,
+        ))
     }
     #[cfg(not(windows))]
     {
@@ -179,20 +157,31 @@ mod tests {
 
     #[test]
     fn unknown_is_not_disabled_and_enabled_does_not_claim_inference_works() {
-        let unknown = environment_check(None);
+        use super::super::claude_workspace_setup::{WorkspacePhase, WorkspacePreparation};
+        let unknown = environment_check(Err("private raw error".into()));
         assert_eq!(unknown.status, "warning");
         assert!(unknown.message.contains("未知不等于未启用"));
-        let disabled = environment_check(Some(br#"{"virtualMachinePlatform":2}"#));
-        assert!(disabled.message.contains("未启用或未安装"));
-        let enabled = environment_check(Some(
-            br#"{"virtualMachinePlatform":1,"hypervisorPresent":true}"#,
-        ));
-        assert_eq!(enabled.status, "ok");
-        assert!(enabled.message.contains("未验证"));
-        assert_eq!(
-            environment_check(Some(b"secret raw error")).message,
-            unknown.message
-        );
+        assert!(!unknown.message.contains("private"));
+        for phase in [
+            WorkspacePhase::RestartRequired,
+            WorkspacePhase::Preparing,
+            WorkspacePhase::Unknown,
+        ] {
+            assert_eq!(
+                environment_check(Ok(WorkspacePreparation {
+                    phase,
+                    message: "not ready".into()
+                }))
+                .status,
+                "warning"
+            );
+        }
+        let ready = environment_check(Ok(WorkspacePreparation {
+            phase: WorkspacePhase::Ready,
+            message: "仅基础环境通过，不代表模型成功".into(),
+        }));
+        assert_eq!(ready.status, "ok");
+        assert!(ready.message.contains("不代表模型成功"));
     }
 
     #[tokio::test]

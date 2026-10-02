@@ -1,3 +1,4 @@
+import claudeWindowsInstaller from "../../../src-tauri/scripts/install-claude-windows.ps1?raw";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   Download,
@@ -154,7 +155,7 @@ npm i -g openclaw@latest
 ${posixScriptInstallCommand("https://raw.githubusercontent.com/NousResearch/hermes-agent/main/scripts/install.sh")}`;
 
 const WINDOWS_ONE_CLICK_INSTALL_COMMANDS = `# Claude Code
-irm https://claude.ai/install.ps1 | iex
+powershell -NoProfile -NonInteractive -EncodedCommand ${powershellEncodedCommand(claudeWindowsInstaller)}
 # 以下 npm 工具需要先安装 Node.js LTS：https://nodejs.org/en/download
 # Codex
 npm i -g @openai/codex@latest
