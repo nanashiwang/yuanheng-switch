@@ -629,6 +629,14 @@ describe("App integration with MSW", { timeout: 15_000 }, () => {
     const reasoningPicker = screen.getByLabelText("Codex 快捷推理等级");
 
     fireEvent.click(groupPicker);
+    const callsBeforeFavorite = getConfiguredToolGroupCalls().length;
+    const groupBeforeFavorite = groupPicker.textContent;
+    fireEvent.click(
+      await screen.findByRole("button", { name: /^(取消)?收藏分组 vip$/ }),
+    );
+    expect(getConfiguredToolGroupCalls()).toHaveLength(callsBeforeFavorite);
+    expect(groupPicker.textContent).toBe(groupBeforeFavorite);
+    expect(screen.getByRole("dialog")).toBeInTheDocument();
     fireEvent.click(await screen.findByRole("option", { name: /vip · 0.8x/ }));
     await waitFor(() =>
       expect(getConfiguredToolGroupCalls()).toContainEqual({ codex: "vip" }),
@@ -689,6 +697,14 @@ describe("App integration with MSW", { timeout: 15_000 }, () => {
     const groupPicker = await screen.findByLabelText("Codex 当前工具令牌分组");
     expect(groupPicker.tagName).toBe("BUTTON");
     fireEvent.click(groupPicker);
+    const callsBeforeFavorite = getConfiguredToolGroupCalls().length;
+    const groupBeforeFavorite = groupPicker.textContent;
+    fireEvent.click(
+      await screen.findByRole("button", { name: /^(取消)?收藏分组 vip$/ }),
+    );
+    expect(getConfiguredToolGroupCalls()).toHaveLength(callsBeforeFavorite);
+    expect(groupPicker.textContent).toBe(groupBeforeFavorite);
+    expect(screen.getByRole("dialog")).toBeInTheDocument();
     fireEvent.click(await screen.findByRole("option", { name: /vip · 0.8x/ }));
     await waitFor(() =>
       expect(getConfiguredToolGroupCalls()).toContainEqual({ codex: "vip" }),
@@ -991,6 +1007,14 @@ describe("App integration with MSW", { timeout: 15_000 }, () => {
       "gpt-5.6-sol",
     );
     fireEvent.click(groupPicker);
+    const callsBeforeFavorite = getConfiguredToolGroupCalls().length;
+    const groupBeforeFavorite = groupPicker.textContent;
+    fireEvent.click(
+      await screen.findByRole("button", { name: /^(取消)?收藏分组 vip$/ }),
+    );
+    expect(getConfiguredToolGroupCalls()).toHaveLength(callsBeforeFavorite);
+    expect(groupPicker.textContent).toBe(groupBeforeFavorite);
+    expect(screen.getByRole("dialog")).toBeInTheDocument();
     fireEvent.click(
       await screen.findByRole("option", { name: /^vip · 0.5x$/ }),
     );

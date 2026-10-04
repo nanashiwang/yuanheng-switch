@@ -15,6 +15,7 @@ import { ProviderIcon } from "@/components/ProviderIcon";
 import type { YuanhengReasoningLevel, YuanhengToolId } from "@/lib/api";
 import { ModelPicker } from "./ModelPicker";
 import { CompactSelectPicker } from "./CompactSelectPicker";
+import { GroupPicker } from "./GroupPicker";
 import {
   DESKTOP_DOWNLOAD_URLS,
   isDesktopApp,
@@ -462,7 +463,7 @@ export function ModelSwitchCenter({
                         <span className="mb-1 block text-[9px] font-medium text-muted-foreground">
                           {dt("令牌分组")}
                         </span>
-                        <CompactSelectPicker
+                        <GroupPicker
                           label={dt("{{v0}} 快捷令牌分组", {
                             v0: toolLabel(app),
                           })}

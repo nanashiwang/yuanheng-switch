@@ -64,6 +64,7 @@ import { ProviderIcon } from "@/components/ProviderIcon";
 import { Button } from "@/components/ui/button";
 import { ModelPicker } from "./ModelPicker";
 import { CompactSelectPicker } from "./CompactSelectPicker";
+import { GroupPicker } from "./GroupPicker";
 import { cn } from "@/lib/utils";
 import { extractErrorMessage } from "@/utils/errorUtils";
 import { dt } from "./desktopI18n";
@@ -1130,7 +1131,7 @@ function ToolSetupGridContent({
                       <span className="shrink-0 text-muted-foreground">
                         {dt("令牌分组")}
                       </span>
-                      <CompactSelectPicker
+                      <GroupPicker
                         label={dt("{{v0}} 令牌分组", {
                           v0: toolLabel(app),
                         })}

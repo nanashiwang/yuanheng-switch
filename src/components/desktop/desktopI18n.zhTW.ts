@@ -1,5 +1,19 @@
 // Generated from the desktop Simplified Chinese source strings, then normalized for Taiwan terminology.
 export const DESKTOP_ZH_TW: Record<string, string> = {
+  "搜索令牌分组…": "搜尋權杖群組…",
+  "星标收藏置顶，仅在本机保存": "星號收藏置頂，僅儲存在本機",
+  没有找到匹配的分组: "找不到符合的群組",
+  "收藏分组 {{name}}": "收藏群組 {{name}}",
+  "取消收藏分组 {{name}}": "取消收藏群組 {{name}}",
+
+  常用收藏: "常用收藏",
+  "收藏模型 {{name}}": "收藏模型 {{name}}",
+  "取消收藏模型 {{name}}": "取消收藏模型 {{name}}",
+  "收藏厂商 {{name}}": "收藏廠商 {{name}}",
+  "取消收藏厂商 {{name}}": "取消收藏廠商 {{name}}",
+  "无法保存收藏，请检查本地存储后重试":
+    "無法儲存收藏，請檢查本機儲存空間後重試",
+
   "基础环境已就绪，但工具检测未完成。请先点击重新检测，再继续配置 Claude。":
     "基礎環境已就緒，但工具偵測未完成。請先重新偵測，再繼續設定 Claude。",
   "准备 Claude Desktop 运行环境": "準備 Claude Desktop 執行環境",

@@ -50,4 +50,15 @@ Claude diagnostic persistence uses a bounded background writer, not disk I/O on 
 
 ## 模型选择器信息层级（2026-10-02，本地）
 
-所有现有 `ModelPicker` 入口复用 `modelVendors` 识别与排序：当前模型单独分区且不重复，其余厂商分组；固定搜索、厂商筛选和匹配数量，列表独立滚动。厂商/名称搜索取交集，禁用项保持禁用，不补造目录外模型，不改 onChange/onRefresh、配置写入与权限。推荐保留标签并在组内优先，不宣称官方最新顺序；重新打开重置筛选。回归：`ModelPicker.groups.test.tsx`、`ModelPicker.refresh.test.tsx` 和应用集成切换流程。
+所有现有 `ModelPicker` 入口复用 `modelVendors` 识别与排序：当前模型单独分区且不重复，当前目录内收藏模型/收藏厂商下模型进入常用区，其余厂商分组；固定搜索、厂商筛选和匹配数量，列表独立滚动。厂商/名称搜索取交集，禁用项保持禁用，不补造目录外模型，不改 onChange/onRefresh、配置写入与权限。推荐保留标签并在组内优先，不宣称官方最新顺序；重新打开重置筛选。回归：`ModelPicker.groups.test.tsx`、`ModelPicker.refresh.test.tsx` 和应用集成切换流程。
+
+
+## 令牌分组与模型本地收藏（2026-10-04，本地）
+
+实际分组入口是工具管理 `ToolSetupGrid` 的“令牌分组”、快捷控制台 `ModelSwitchCenter` 的“快捷令牌分组”、当前工具 `FocusToolCard` 的“3 · 令牌分组”。三处使用 [GroupPicker](../src/components/desktop/GroupPicker.tsx)，支持搜索、星标收藏置顶，比例和分组名继续来自原 options。收藏不调用 onChange；工具管理仍点击配置/启动后保存，快捷控制台和当前工具仍显式选择后应用。厂商与推理等级下拉仍使用原 CompactSelectPicker。
+
+[ModelPicker](../src/components/desktop/ModelPicker.tsx) 同时支持模型/厂商星标，只从当前传入模型目录展示。收藏不会增加任何厂商、模型或分组权限；已保存但目录外的分组值仍显示原值，不冒充首项或补入选项，不自动换组。
+
+[本地收藏存储](../src/components/desktop/useModelFavorites.ts) 使用固定 `yuanheng:group-favorites:v1` / `yuanheng:model-favorites:v1` key，只存分组名、模型 ID、厂商 ID，不含 API 密钥、账号或地址。偏好在同一客户端本地存储范围内跨入口共享（不按账号隔离），退出/切换账号不会清除偏好，但展示严格受新目录限制。不与 newapi 网页或其他设备同步；清理本地存储会丢失收藏。损坏数据回退空值，不可写提示失败且不影响正常选择。
+
+回归：`GroupPicker.favorites.test.tsx`、`ModelPicker.favorites.test.tsx`、既有分组/刷新测试及 `tests/integration/App.test.tsx` 三入口配置边界。决定与已验证范围见[本地收藏笔记](../.agents/notes/implemented/feature/2026-10-04-model-picker-favorites.md)。

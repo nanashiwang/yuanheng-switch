@@ -6,6 +6,21 @@ import { DESKTOP_ZH_TW } from "./desktopI18n.zhTW";
 type Values = Record<string, string | number | null | undefined>;
 
 export const DESKTOP_EN: Record<string, string> = {
+  "搜索令牌分组…": "Search token groups…",
+  "星标收藏置顶，仅在本机保存":
+    "Star groups to pin them. Saved on this device only.",
+  没有找到匹配的分组: "No matching groups",
+  "收藏分组 {{name}}": "Favorite group {{name}}",
+  "取消收藏分组 {{name}}": "Unfavorite group {{name}}",
+
+  常用收藏: "Favorites",
+  "收藏模型 {{name}}": "Favorite model {{name}}",
+  "取消收藏模型 {{name}}": "Unfavorite model {{name}}",
+  "收藏厂商 {{name}}": "Favorite vendor {{name}}",
+  "取消收藏厂商 {{name}}": "Unfavorite vendor {{name}}",
+  "无法保存收藏，请检查本地存储后重试":
+    "Could not save favorites. Check local storage and try again.",
+
   "基础环境已就绪，但工具检测未完成。请先点击重新检测，再继续配置 Claude。":
     "Prerequisites are ready, but tool detection did not finish. Redetect tools before continuing Claude setup.",
   "准备 Claude Desktop 运行环境": "Prepare Claude Desktop",

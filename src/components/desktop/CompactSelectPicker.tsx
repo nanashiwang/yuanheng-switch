@@ -14,6 +14,17 @@ export interface CompactSelectOption {
   iconName?: string;
 }
 
+export interface CompactSelectPickerProps {
+  label: string;
+  value: string;
+  options: CompactSelectOption[];
+  disabled?: boolean;
+  triggerClassName?: string;
+  contentClassName?: string;
+  itemClassName?: string;
+  onChange: (value: string) => void;
+}
+
 const encodeValue = (value: string) => `value:${value}`;
 const decodeValue = (value: string) => value.slice("value:".length);
 
@@ -32,16 +43,7 @@ export function CompactSelectPicker({
   contentClassName,
   itemClassName,
   onChange,
-}: {
-  label: string;
-  value: string;
-  options: CompactSelectOption[];
-  disabled?: boolean;
-  triggerClassName?: string;
-  contentClassName?: string;
-  itemClassName?: string;
-  onChange: (value: string) => void;
-}) {
+}: CompactSelectPickerProps) {
   const selected =
     options.find((option) => option.value === value) ??
     (value ? undefined : options[0]);

@@ -13,6 +13,7 @@ import { isYuanhengCliTool, type YuanhengToolId } from "@/lib/api";
 import { ProviderIcon } from "@/components/ProviderIcon";
 import { ModelPicker } from "./ModelPicker";
 import { CompactSelectPicker } from "./CompactSelectPicker";
+import { GroupPicker } from "./GroupPicker";
 import { pickPreferredGroup, toolLabel } from "./ToolSetupGrid";
 import {
   providerIconOf,
@@ -471,7 +472,7 @@ export function FocusToolCard({
               <span className="mb-1 block text-[9px] font-medium text-white/50">
                 {dt("3 · 令牌分组")}
               </span>
-              <CompactSelectPicker
+              <GroupPicker
                 label={dt("{{v0}} 当前工具令牌分组", {
                   v0: toolLabel(app),
                 })}
