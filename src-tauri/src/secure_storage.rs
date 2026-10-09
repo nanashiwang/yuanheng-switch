@@ -113,7 +113,21 @@ pub(crate) fn authorize_access(_keys: &[&str]) -> Result<(), String> {
 
 #[cfg(any(not(target_os = "macos"), test))]
 pub(crate) fn verify_secret(key: &str, expected: &str) -> Result<bool, String> {
+    #[cfg(test)]
+    if VERIFICATION_BLOCKED.with(|blocked| blocked.get()) {
+        return Err("测试系统凭据回读被拒绝".into());
+    }
     Ok(get_secret(key)?.as_deref() == Some(expected))
+}
+
+#[cfg(test)]
+thread_local! {
+    static VERIFICATION_BLOCKED: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
+}
+
+#[cfg(test)]
+pub(crate) fn block_verification_for_tests(blocked: bool) {
+    VERIFICATION_BLOCKED.with(|state| state.set(blocked));
 }
 
 // 单元测试不能依赖开发机的真实 Keychain/Secret Service。测试替身只存在于
@@ -165,5 +179,6 @@ pub(crate) use test_backend::{delete_secret, get_secret, set_secret};
 
 #[cfg(test)]
 pub(crate) fn clear_for_tests() {
+    block_verification_for_tests(false);
     test_backend::clear();
 }

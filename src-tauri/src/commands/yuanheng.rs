@@ -443,10 +443,14 @@ fn migrate_legacy_yuanheng_secret(state: &AppState, key: &str) -> Result<(), Str
         Some(_) => {}
         None => {
             crate::secure_storage::set_secret(key, &legacy)?;
-            if !crate::secure_storage::verify_secret(key, &legacy)? {
-                return Err(format!("系统凭据写入校验失败: {key}"));
-            }
         }
+    }
+
+    // An earlier write/read may have populated the process cache. On every
+    // attempt, including retries, verify the actual store before deleting the
+    // only legacy copy; a cached match is not proof the item is still stored.
+    if !crate::secure_storage::verify_secret(key, &legacy)? {
+        return Err(format!("系统凭据写入校验失败: {key}"));
     }
 
     state
@@ -5917,6 +5921,38 @@ mod tests {
             );
             assert!(state.db.get_setting(key).unwrap().is_none());
         }
+        crate::secure_storage::clear_for_tests();
+    }
+
+    #[test]
+    #[serial]
+    fn migration_retry_keeps_legacy_copy_until_store_verification_succeeds() {
+        crate::secure_storage::clear_for_tests();
+        let (_home, state) = isolated_state();
+        state
+            .db
+            .set_setting(SESSION_COOKIE_KEY, "session=legacy")
+            .unwrap();
+        // Simulate a previous attempt that wrote the same value and populated
+        // the cache, but could not complete native read-back verification.
+        crate::secure_storage::set_secret(SESSION_COOKIE_KEY, "session=legacy").unwrap();
+        crate::secure_storage::block_verification_for_tests(true);
+        let result = migrate_legacy_yuanheng_secret(&state, SESSION_COOKIE_KEY);
+        crate::secure_storage::block_verification_for_tests(false);
+        assert!(result.is_err());
+        assert_eq!(
+            state.db.get_setting(SESSION_COOKIE_KEY).unwrap().as_deref(),
+            Some("session=legacy")
+        );
+
+        migrate_legacy_yuanheng_secret(&state, SESSION_COOKIE_KEY).unwrap();
+        assert!(state.db.get_setting(SESSION_COOKIE_KEY).unwrap().is_none());
+        assert_eq!(
+            crate::secure_storage::get_secret(SESSION_COOKIE_KEY)
+                .unwrap()
+                .as_deref(),
+            Some("session=legacy")
+        );
         crate::secure_storage::clear_for_tests();
     }
 
