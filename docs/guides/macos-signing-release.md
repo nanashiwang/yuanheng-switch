@@ -35,6 +35,8 @@ Tauri 更新密钥 `TAURI_SIGNING_PRIVATE_KEY` 及其密码继续沿用；自动
 
 本机离线回归：`python3 scripts/test_verify_macos_release.py`。实际签名和公证还需有凭据的 macOS 构建，不由模拟测试或 Secret 名称存在代替。首次公证可能需要更长时间；排错使用 Apple 返回的提交状态和日志，不通过关闭 Gatekeeper 或移除 quarantine 规避验收。
 
+构建停在 `Notarizing` 或被取消时，运行 [Apple Notarization Status](../../.github/workflows/apple-notarization-status.yml) 手动工作流，或执行 `gh workflow run apple-notarization-status.yml`。该任务复用现有三项公证凭据，只读取最近的元衡提交编号、时间和状态；不编译、不提交新的公证请求、不发布安装包。`In Progress` 表示仍在处理，`Accepted` 才表示 Apple 接受；空列表或 `Notarizing` 日志本身不能证明上传已完成。不要把 CI 超时等同于 Apple 拒绝。
+
 ## 发布验收边界
 
 只有两个 macOS 构建都通过真实公证和最终产物检查，才能称该版本已签名并公证。已发布的旧版安装包不就地覆盖，改用新的版本号生成整套安装包、更新签名和清单。其他用户设备上的首次安装仍应验证下载、拖入“应用程序”、首次打开及 Core 启动；首次正常的系统确认对话框不等于签名错误。

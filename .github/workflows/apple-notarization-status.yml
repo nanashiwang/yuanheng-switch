@@ -1,0 +1,48 @@
+name: Apple Notarization Status
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  inspect:
+    name: Read YuanHeng notarization status
+    runs-on: macos-15
+    timeout-minutes: 5
+    steps:
+      - name: Read Apple submission history
+        shell: bash
+        env:
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+        run: |
+          test -n "$APPLE_ID"
+          test -n "$APPLE_PASSWORD"
+          test -n "$APPLE_TEAM_ID"
+          xcrun notarytool history \
+            --apple-id "$APPLE_ID" \
+            --password "$APPLE_PASSWORD" \
+            --team-id "$APPLE_TEAM_ID" \
+            --output-format json > "$RUNNER_TEMP/apple-notary-history.json"
+          python3 - <<'PY'
+          import json
+          import os
+          from pathlib import Path
+
+          data = json.loads((Path(os.environ["RUNNER_TEMP"]) / "apple-notary-history.json").read_text())
+          history = data["history"]
+          assert isinstance(history, list), "Unexpected Apple history response"
+          entries = [entry for entry in history if entry.get("name") == "YuanHeng Desktop.zip"]
+          entries.sort(key=lambda entry: entry.get("createdDate", ""), reverse=True)
+          # Report only this app's submission metadata, never credentials or other apps.
+          report = [{key: entry.get(key) for key in ("id", "createdDate", "status")}
+                    for entry in entries[:10]]
+          rendered = json.dumps(report, ensure_ascii=True, indent=2)
+          print("Recent YuanHeng notarization submissions:")
+          print(rendered)
+          with open(os.environ["GITHUB_STEP_SUMMARY"], "a") as summary:
+              summary.write("### YuanHeng notarization status\n\n```json\n" + rendered + "\n```\n")
+          PY
