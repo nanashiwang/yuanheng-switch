@@ -443,8 +443,7 @@ fn migrate_legacy_yuanheng_secret(state: &AppState, key: &str) -> Result<(), Str
         Some(_) => {}
         None => {
             crate::secure_storage::set_secret(key, &legacy)?;
-            let verified = crate::secure_storage::get_secret(key)?;
-            if verified.as_deref() != Some(legacy.as_str()) {
+            if !crate::secure_storage::verify_secret(key, &legacy)? {
                 return Err(format!("系统凭据写入校验失败: {key}"));
             }
         }
@@ -4177,9 +4176,24 @@ fn configure_tool(
 }
 
 #[tauri::command]
-pub fn get_yuanheng_connection(
+pub async fn get_yuanheng_connection(
     state: State<'_, AppState>,
 ) -> Result<YuanhengConnectionStatus, String> {
+    read_cached_status(&state)
+}
+
+/// Explicit user action; never called by startup, refresh or diagnostics.
+#[tauri::command]
+pub async fn restore_yuanheng_keychain_access(
+    state: State<'_, AppState>,
+) -> Result<YuanhengConnectionStatus, String> {
+    // Keep any system dialog off the main/UI thread. Only our fixed service and
+    // keys are accessible, never caller-supplied keychain selectors.
+    tauri::async_runtime::spawn_blocking(|| {
+        crate::secure_storage::authorize_access(&YUANHENG_SECURE_KEYS)
+    })
+    .await
+    .map_err(|_| "恢复本机登录任务失败".to_string())??;
     read_cached_status(&state)
 }
 

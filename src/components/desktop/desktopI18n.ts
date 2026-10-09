@@ -6,6 +6,15 @@ import { DESKTOP_ZH_TW } from "./desktopI18n.zhTW";
 type Values = Record<string, string | number | null | undefined>;
 
 export const DESKTOP_EN: Record<string, string> = {
+  本机登录信息需要恢复访问: "Access to saved sign-in needs to be restored",
+  "macOS 暂时无法读取此前保存的元衡登录信息。点击下方按钮后，系统可能请求授权访问这些条目；取消会保留原有数据。":
+    "macOS cannot currently read your saved YuanHeng sign-in. Click below to allow a system authorization request for these items. Cancelling keeps your existing data.",
+  恢复本机登录: "Restore saved sign-in",
+  本机登录已恢复: "Saved sign-in restored",
+  "凭据访问已恢复，请重新登录":
+    "Credential access restored. Please sign in again.",
+  "未恢复访问，原有登录信息已保留。可稍后再次点击恢复。":
+    "Access was not restored. Your saved sign-in is unchanged. You can try again later.",
   "搜索令牌分组…": "Search token groups…",
   "星标收藏置顶，仅在本机保存":
     "Star groups to pin them. Saved on this device only.",

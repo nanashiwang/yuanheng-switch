@@ -130,27 +130,9 @@ fn read_claude_credentials() -> (Option<String>, CredentialStatus, Option<String
 #[cfg(target_os = "macos")]
 fn read_claude_credentials_from_keychain(
 ) -> Option<(Option<String>, CredentialStatus, Option<String>)> {
-    let output = std::process::Command::new("security")
-        .args([
-            "find-generic-password",
-            "-s",
-            "Claude Code-credentials",
-            "-w",
-        ])
-        .output()
-        .ok()?;
-
-    if !output.status.success() {
-        return None; // Keychain 中无此条目，回退到文件
-    }
-
-    let json_str = String::from_utf8(output.stdout).ok()?;
-    let json_str = json_str.trim();
-    if json_str.is_empty() {
-        return None;
-    }
-
-    Some(parse_claude_credentials_json(json_str))
+    // Never prompt from startup, tray refresh or background quota polling.
+    let value = crate::macos_keychain::read_external("Claude Code-credentials", None)?;
+    Some(parse_claude_credentials_json(value.trim()))
 }
 
 /// 从文件读取 Claude 凭据
@@ -495,22 +477,9 @@ fn read_codex_credentials() -> CodexCredentials {
 /// 从 macOS Keychain 读取 Codex 凭据
 #[cfg(target_os = "macos")]
 fn read_codex_credentials_from_keychain() -> Option<CodexCredentials> {
-    let output = std::process::Command::new("security")
-        .args(["find-generic-password", "-s", "Codex Auth", "-w"])
-        .output()
-        .ok()?;
-
-    if !output.status.success() {
-        return None;
-    }
-
-    let json_str = String::from_utf8(output.stdout).ok()?;
-    let json_str = json_str.trim();
-    if json_str.is_empty() {
-        return None;
-    }
-
-    Some(parse_codex_credentials_json(json_str))
+    // Never prompt from startup, tray refresh or background quota polling.
+    let value = crate::macos_keychain::read_external("Codex Auth", None)?;
+    Some(parse_codex_credentials_json(value.trim()))
 }
 
 /// 从文件读取 Codex 凭据
@@ -799,29 +768,9 @@ fn read_gemini_credentials() -> GeminiCredentials {
 /// 从 macOS Keychain 读取 Gemini 凭据
 #[cfg(target_os = "macos")]
 fn read_gemini_credentials_from_keychain() -> Option<GeminiCredentials> {
-    let output = std::process::Command::new("security")
-        .args([
-            "find-generic-password",
-            "-s",
-            "gemini-cli-oauth",
-            "-a",
-            "main-account",
-            "-w",
-        ])
-        .output()
-        .ok()?;
-
-    if !output.status.success() {
-        return None;
-    }
-
-    let json_str = String::from_utf8(output.stdout).ok()?;
-    let json_str = json_str.trim();
-    if json_str.is_empty() {
-        return None;
-    }
-
-    Some(parse_gemini_keychain_json(json_str))
+    // Never prompt from startup, tray refresh or background quota polling.
+    let value = crate::macos_keychain::read_external("gemini-cli-oauth", Some("main-account"))?;
+    Some(parse_gemini_keychain_json(value.trim()))
 }
 
 /// 解析 Keychain 格式的 Gemini 凭据

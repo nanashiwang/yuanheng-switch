@@ -218,9 +218,18 @@ export interface YuanhengDiagnosticReport {
   snapshotId?: string | null;
 }
 
+export function isCredentialAccessRequired(error: unknown): boolean {
+  const message = error instanceof Error ? error.message : String(error ?? "");
+  return message.includes("YUANHENG_CREDENTIAL_ACCESS_REQUIRED:");
+}
+
 export const yuanhengApi = {
   getConnection(): Promise<YuanhengConnectionStatus> {
     return invoke("get_yuanheng_connection");
+  },
+
+  restoreKeychainAccess(): Promise<YuanhengConnectionStatus> {
+    return invoke("restore_yuanheng_keychain_access");
   },
 
   getAnnouncement(): Promise<string | null> {

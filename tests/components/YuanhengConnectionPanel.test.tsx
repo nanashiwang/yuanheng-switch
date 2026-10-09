@@ -4,6 +4,7 @@ import { describe, expect, it } from "vitest";
 import { http, HttpResponse } from "msw";
 import { YuanhengConnectionPanel } from "@/components/desktop/YuanhengConnectionPanel";
 import { server } from "../msw/server";
+import { getYuanhengConnection } from "../msw/state";
 
 const renderPanel = () => {
   const queryClient = new QueryClient({
@@ -17,6 +18,87 @@ const renderPanel = () => {
 };
 
 describe("YuanhengConnectionPanel", () => {
+  it("钥匙串被拒绝时仅点击恢复才请求授权，取消不重试", async () => {
+    let restoreCalls = 0;
+    server.use(
+      http.post("http://tauri.local/get_yuanheng_connection", () =>
+        HttpResponse.text("YUANHENG_CREDENTIAL_ACCESS_REQUIRED: locked", {
+          status: 500,
+        }),
+      ),
+      http.post("http://tauri.local/restore_yuanheng_keychain_access", () => {
+        restoreCalls += 1;
+        return HttpResponse.text("cancelled", { status: 500 });
+      }),
+    );
+    renderPanel();
+    const button = await screen.findByRole("button", { name: "恢复本机登录" });
+    expect(restoreCalls).toBe(0);
+    fireEvent.click(button);
+    expect(
+      await screen.findByText(
+        "未恢复访问，原有登录信息已保留。可稍后再次点击恢复。",
+      ),
+    ).toBeInTheDocument();
+    fireEvent(window, new Event("focus"));
+    await waitFor(() => expect(button).not.toBeDisabled());
+    expect(restoreCalls).toBe(1);
+    expect(screen.getByLabelText("用户名")).toBeInTheDocument();
+  });
+
+  it("恢复期间禁用重复点击，成功后使用恢复账号进入已登录状态", async () => {
+    let finish!: () => void;
+    let restoreCalls = 0;
+    const pending = new Promise<void>((resolve) => {
+      finish = resolve;
+    });
+    server.use(
+      http.post("http://tauri.local/get_yuanheng_connection", () =>
+        HttpResponse.text("YUANHENG_CREDENTIAL_ACCESS_REQUIRED: locked", {
+          status: 500,
+        }),
+      ),
+      http.post(
+        "http://tauri.local/restore_yuanheng_keychain_access",
+        async () => {
+          restoreCalls += 1;
+          await pending;
+          return HttpResponse.json({
+            ...getYuanhengConnection(),
+            connected: true,
+            userId: "recovered",
+          });
+        },
+      ),
+    );
+    renderPanel();
+    const button = await screen.findByRole("button", { name: "恢复本机登录" });
+    fireEvent.click(button);
+    await waitFor(() => expect(button).toBeDisabled());
+    fireEvent.click(button);
+    finish();
+    expect(
+      await screen.findByText("元衡账号已登录 · 本机工具凭据已就绪"),
+    ).toBeInTheDocument();
+    expect(restoreCalls).toBe(1);
+    expect(
+      screen.queryByRole("button", { name: "恢复本机登录" }),
+    ).not.toBeInTheDocument();
+  });
+
+  it("普通错误不提供钥匙串授权入口", async () => {
+    server.use(
+      http.post("http://tauri.local/get_yuanheng_connection", () =>
+        HttpResponse.text("database unavailable", { status: 500 }),
+      ),
+    );
+    renderPanel();
+    await screen.findByLabelText("用户名");
+    expect(
+      screen.queryByRole("button", { name: "恢复本机登录" }),
+    ).not.toBeInTheDocument();
+  });
+
   it("登录允许输入超过 20 位的已有用户名", async () => {
     renderPanel();
 

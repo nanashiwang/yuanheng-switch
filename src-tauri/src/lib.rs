@@ -24,6 +24,8 @@ mod init_status;
 mod lightweight;
 #[cfg(target_os = "linux")]
 mod linux_fix;
+#[cfg(target_os = "macos")]
+mod macos_keychain;
 mod mcp;
 mod model_capabilities;
 mod model_reasoning;
@@ -1613,6 +1615,7 @@ pub fn run() {
             commands::launch_tool,
             commands::get_codex_session_bridge_status,
             commands::get_yuanheng_connection,
+            commands::restore_yuanheng_keychain_access,
             commands::generate_yuanheng_voice_clone,
             commands::get_yuanheng_announcement,
             commands::get_yuanheng_announcements,

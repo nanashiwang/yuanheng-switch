@@ -7925,7 +7925,7 @@ dependencies = [
 
 [[package]]
 name = "yuanheng-switch"
-version = "0.1.66"
+version = "0.1.67"
 dependencies = [
  "anyhow",
  "arboard",
@@ -7964,6 +7964,7 @@ dependencies = [
  "rust_decimal",
  "rustls",
  "rustls-native-certs",
+ "security-framework 3.7.0",
  "serde",
  "serde_json",
  "serde_yaml",

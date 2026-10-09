@@ -184,6 +184,37 @@ const dismissOnboarding = async () => {
 };
 
 describe("App integration with MSW", { timeout: 15_000 }, () => {
+  it("启动钥匙串被拒绝后稳定显示恢复入口，不因登录面板挂载循环读取", async () => {
+    let reads = 0;
+    let restores = 0;
+    server.use(
+      http.post("http://tauri.local/get_yuanheng_connection", () => {
+        reads += 1;
+        return HttpResponse.text(
+          "YUANHENG_CREDENTIAL_ACCESS_REQUIRED: locked",
+          { status: 500 },
+        );
+      }),
+      http.post("http://tauri.local/restore_yuanheng_keychain_access", () => {
+        restores += 1;
+        return HttpResponse.text("cancelled", { status: 500 });
+      }),
+    );
+    const { default: App } = await import("@/App");
+    renderApp(App);
+    const restore = await screen.findByRole("button", { name: "恢复本机登录" });
+    expect(reads).toBe(1);
+    expect(restores).toBe(0);
+    fireEvent.click(restore);
+    expect(
+      await screen.findByText(
+        "未恢复访问，原有登录信息已保留。可稍后再次点击恢复。",
+      ),
+    ).toBeInTheDocument();
+    expect(reads).toBe(1);
+    expect(restores).toBe(1);
+  });
+
   beforeEach(async () => {
     await i18n.changeLanguage("zh-CN");
     resetProviderState();

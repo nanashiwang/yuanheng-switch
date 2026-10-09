@@ -1,6 +1,6 @@
 [package]
 name = "yuanheng-switch"
-version = "0.1.66"
+version = "0.1.67"
 description = "YuanHeng API desktop companion for local AI coding tools"
 authors = ["nanashiwang"]
 license = "MIT"
@@ -112,6 +112,7 @@ windows-sys = { version = "0.61", features = ["Win32_Globalization", "Win32_UI_S
 rquickjs = { version = "0.8", features = ["bindgen"] }
 
 [target.'cfg(target_os = "macos")'.dependencies]
+security-framework = "3.7"
 objc2 = "0.5"
 objc2-app-kit = { version = "0.2", features = ["NSColor"] }
 

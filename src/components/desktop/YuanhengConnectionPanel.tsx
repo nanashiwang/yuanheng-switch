@@ -14,6 +14,7 @@ import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { isCredentialAccessRequired } from "@/lib/api/yuanheng";
 import type { YuanhengAuthResult } from "@/lib/api/yuanheng";
 import {
   useLoginYuanheng,
@@ -22,6 +23,7 @@ import {
   useSignOutYuanheng,
   useVerifyYuanhengTwoFactor,
   useYuanhengConnection,
+  useRestoreYuanhengKeychainAccess,
 } from "@/lib/query/yuanheng";
 
 import { extractErrorMessage } from "@/utils/errorUtils";
@@ -41,7 +43,12 @@ export function YuanhengConnectionPanel({
   compact = false,
   onConnected,
 }: YuanhengConnectionPanelProps) {
-  const { data: status, isLoading } = useYuanhengConnection();
+  const {
+    data: status,
+    isLoading,
+    error: connectionError,
+  } = useYuanhengConnection();
+  const restoreAccess = useRestoreYuanhengKeychainAccess();
   const login = useLoginYuanheng();
   const register = useRegisterYuanheng();
   const verifyTwoFactor = useVerifyYuanhengTwoFactor();
@@ -150,6 +157,29 @@ export function YuanhengConnectionPanel({
     }
   };
 
+  const needsCredentialAccess = [
+    connectionError,
+    login.error,
+    register.error,
+    verifyTwoFactor.error,
+  ].some(isCredentialAccessRequired);
+  const handleRestoreAccess = async () => {
+    try {
+      const restored = await restoreAccess.mutateAsync();
+      login.reset();
+      register.reset();
+      verifyTwoFactor.reset();
+      toast.success(
+        restored.connected
+          ? dt("本机登录已恢复")
+          : dt("凭据访问已恢复，请重新登录"),
+      );
+      if (restored.connected) onConnected?.();
+    } catch {
+      // A denial is not a logout, and must never trigger another authorization.
+    }
+  };
+
   if (isLoading) {
     return (
       <div className="flex min-h-36 items-center justify-center rounded-2xl border bg-card">
@@ -159,7 +189,8 @@ export function YuanhengConnectionPanel({
   }
 
   if (!status?.connected) {
-    const authPending = login.isPending || register.isPending;
+    const authPending =
+      login.isPending || register.isPending || restoreAccess.isPending;
     return (
       <section
         className={cn(
@@ -231,6 +262,35 @@ export function YuanhengConnectionPanel({
               compact ? "p-3" : "p-4",
             )}
           >
+            {needsCredentialAccess && (
+              <div
+                role="alert"
+                className="mb-3 space-y-2 rounded-lg border border-amber-500/30 bg-amber-500/10 p-3 text-[12px] leading-5"
+              >
+                <p className="font-medium">{dt("本机登录信息需要恢复访问")}</p>
+                <p>
+                  {dt(
+                    "macOS 暂时无法读取此前保存的元衡登录信息。点击下方按钮后，系统可能请求授权访问这些条目；取消会保留原有数据。",
+                  )}
+                </p>
+                <Button
+                  type="button"
+                  variant="outline"
+                  disabled={authPending || verifyTwoFactor.isPending}
+                  onClick={() => void handleRestoreAccess()}
+                >
+                  {restoreAccess.isPending && (
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                  )}
+                  {dt("恢复本机登录")}
+                </Button>
+                {restoreAccess.isError && (
+                  <p>
+                    {dt("未恢复访问，原有登录信息已保留。可稍后再次点击恢复。")}
+                  </p>
+                )}
+              </div>
+            )}
             {requiresTwoFactor ? (
               <form
                 className={compact ? "space-y-2.5" : "space-y-3"}
@@ -256,7 +316,11 @@ export function YuanhengConnectionPanel({
                 <Button
                   type="submit"
                   className="w-full"
-                  disabled={!twoFactorCode.trim() || verifyTwoFactor.isPending}
+                  disabled={
+                    !twoFactorCode.trim() ||
+                    verifyTwoFactor.isPending ||
+                    restoreAccess.isPending
+                  }
                 >
                   {verifyTwoFactor.isPending ? (
                     <Loader2 className="h-4 w-4 animate-spin" />

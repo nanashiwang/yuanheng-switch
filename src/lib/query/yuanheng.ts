@@ -4,6 +4,7 @@ import { usageKeys } from "./usage";
 import { useEffect } from "react";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { isCredentialAccessRequired } from "@/lib/api/yuanheng";
 import { yuanhengApi } from "@/lib/api";
 import type {
   CodexAccountMode,
@@ -23,11 +24,34 @@ export const yuanhengKeys = {
 
 export function useYuanhengConnection() {
   usePlatformPricing();
-  return useQuery({
+  const query = useQuery({
     queryKey: yuanhengKeys.connection,
     queryFn: () => yuanhengApi.getConnection(),
     retry: false,
+    // The access screen mounts another observer after a startup error. Retrying
+    // on that mount would toggle the loading screen and remount forever.
+    retryOnMount: false,
     staleTime: 30_000,
+  });
+  // A previous account snapshot must not mask inaccessible credentials.
+  return {
+    ...query,
+    data: isCredentialAccessRequired(query.error) ? undefined : query.data,
+  };
+}
+
+export function useRestoreYuanhengKeychainAccess() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: () => yuanhengApi.restoreKeychainAccess(),
+    retry: false,
+    onSuccess: (status) => {
+      queryClient.invalidateQueries({ queryKey: platformPricingKey });
+      queryClient.setQueryData(yuanhengKeys.connection, status);
+      queryClient.invalidateQueries({ queryKey: yuanhengKeys.tools });
+      queryClient.invalidateQueries({ queryKey: yuanhengKeys.diagnostics });
+      queryClient.invalidateQueries({ queryKey: usageKeys.all });
+    },
   });
 }
 
