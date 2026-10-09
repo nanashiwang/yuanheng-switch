@@ -1,0 +1,36 @@
+# Agent Note: macOS 发布必须通过 Developer ID 签名与公证检查
+
+Status: implemented
+
+## Problem
+
+现有 macOS 安装包虽然有 Tauri 自动更新签名，但没有 Apple Developer ID 签名和公证。其他 Mac 的 Gatekeeper 因而不能按受信任的开发者分发流程验证这些安装包。只配置 Apple 账号或生成证书不等于安装包已获公证。
+
+## Existing capabilities and impact
+
+复用 [Desktop Release](../../../../.github/workflows/release.yml) 的 Apple 芯片、Intel 和 Windows 构建矩阵，以及 [集中发布脚本](../../../../scripts/desktop-release.mjs) 对安装包、更新签名和清单的完整性检查。保留应用标识、最低 macOS 版本、Tauri 更新公钥和下载地址。
+
+已检索活跃笔记；现有工具安装和诊断笔记不负责应用自身的 Apple 签名，本决定独立管理发布门禁。GitHub Secrets 持有证书、公证凭据，仓库只记录配置名称和验收方式，不记录账号、私钥、密码或本机凭据目录。
+
+## Decision
+
+发布工作流的 macOS 构建必须具备完整的 Developer ID Application 证书和公证凭据。缺失配置直接失败，不再降级为未签名发行包。沿用 Tauri 自带的证书导入、加固运行时、签名和公证步骤。
+
+在收集构建产物前，分别验证原始 app、自动更新归档内 app、DMG 内 app：应用标识与版本正确，主程序和 Core 的签名、团队、加固运行时、时间戳与架构正确，公证票据有效且 Gatekeeper 接受。所有检查通过才进入原有三平台集中发布。验证不启动真实模型调用，也不代替其他用户设备上的首次安装验收。
+
+## Alternatives considered
+
+- **只添加现有 Secrets**：改动最少且 Tauri 已支持签名公证，但无法防止将来缺少配置时发布未签名包，也没有独立检查最终 DMG 和更新归档，因此增加发布门禁。
+- **本机手工签名并替换安装包**：便于单次排错，但重打包会改变已有自动更新签名对应的字节，破坏统一发布及摘要核验；继续在同一 CI 构建中完成签名与公证，再生成更新签名。
+
+## Verification
+
+本地 8 项签名验证回归（含缺失各项凭据、错误身份/团队、加固运行时、时间戳、架构、版本、Core、公证、Gatekeeper 及三种包来源/卸载路径）通过。865 项前端测试、类型与格式检查、renderer 构建、6 项镜像脚本回归、actionlint、Cargo 锁文件元数据检查及笔记校验通过。Node 25 的本地测试关闭实验性 Web Storage，与现有 jsdom 的 Storage mock 配合；应用代码和测试断言没有因此改动。
+
+真实 Apple 凭据只在 macOS 发行构建使用：先用 notarytool 验证身份，再执行完整签名、公证及产物检查。本地离线测试不证明 Apple 已接受安装包；首次 v0.1.66 的实际公证、GitHub Release 和镜像结果必须以工作流及最终下载产物为准。
+
+## Consequences
+
+macOS 发布在缺少凭据或签名、公证检查失败时停止，Windows 构建不要求 Apple 凭据。只有三个构建目标完成后，集中发布任务才公开整套文件。旧版公开资产不覆盖，新版使用新版本号和更新签名。
+
+首次使用的 Apple 账号可能需要较长公证时间。Apple 服务、证书或凭据不可用会阻止发布，这是避免发布不可正常安装包的明确取舍。GitHub Secrets 的存在只证明配置项已保存，最终有效性由真实签名和公证构建确认。另一台 Mac 的首次下载安装、Core 启动及模型请求仍是独立的运行验收边界。
