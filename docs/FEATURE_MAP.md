@@ -17,6 +17,8 @@ Fresh macOS password, registration and two-factor sign-ins use [credential sessi
 
 pnpm remains the application package manager. Existing Tauri/Rust checks and signed release workflows remain unchanged.
 
+Unauthenticated recovery: [YuanhengAccessScreen](../src/components/desktop/YuanhengAccessScreen.tsx) always exposes [AccessUpdateControl](../src/components/desktop/AccessUpdateControl.tsx), including login loading, credential errors, registration and two-factor challenges. It reuses the global [UpdateProvider](../src/contexts/UpdateContext.tsx) / [UpdatePrompt](../src/components/UpdatePrompt.tsx) and existing native updater; manual checks bypass automatic-check preferences and dismissed prompts. Check failures keep retry and the existing official download page reachable. Installing is exclusive with checks and duplicate installs; no authentication or credential-recovery command is required. Older binaries without this entry can use [manual recovery](release-announcements.md).
+
 Before adding a feature, inspect adjacent flows and the current source of truth; shared filters, data definitions and access rules must not diverge across entry points.
 
 Claude diagnostic persistence uses a bounded background writer, not disk I/O on the request path. Snapshot writer counters describe Core-local logging health, not billing. Claude Store discovery accepts only the verified full package family; unknown legacy identities are not trusted by a name prefix.

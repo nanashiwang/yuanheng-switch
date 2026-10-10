@@ -185,6 +185,46 @@ describe("UpdateProvider", () => {
     expect(latestContext.error).toBe("download failed");
     expect(latestContext.updateInfo).toEqual(availableInfo);
     expect(latestContext.isPromptOpen).toBe(true);
+    installUpdateAndRestartMock.mockResolvedValue(false);
+    await act(async () => {
+      await latestContext.startUpdate();
+    });
+    expect(installUpdateAndRestartMock).toHaveBeenCalledTimes(2);
+    expect(latestContext.phase).toBe("idle");
+  });
+
+  it("登录页主动安装期间启动自动检查和重复安装不打断下载或重启", async () => {
+    let finishInstall!: (value: boolean) => void;
+    installUpdateAndRestartMock.mockReturnValue(
+      new Promise<boolean>((resolve) => {
+        finishInstall = resolve;
+      }),
+    );
+    renderProvider();
+    await act(async () => {
+      await latestContext.checkUpdate();
+    });
+    let installing!: Promise<boolean>;
+    await act(async () => {
+      installing = latestContext.startUpdate();
+      await Promise.resolve();
+    });
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(UPDATE_STARTUP_DELAY_MS);
+      expect(await latestContext.startUpdate()).toBe(false);
+    });
+    expect(checkForUpdateMock).toHaveBeenCalledTimes(1);
+    expect(installUpdateAndRestartMock).toHaveBeenCalledTimes(1);
+    expect(latestContext.phase).toBe("downloading");
+    await act(async () => {
+      finishInstall(true);
+      await installing;
+    });
+    await act(async () => {
+      await latestContext.checkUpdate();
+    });
+    expect(latestContext.phase).toBe("installing");
+    expect(checkForUpdateMock).toHaveBeenCalledTimes(1);
   });
 
   it("便携版打开下载页而不执行原地安装", async () => {

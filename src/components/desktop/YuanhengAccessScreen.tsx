@@ -12,6 +12,7 @@ import appIcon from "@/assets/icons/app-icon.png";
 import { YUANHENG_WEBSITE_URL } from "@/config/yuanhengBrand";
 import { settingsApi } from "@/lib/api";
 import { YuanhengConnectionPanel } from "./YuanhengConnectionPanel";
+import { AccessUpdateControl } from "./AccessUpdateControl";
 import { dt } from "./desktopI18n";
 
 interface YuanhengAccessScreenProps {
@@ -29,11 +30,15 @@ export function YuanhengAccessScreen({
   };
 
   return (
-    <main className="relative flex h-full min-h-0 overflow-y-auto bg-[#10191a] text-white">
+    <main className="relative flex h-full min-h-0 flex-col overflow-y-auto bg-[#10191a] text-white">
       <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_15%_18%,rgba(57,143,125,0.28),transparent_32%),radial-gradient(circle_at_84%_78%,rgba(214,149,84,0.18),transparent_30%)]" />
       <div className="pointer-events-none absolute inset-0 opacity-[0.08] [background-image:linear-gradient(rgba(255,255,255,0.16)_1px,transparent_1px),linear-gradient(90deg,rgba(255,255,255,0.16)_1px,transparent_1px)] [background-size:42px_42px]" />
 
-      <div className="relative mx-auto grid min-h-full w-full max-w-[1120px] items-center gap-6 px-6 py-4 md:grid-cols-[0.86fr_1.14fr] md:px-8 lg:gap-9 lg:px-12">
+      <div className="sticky top-0 z-10 mx-auto flex w-full max-w-[1120px] shrink-0 justify-end bg-[#10191a]/90 px-6 pb-1 pt-3 backdrop-blur-md md:px-8 lg:px-12">
+        <AccessUpdateControl />
+      </div>
+
+      <div className="relative mx-auto grid w-full max-w-[1120px] flex-1 items-center gap-6 px-6 py-4 md:grid-cols-[0.86fr_1.14fr] md:px-8 lg:gap-9 lg:px-12">
         <section className="animate-rise-in max-w-lg">
           <div className="flex items-center gap-3">
             <span className="flex h-10 w-10 items-center justify-center rounded-xl bg-white/10 ring-1 ring-white/10">

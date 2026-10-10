@@ -29,6 +29,7 @@ const { openExternalMock, updateContextMock } = vi.hoisted(() => ({
     },
     isPromptOpen: true,
     isPortable: false,
+    isChecking: false,
     isUpdating: false,
     phase: "available" as UpdatePhase,
     progress: null as UpdateDownloadProgress | null,
@@ -53,6 +54,7 @@ describe("UpdatePrompt", () => {
   beforeEach(() => {
     updateContextMock.isPromptOpen = true;
     updateContextMock.isPortable = false;
+    updateContextMock.isChecking = false;
     updateContextMock.isUpdating = false;
     updateContextMock.phase = "available";
     updateContextMock.progress = null;
@@ -98,6 +100,15 @@ describe("UpdatePrompt", () => {
     expect(
       screen.queryByRole("button", { name: "settings.updateNow" }),
     ).not.toBeInTheDocument();
+  });
+
+  it("正在复查版本时禁用安装按钮，避免无反馈的重复提交", () => {
+    updateContextMock.isChecking = true;
+    renderPrompt();
+    const button = screen.getByRole("button", { name: "settings.checking" });
+    expect(button).toBeDisabled();
+    fireEvent.click(button);
+    expect(updateContextMock.startUpdate).not.toHaveBeenCalled();
   });
 
   it("安装失败后显示错误和重试入口", () => {

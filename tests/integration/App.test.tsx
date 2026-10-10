@@ -24,6 +24,8 @@ import {
 import { emitTauriEvent } from "../msw/tauriMocks";
 import { server } from "../msw/server";
 import i18n from "@/i18n";
+import { UpdateProvider, UPDATE_STORAGE_KEYS } from "@/contexts/UpdateContext";
+import { UpdatePrompt } from "@/components/UpdatePrompt";
 
 // Successful setup fixtures must include the group catalog required by live
 // configuration; an absent catalog is not proof of permission to change groups.
@@ -145,6 +147,8 @@ vi.mock("@/components/UpdateBadge", () => ({
   ),
 }));
 
+vi.mock("@tauri-apps/api/app", () => ({ getVersion: async () => "0.1.69" }));
+
 vi.mock("@/components/mcp/McpPanel", () => ({
   default: ({ open, onOpenChange }: any) =>
     open ? (
@@ -156,13 +160,19 @@ vi.mock("@/components/mcp/McpPanel", () => ({
     ),
 }));
 
-const renderApp = (AppComponent: ComponentType) => {
+const renderApp = (
+  AppComponent: ComponentType,
+  includeUpdatePrompt = false,
+) => {
   const client = new QueryClient();
   return render(
     <QueryClientProvider client={client}>
-      <Suspense fallback={<div data-testid="loading">loading</div>}>
-        <AppComponent />
-      </Suspense>
+      <UpdateProvider>
+        <Suspense fallback={<div data-testid="loading">loading</div>}>
+          <AppComponent />
+        </Suspense>
+        {includeUpdatePrompt && <UpdatePrompt />}
+      </UpdateProvider>
     </QueryClientProvider>,
   );
 };
@@ -184,6 +194,79 @@ const dismissOnboarding = async () => {
 };
 
 describe("App integration with MSW", { timeout: 15_000 }, () => {
+  it.each([false, true])(
+    "旧凭据拒绝且两步验证为 %s 时可更新，不读取恢复凭据",
+    async (twoFactor) => {
+      let installs = 0;
+      let restores = 0;
+      localStorage.setItem(UPDATE_STORAGE_KEYS.autoCheck, "false");
+      server.use(
+        http.post("http://tauri.local/get_yuanheng_connection", () =>
+          HttpResponse.text("YUANHENG_CREDENTIAL_ACCESS_REQUIRED: locked", {
+            status: 500,
+          }),
+        ),
+        http.post("http://tauri.local/login_yuanheng", () =>
+          HttpResponse.json({ requiresTwoFactor: true, connection: null }),
+        ),
+        http.post("http://tauri.local/restore_yuanheng_keychain_access", () => {
+          restores++;
+          return HttpResponse.json(null);
+        }),
+        http.post("http://tauri.local/check_desktop_update", () =>
+          HttpResponse.json({
+            currentVersion: "0.1.69",
+            availableVersion: "0.1.70",
+            notes: "登录页可升级",
+          }),
+        ),
+        http.post("http://tauri.local/get_desktop_release_notes", () =>
+          HttpResponse.json(null),
+        ),
+        http.post("http://tauri.local/install_update_and_restart", () => {
+          installs++;
+          return HttpResponse.json(true);
+        }),
+      );
+      const { default: App } = await import("@/App");
+      renderApp(App, true);
+      fireEvent.change(await screen.findByLabelText("用户名"), {
+        target: { value: "synthetic-user" },
+      });
+      if (twoFactor) {
+        fireEvent.change(screen.getByLabelText("密码"), {
+          target: { value: "synthetic-password" },
+        });
+        const buttons = screen.getAllByRole("button", { name: "登录" });
+        fireEvent.click(buttons[buttons.length - 1]);
+        fireEvent.change(await screen.findByLabelText("两步验证码"), {
+          target: { value: "123456" },
+        });
+      }
+      fireEvent.click(
+        screen.getByRole("button", {
+          name: i18n.t("settings.checkForUpdates"),
+        }),
+      );
+      expect(
+        await screen.findByRole("dialog", {
+          name: i18n.t("settings.updatePromptTitle"),
+        }),
+      ).toBeInTheDocument();
+      expect(
+        screen.getByLabelText(twoFactor ? "两步验证码" : "用户名"),
+      ).toHaveValue(twoFactor ? "123456" : "synthetic-user");
+      fireEvent.click(
+        screen.getByRole("button", { name: i18n.t("settings.updateNow") }),
+      );
+      await waitFor(() => expect(installs).toBe(1));
+      expect(restores).toBe(0);
+      expect(
+        screen.queryByRole("heading", { name: "工具管理" }),
+      ).not.toBeInTheDocument();
+    },
+  );
+
   it("启动旧凭据不可读时直接账号密码登录进入工作台，不调用恢复", async () => {
     let signedIn = false;
     let restores = 0;

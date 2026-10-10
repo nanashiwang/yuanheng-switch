@@ -102,6 +102,7 @@ export function UpdateProvider({ children }: { children: React.ReactNode }) {
     () => localStorage.getItem(UPDATE_STORAGE_KEYS.autoCheck) !== "false",
   );
   const isCheckingRef = useRef(false);
+  const isUpdatingRef = useRef(false);
 
   const isChecking = phase === "checking";
   const isUpdating = phase === "downloading" || phase === "installing";
@@ -121,7 +122,7 @@ export function UpdateProvider({ children }: { children: React.ReactNode }) {
       showPrompt = true,
       forcePrompt = true,
     }: CheckUpdateOptions = {}) => {
-      if (isCheckingRef.current) return false;
+      if (isCheckingRef.current || isUpdatingRef.current) return false;
       isCheckingRef.current = true;
       setPhase("checking");
       setError(null);
@@ -196,7 +197,7 @@ export function UpdateProvider({ children }: { children: React.ReactNode }) {
 
     const runAutomaticCheck = () => {
       void checkUpdate({ showPrompt: true, forcePrompt: false }).catch(() => {
-        // 自动检查失败保持静默，用户仍可在“关于”页面手动重试。
+        // 自动检查失败保持静默，登录页和“关于”页面仍可手动重试。
       });
     };
 
@@ -216,11 +217,14 @@ export function UpdateProvider({ children }: { children: React.ReactNode }) {
   }, [autoCheckEnabledState, checkUpdate]);
 
   const startUpdate = useCallback(async () => {
-    if (!updateInfo) return false;
+    if (!updateInfo || isUpdatingRef.current || isCheckingRef.current)
+      return false;
+    isUpdatingRef.current = true;
 
     setError(null);
     setProgress(null);
     let unlisten: (() => void) | undefined;
+    let restarting = false;
 
     try {
       if (isPortable) {
@@ -261,6 +265,7 @@ export function UpdateProvider({ children }: { children: React.ReactNode }) {
       }
 
       setPhase("installing");
+      restarting = true;
       return true;
     } catch (installError) {
       console.error("[Update] Failed to install update", installError);
@@ -273,6 +278,7 @@ export function UpdateProvider({ children }: { children: React.ReactNode }) {
       throw installError;
     } finally {
       unlisten?.();
+      if (!restarting) isUpdatingRef.current = false;
     }
   }, [isPortable, updateInfo]);
 

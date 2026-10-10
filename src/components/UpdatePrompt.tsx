@@ -31,6 +31,7 @@ export function UpdatePrompt() {
     updateInfo,
     isPromptOpen,
     isPortable,
+    isChecking,
     isUpdating,
     phase,
     progress,
@@ -192,18 +193,23 @@ export function UpdatePrompt() {
                 type="button"
                 size="sm"
                 className="gap-1.5 bg-[#123b35] text-white hover:bg-[#1b5149]"
+                disabled={isChecking}
                 onClick={() => void startUpdate().catch(() => undefined)}
               >
-                {phase === "error" ? (
+                {isChecking ? (
+                  <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                ) : phase === "error" ? (
                   <RefreshCw className="h-3.5 w-3.5" />
                 ) : (
                   <Download className="h-3.5 w-3.5" />
                 )}
-                {phase === "error"
-                  ? t("settings.retryUpdate")
-                  : isPortable
-                    ? t("settings.openDownloadPage")
-                    : t("settings.updateNow")}
+                {isChecking
+                  ? t("settings.checking")
+                  : phase === "error"
+                    ? t("settings.retryUpdate")
+                    : isPortable
+                      ? t("settings.openDownloadPage")
+                      : t("settings.updateNow")}
               </Button>
             </>
           )}
