@@ -73,9 +73,18 @@ export function YuanhengConnectionPanel({
     setUsername("");
     setTwoFactorCode("");
     setRequiresTwoFactor(false);
-    toast.success(
-      authMode === "register" ? dt("注册并登录成功") : dt("登录成功"),
-    );
+    const message =
+      authMode === "register" ? dt("注册并登录成功") : dt("登录成功");
+    if (result.connection?.sessionOnly) {
+      toast.success(message, {
+        description: dt(
+          "已登录；本次会话未保存在本机，关闭应用后需要重新登录。",
+        ),
+        duration: 8000,
+      });
+    } else {
+      toast.success(message);
+    }
     onConnected?.();
   };
 
@@ -262,7 +271,7 @@ export function YuanhengConnectionPanel({
               compact ? "p-3" : "p-4",
             )}
           >
-            {needsCredentialAccess && (
+            {needsCredentialAccess && !requiresTwoFactor && (
               <div
                 role="alert"
                 className="mb-3 space-y-2 rounded-lg border border-amber-500/30 bg-amber-500/10 p-3 text-[12px] leading-5"
@@ -270,7 +279,7 @@ export function YuanhengConnectionPanel({
                 <p className="font-medium">{dt("本机登录信息需要恢复访问")}</p>
                 <p>
                   {dt(
-                    "macOS 暂时无法读取此前保存的元衡登录信息。点击下方按钮后，系统可能请求授权访问这些条目；取消会保留原有数据。",
+                    "macOS 暂时无法读取旧登录信息。你可以直接使用账号密码重新登录，无需恢复旧条目；也可以点击下方按钮，按系统提示恢复原来的登录。",
                   )}
                 </p>
                 <Button
@@ -479,6 +488,14 @@ export function YuanhengConnectionPanel({
           <p className="mt-0.5 text-[11px] text-muted-foreground">
             {dt("元衡账号已登录 · 本机工具凭据已就绪")}
           </p>
+          {status.sessionOnly && (
+            <p
+              className="mt-1 text-xs text-amber-700 dark:text-amber-300"
+              role="status"
+            >
+              {dt("已登录；本次会话未保存在本机，关闭应用后需要重新登录。")}
+            </p>
+          )}
         </div>
         <Button
           variant="outline"

@@ -139,11 +139,39 @@ mod test_backend {
 
     static SECRETS: OnceLock<Mutex<HashMap<String, String>>> = OnceLock::new();
 
+    thread_local! {
+        static BLOCKED: std::cell::RefCell<Option<Vec<String>>> = const { std::cell::RefCell::new(None) };
+        static DENIED_CALLS: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
+    }
+
+    pub(crate) fn block_access_for_tests(keys: Option<Vec<String>>) {
+        BLOCKED.with(|state| *state.borrow_mut() = keys);
+        DENIED_CALLS.with(|state| state.set(0));
+    }
+
+    pub(crate) fn denied_calls_for_tests() -> usize {
+        DENIED_CALLS.with(|state| state.get())
+    }
+
+    fn check_access(key: &str) -> Result<(), String> {
+        if BLOCKED.with(|state| {
+            state
+                .borrow()
+                .as_ref()
+                .is_some_and(|keys| keys.is_empty() || keys.iter().any(|item| item == key))
+        }) {
+            DENIED_CALLS.with(|state| state.set(state.get() + 1));
+            return Err("YUANHENG_CREDENTIAL_ACCESS_REQUIRED: test-only access denied".into());
+        }
+        Ok(())
+    }
+
     fn secrets() -> &'static Mutex<HashMap<String, String>> {
         SECRETS.get_or_init(|| Mutex::new(HashMap::new()))
     }
 
     pub(crate) fn get_secret(key: &str) -> Result<Option<String>, String> {
+        check_access(key)?;
         Ok(secrets()
             .lock()
             .map_err(|_| "测试凭据库锁已中毒".to_string())?
@@ -152,6 +180,7 @@ mod test_backend {
     }
 
     pub(crate) fn set_secret(key: &str, value: &str) -> Result<(), String> {
+        check_access(key)?;
         secrets()
             .lock()
             .map_err(|_| "测试凭据库锁已中毒".to_string())?
@@ -160,6 +189,7 @@ mod test_backend {
     }
 
     pub(crate) fn delete_secret(key: &str) -> Result<(), String> {
+        check_access(key)?;
         secrets()
             .lock()
             .map_err(|_| "测试凭据库锁已中毒".to_string())?
@@ -168,6 +198,7 @@ mod test_backend {
     }
 
     pub(super) fn clear() {
+        block_access_for_tests(None);
         if let Ok(mut secrets) = secrets().lock() {
             secrets.clear();
         }
@@ -175,7 +206,9 @@ mod test_backend {
 }
 
 #[cfg(test)]
-pub(crate) use test_backend::{delete_secret, get_secret, set_secret};
+pub(crate) use test_backend::{
+    block_access_for_tests, delete_secret, denied_calls_for_tests, get_secret, set_secret,
+};
 
 #[cfg(test)]
 pub(crate) fn clear_for_tests() {

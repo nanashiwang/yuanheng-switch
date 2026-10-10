@@ -13,6 +13,8 @@ Verified from the local checkout on 2026-09-29. This is a scoped navigation aid,
 
 macOS credential access: [connection panel](../src/components/desktop/YuanhengConnectionPanel.tsx) → [connection/recovery command](../src-tauri/src/commands/yuanheng.rs) → [secure storage](../src-tauri/src/secure_storage.rs) / [serialized native access](../src-tauri/src/macos_keychain.rs). Startup, refresh, migration and external subscription reads suppress Keychain UI. Only explicit recovery may prompt for fixed YuanHeng entries; denial preserves stored data. Authorized values are cached only in this process; mutations evict stale values and migration verifies the native store directly. No ACL weakening or plaintext fallback.
 
+Fresh macOS password, registration and two-factor sign-ins use [credential sessions](../src-tauri/src/commands/yuanheng/credential_session.rs): one new system-store item contains the complete authenticated session, while an atomic SQLite update selects it and publishes public account metadata. Old fixed Keychain items never gate reauthentication. If write/read-back fails, AppState retains the new session only for the current process and `sessionOnly` explains the restart requirement. Two-factor challenges remain in memory; session-only and signed-out markers prevent fallback to old accounts. Recovery reads only validated own selectors; Windows/Linux retain their existing platform-store path.
+
 pnpm remains the application package manager. Existing Tauri/Rust checks and signed release workflows remain unchanged.
 
 Before adding a feature, inspect adjacent flows and the current source of truth; shared filters, data definitions and access rules must not diverge across entry points.

@@ -1,3 +1,5 @@
+#[cfg(any(target_os = "macos", test))]
+pub(crate) mod credential_session;
 mod dsh;
 use std::collections::{BTreeSet, HashMap};
 use std::sync::OnceLock;
@@ -185,6 +187,8 @@ pub struct YuanhengAccount {
 #[serde(rename_all = "camelCase")]
 pub struct YuanhengConnectionStatus {
     pub connected: bool,
+    #[serde(default)]
+    pub session_only: bool,
     pub base_url: String,
     pub user_id: Option<String>,
     pub account: Option<YuanhengAccount>,
@@ -373,6 +377,7 @@ impl Default for YuanhengConnectionStatus {
     fn default() -> Self {
         Self {
             connected: false,
+            session_only: false,
             base_url: BASE_URL.to_string(),
             user_id: None,
             account: None,
@@ -461,6 +466,10 @@ fn migrate_legacy_yuanheng_secret(state: &AppState, key: &str) -> Result<(), Str
 }
 
 pub(crate) fn migrate_legacy_yuanheng_secrets(state: &AppState) -> Result<(), String> {
+    #[cfg(any(target_os = "macos", test))]
+    if credential_session::has_session(state)? {
+        return Ok(());
+    }
     for key in YUANHENG_SECURE_KEYS {
         migrate_legacy_yuanheng_secret(state, key)?;
     }
@@ -469,15 +478,50 @@ pub(crate) fn migrate_legacy_yuanheng_secrets(state: &AppState) -> Result<(), St
 
 /// 读取认证凭据，并兼容尚未执行启动迁移的旧安装。
 fn get_yuanheng_secret(state: &AppState, key: &str) -> Result<Option<String>, String> {
+    #[cfg(any(target_os = "macos", test))]
+    {
+        if key == PENDING_SESSION_COOKIE_KEY {
+            return Ok(state
+                .yuanheng_login
+                .lock()
+                .map_err(|_| "本机登录状态不可用")?
+                .pending
+                .clone());
+        }
+        if let Some(value) = credential_session::get(state, key)? {
+            return Ok(value);
+        }
+    }
     migrate_legacy_yuanheng_secret(state, key)?;
     crate::secure_storage::get_secret(key)
 }
 
+#[cfg(not(any(target_os = "macos", test)))]
 fn set_yuanheng_secret(key: &str, value: &str) -> Result<(), String> {
     if value.is_empty() {
         crate::secure_storage::delete_secret(key)
     } else {
         crate::secure_storage::set_secret(key, value)
+    }
+}
+
+fn set_pending_yuanheng_session(state: &AppState, value: &str) -> Result<(), String> {
+    #[cfg(any(target_os = "macos", test))]
+    {
+        state
+            .yuanheng_login
+            .lock()
+            .map_err(|_| "本机登录状态不可用")?
+            .pending = Some(value.into());
+        Ok(())
+    }
+    #[cfg(not(any(target_os = "macos", test)))]
+    {
+        set_yuanheng_secret(PENDING_SESSION_COOKIE_KEY, value)?;
+        state
+            .db
+            .delete_setting(PENDING_SESSION_COOKIE_KEY)
+            .map_err(|e| e.to_string())
     }
 }
 
@@ -491,6 +535,10 @@ fn delete_yuanheng_secret(state: &AppState, key: &str) -> Result<(), String> {
 }
 
 fn invalidate_yuanheng_session(state: &AppState) -> Result<(), String> {
+    #[cfg(any(target_os = "macos", test))]
+    if credential_session::has_session(state)? {
+        return credential_session::clear(state);
+    }
     for key in [
         TOKEN_KEY,
         USER_ID_KEY,
@@ -1365,6 +1413,7 @@ async fn sync_connection(
 
     Ok(YuanhengConnectionStatus {
         connected: true,
+        session_only: false,
         base_url: BASE_URL.to_string(),
         user_id: Some(user_id.to_string()),
         account: Some(account),
@@ -1388,42 +1437,56 @@ fn persist_connection(
     api_token_id: i64,
     status: &YuanhengConnectionStatus,
 ) -> Result<(), String> {
-    let api_token_group = status
-        .account
-        .as_ref()
-        .map(|account| account.group.trim())
-        .filter(|group| !group.is_empty())
-        .unwrap_or("default");
-    for (key, value) in [
-        (SESSION_COOKIE_KEY, session_cookie),
-        (USER_ID_KEY, user_id),
-        (API_TOKEN_KEY, api_token),
-    ] {
-        set_yuanheng_secret(key, value)?;
+    #[cfg(any(target_os = "macos", test))]
+    {
+        credential_session::persist(
+            state,
+            session_cookie,
+            user_id,
+            api_token,
+            api_token_id,
+            status,
+        )
+    }
+    #[cfg(not(any(target_os = "macos", test)))]
+    {
+        let api_token_group = status
+            .account
+            .as_ref()
+            .map(|account| account.group.trim())
+            .filter(|group| !group.is_empty())
+            .unwrap_or("default");
+        for (key, value) in [
+            (SESSION_COOKIE_KEY, session_cookie),
+            (USER_ID_KEY, user_id),
+            (API_TOKEN_KEY, api_token),
+        ] {
+            set_yuanheng_secret(key, value)?;
+            state
+                .db
+                .delete_setting(key)
+                .map_err(|error| error.to_string())?;
+        }
         state
             .db
-            .delete_setting(key)
+            .set_setting(API_TOKEN_GROUP_KEY, api_token_group)
             .map_err(|error| error.to_string())?;
+        state
+            .db
+            .set_setting(API_TOKEN_ID_KEY, &api_token_id.to_string())
+            .map_err(|error| error.to_string())?;
+        state
+            .db
+            .set_setting(
+                CACHE_KEY,
+                &serde_json::to_string(status).map_err(|error| error.to_string())?,
+            )
+            .map_err(|error| error.to_string())?;
+        for key in [TOKEN_KEY, PENDING_SESSION_COOKIE_KEY] {
+            delete_yuanheng_secret(state, key)?;
+        }
+        Ok(())
     }
-    state
-        .db
-        .set_setting(API_TOKEN_GROUP_KEY, api_token_group)
-        .map_err(|error| error.to_string())?;
-    state
-        .db
-        .set_setting(API_TOKEN_ID_KEY, &api_token_id.to_string())
-        .map_err(|error| error.to_string())?;
-    state
-        .db
-        .set_setting(
-            CACHE_KEY,
-            &serde_json::to_string(status).map_err(|error| error.to_string())?,
-        )
-        .map_err(|error| error.to_string())?;
-    for key in [TOKEN_KEY, PENDING_SESSION_COOKIE_KEY] {
-        delete_yuanheng_secret(state, key)?;
-    }
-    Ok(())
 }
 
 async fn finish_authenticated_session(
@@ -1449,7 +1512,14 @@ async fn finish_authenticated_session(
         api_token_id,
         &status,
     )?;
-    Ok(status)
+    #[cfg(any(target_os = "macos", test))]
+    {
+        read_cached_status(state)
+    }
+    #[cfg(not(any(target_os = "macos", test)))]
+    {
+        Ok(status)
+    }
 }
 
 async fn login_with_credentials(
@@ -1471,11 +1541,7 @@ async fn login_with_credentials(
     let session_cookie = extract_cookie(&headers, "session")
         .ok_or_else(|| "元衡登录成功，但未返回有效会话".to_string())?;
     if requires_two_factor {
-        set_yuanheng_secret(PENDING_SESSION_COOKIE_KEY, &session_cookie)?;
-        state
-            .db
-            .delete_setting(PENDING_SESSION_COOKIE_KEY)
-            .map_err(|error| error.to_string())?;
+        set_pending_yuanheng_session(state, &session_cookie)?;
         return Ok(YuanhengAuthResult {
             requires_two_factor: true,
             connection: None,
@@ -1490,6 +1556,10 @@ async fn login_with_credentials(
 }
 
 fn read_cached_status(state: &AppState) -> Result<YuanhengConnectionStatus, String> {
+    #[cfg(any(target_os = "macos", test))]
+    if let Some(status) = credential_session::cached_status(state)? {
+        return Ok(normalize_cached_status(status));
+    }
     let session = get_yuanheng_secret(state, SESSION_COOKIE_KEY)?;
     let token = get_yuanheng_secret(state, API_TOKEN_KEY)?;
     let user_id = get_yuanheng_secret(state, USER_ID_KEY)?;
@@ -1504,12 +1574,16 @@ fn read_cached_status(state: &AppState) -> Result<YuanhengConnectionStatus, Stri
         .and_then(|value| serde_json::from_str(&value).ok())
         .unwrap_or_default();
     status.connected = true;
+    Ok(normalize_cached_status(status))
+}
+
+fn normalize_cached_status(mut status: YuanhengConnectionStatus) -> YuanhengConnectionStatus {
     status.base_url = BASE_URL.to_string();
     (status.terminal_models, status.image_generation_models) =
         partition_model_catalog(&status.models);
     (status.reasoning_levels, status.reasoning_defaults) =
         reasoning_profiles_for_models(&status.terminal_models);
-    Ok(status)
+    status
 }
 
 fn recommended_model(app: &AppType, models: &[String]) -> Option<String> {
@@ -3694,6 +3768,11 @@ fn restore_managed_tools_inner(state: &AppState) -> Result<YuanhengDisconnectRes
 fn disconnect_yuanheng_inner(state: &AppState) -> Result<YuanhengDisconnectResult, String> {
     let mut result = restore_managed_tools_inner(state)?;
     result.disconnected = true;
+    #[cfg(any(target_os = "macos", test))]
+    if credential_session::has_session(state)? {
+        credential_session::clear(state)?;
+        return Ok(result);
+    }
     for key in YUANHENG_SECURE_KEYS {
         delete_yuanheng_secret(state, key)?;
     }
@@ -4193,8 +4272,16 @@ pub async fn restore_yuanheng_keychain_access(
 ) -> Result<YuanhengConnectionStatus, String> {
     // Keep any system dialog off the main/UI thread. Only our fixed service and
     // keys are accessible, never caller-supplied keychain selectors.
-    tauri::async_runtime::spawn_blocking(|| {
-        crate::secure_storage::authorize_access(&YUANHENG_SECURE_KEYS)
+    #[cfg(any(target_os = "macos", test))]
+    let keys = credential_session::recovery_keys(&state)?;
+    #[cfg(not(any(target_os = "macos", test)))]
+    let keys: Vec<String> = YUANHENG_SECURE_KEYS
+        .iter()
+        .map(|key| (*key).into())
+        .collect();
+    tauri::async_runtime::spawn_blocking(move || {
+        let keys: Vec<&str> = keys.iter().map(String::as_str).collect();
+        crate::secure_storage::authorize_access(&keys)
     })
     .await
     .map_err(|_| "恢复本机登录任务失败".to_string())??;
@@ -5398,7 +5485,14 @@ pub async fn rotate_yuanheng_device_token(
     // 切换之前禁止撤销；不能依赖前端随后发起的重配命令充当跨端事务。
     // 用户需要撤销时可在平台令牌管理中显式处理。
 
-    Ok(status)
+    #[cfg(any(target_os = "macos", test))]
+    {
+        read_cached_status(&state)
+    }
+    #[cfg(not(any(target_os = "macos", test)))]
+    {
+        Ok(status)
+    }
 }
 
 async fn open_yuanheng_authenticated_webview(

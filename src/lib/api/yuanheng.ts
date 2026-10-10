@@ -60,6 +60,7 @@ export interface YuanhengAnnouncementFeed {
 
 export interface YuanhengConnectionStatus {
   connected: boolean;
+  sessionOnly?: boolean;
   baseUrl: string;
   userId: string | null;
   account: YuanhengAccount | null;

@@ -18,6 +18,97 @@ const renderPanel = () => {
 };
 
 describe("YuanhengConnectionPanel", () => {
+  it("旧条目拒绝后完成两步登录，不再要求恢复旧登录", async () => {
+    let restores = 0;
+    server.use(
+      http.post("http://tauri.local/get_yuanheng_connection", () =>
+        HttpResponse.text("YUANHENG_CREDENTIAL_ACCESS_REQUIRED: locked", {
+          status: 500,
+        }),
+      ),
+      http.post("http://tauri.local/restore_yuanheng_keychain_access", () => {
+        restores += 1;
+        return HttpResponse.text("unexpected restore", { status: 500 });
+      }),
+    );
+    renderPanel();
+    fireEvent.change(await screen.findByLabelText("用户名"), {
+      target: { value: "twofactor" },
+    });
+    fireEvent.change(screen.getByLabelText("密码"), {
+      target: { value: "password123" },
+    });
+    const buttons = screen.getAllByRole("button", { name: "登录" });
+    fireEvent.click(buttons[buttons.length - 1]);
+    await screen.findByRole("heading", { name: "完成两步验证" });
+    expect(
+      screen.queryByRole("button", { name: "恢复本机登录" }),
+    ).not.toBeInTheDocument();
+    fireEvent.change(screen.getByLabelText("两步验证码"), {
+      target: { value: "123456" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "验证并登录" }));
+    await screen.findByText("元衡账号已登录 · 本机工具凭据已就绪");
+    expect(restores).toBe(0);
+  });
+
+  it.each([false, true])(
+    "旧条目被拒绝时仍可直接账号密码登录，临时会话提示=%s",
+    async (sessionOnly) => {
+      let restores = 0;
+      let logins = 0;
+      server.use(
+        http.post("http://tauri.local/get_yuanheng_connection", () =>
+          HttpResponse.text("YUANHENG_CREDENTIAL_ACCESS_REQUIRED: locked", {
+            status: 500,
+          }),
+        ),
+        http.post("http://tauri.local/restore_yuanheng_keychain_access", () => {
+          restores += 1;
+          return HttpResponse.text("must not restore", { status: 500 });
+        }),
+        http.post("http://tauri.local/login_yuanheng", async ({ request }) => {
+          expect(await request.json()).toEqual({
+            username: "fresh-user",
+            password: "password123",
+          });
+          logins += 1;
+          return HttpResponse.json({
+            requiresTwoFactor: false,
+            connection: {
+              ...getYuanhengConnection(),
+              connected: true,
+              userId: "fresh-user",
+              sessionOnly,
+            },
+          });
+        }),
+      );
+      renderPanel();
+      fireEvent.change(await screen.findByLabelText("用户名"), {
+        target: { value: "fresh-user" },
+      });
+      fireEvent.change(screen.getByLabelText("密码"), {
+        target: { value: "password123" },
+      });
+      const buttons = screen.getAllByRole("button", { name: "登录" });
+      fireEvent.click(buttons[buttons.length - 1]);
+      await screen.findByText("元衡账号已登录 · 本机工具凭据已就绪");
+      expect(logins).toBe(1);
+      expect(restores).toBe(0);
+      expect(
+        screen.queryByRole("button", { name: "恢复本机登录" }),
+      ).not.toBeInTheDocument();
+      expect(
+        Boolean(
+          screen.queryByText(
+            "已登录；本次会话未保存在本机，关闭应用后需要重新登录。",
+          ),
+        ),
+      ).toBe(sessionOnly);
+    },
+  );
+
   it("钥匙串被拒绝时仅点击恢复才请求授权，取消不重试", async () => {
     let restoreCalls = 0;
     server.use(

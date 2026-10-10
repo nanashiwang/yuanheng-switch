@@ -10,6 +10,9 @@ pub struct AppState {
     pub diagnostic_snapshot:
         std::sync::Mutex<Option<crate::commands::support_diagnostics::DiagnosticSnapshot>>,
     pub diagnostic_run: tokio::sync::Mutex<()>,
+    #[cfg(any(target_os = "macos", test))]
+    pub(crate) yuanheng_login:
+        std::sync::Mutex<crate::commands::credential_session::CredentialSession>,
 }
 
 impl AppState {
@@ -23,6 +26,8 @@ impl AppState {
             usage_cache: Arc::new(UsageCache::new()),
             diagnostic_snapshot: std::sync::Mutex::new(None),
             diagnostic_run: tokio::sync::Mutex::new(()),
+            #[cfg(any(target_os = "macos", test))]
+            yuanheng_login: std::sync::Mutex::new(Default::default()),
         }
     }
 
@@ -36,6 +41,8 @@ impl AppState {
             usage_cache: Arc::new(UsageCache::new()),
             diagnostic_snapshot: std::sync::Mutex::new(None),
             diagnostic_run: tokio::sync::Mutex::new(()),
+            #[cfg(any(target_os = "macos", test))]
+            yuanheng_login: std::sync::Mutex::new(Default::default()),
         }
     }
 }

@@ -7,8 +7,10 @@ type Values = Record<string, string | number | null | undefined>;
 
 export const DESKTOP_EN: Record<string, string> = {
   本机登录信息需要恢复访问: "Access to saved sign-in needs to be restored",
-  "macOS 暂时无法读取此前保存的元衡登录信息。点击下方按钮后，系统可能请求授权访问这些条目；取消会保留原有数据。":
-    "macOS cannot currently read your saved YuanHeng sign-in. Click below to allow a system authorization request for these items. Cancelling keeps your existing data.",
+  "macOS 暂时无法读取旧登录信息。你可以直接使用账号密码重新登录，无需恢复旧条目；也可以点击下方按钮，按系统提示恢复原来的登录。":
+    "macOS cannot read the previous sign-in. You can sign in again with your username and password without restoring old entries, or use the button below to restore your previous sign-in with system authorization.",
+  "已登录；本次会话未保存在本机，关闭应用后需要重新登录。":
+    "Signed in for this session only. You will need to sign in again after closing the app.",
   恢复本机登录: "Restore saved sign-in",
   本机登录已恢复: "Saved sign-in restored",
   "凭据访问已恢复，请重新登录":

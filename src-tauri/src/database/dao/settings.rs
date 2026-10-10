@@ -56,6 +56,31 @@ impl Database {
         Ok(())
     }
 
+    /// Commit related non-secret settings together, including deletions.
+    #[cfg(any(target_os = "macos", test))]
+    pub(crate) fn set_settings_atomically(
+        &self,
+        changes: &[(&str, Option<&str>)],
+    ) -> Result<(), AppError> {
+        let mut conn = lock_conn!(self.conn);
+        let transaction = conn
+            .transaction()
+            .map_err(|e| AppError::Database(e.to_string()))?;
+        for (key, value) in changes {
+            match value {
+                Some(value) => transaction.execute(
+                    "INSERT OR REPLACE INTO settings (key, value) VALUES (?1, ?2)",
+                    params![key, value],
+                ),
+                None => transaction.execute("DELETE FROM settings WHERE key = ?1", params![key]),
+            }
+            .map_err(|e| AppError::Database(e.to_string()))?;
+        }
+        transaction
+            .commit()
+            .map_err(|e| AppError::Database(e.to_string()))
+    }
+
     /// 删除设置值。用于迁移不应继续留在 SQLite 中的旧凭据。
     pub fn delete_setting(&self, key: &str) -> Result<(), AppError> {
         let conn = lock_conn!(self.conn);

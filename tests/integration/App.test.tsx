@@ -184,6 +184,68 @@ const dismissOnboarding = async () => {
 };
 
 describe("App integration with MSW", { timeout: 15_000 }, () => {
+  it("启动旧凭据不可读时直接账号密码登录进入工作台，不调用恢复", async () => {
+    let signedIn = false;
+    let restores = 0;
+    const connection = {
+      connected: true,
+      userId: "fresh-user",
+      baseUrl: "https://meta-api.vip",
+      sessionOnly: true,
+      account: {
+        username: "fresh-user",
+        displayName: "Fresh User",
+        group: "default",
+        remainingUsd: 10,
+        usedUsd: 0,
+      },
+      models: [],
+      groups: [],
+      modelGroups: {},
+      reasoningLevels: {},
+      announcement: null,
+      lastSyncedAt: null,
+    };
+    server.use(
+      http.post("http://tauri.local/get_yuanheng_connection", () =>
+        signedIn
+          ? HttpResponse.json(connection)
+          : HttpResponse.text("YUANHENG_CREDENTIAL_ACCESS_REQUIRED: locked", {
+              status: 500,
+            }),
+      ),
+      http.post("http://tauri.local/restore_yuanheng_keychain_access", () => {
+        restores += 1;
+        return HttpResponse.text("unexpected restore", { status: 500 });
+      }),
+      http.post("http://tauri.local/login_yuanheng", () => {
+        signedIn = true;
+        setYuanhengConnection(connection);
+        return HttpResponse.json({ requiresTwoFactor: false, connection });
+      }),
+    );
+    const { default: App } = await import("@/App");
+    renderApp(App);
+    fireEvent.change(await screen.findByLabelText("用户名"), {
+      target: { value: "fresh-user" },
+    });
+    fireEvent.change(screen.getByLabelText("密码"), {
+      target: { value: "password123" },
+    });
+    const buttons = screen.getAllByRole("button", { name: "登录" });
+    fireEvent.click(buttons[buttons.length - 1]);
+    await waitFor(() =>
+      expect(screen.queryByLabelText("密码")).not.toBeInTheDocument(),
+    );
+    expect(signedIn).toBe(true);
+    expect(restores).toBe(0);
+    expect(toastSuccessMock).toHaveBeenCalledWith("登录成功", {
+      description: "已登录；本次会话未保存在本机，关闭应用后需要重新登录。",
+      duration: 8000,
+    });
+    expect(toastErrorMock).not.toHaveBeenCalled();
+  });
+
   it("启动钥匙串被拒绝后稳定显示恢复入口，不因登录面板挂载循环读取", async () => {
     let reads = 0;
     let restores = 0;
